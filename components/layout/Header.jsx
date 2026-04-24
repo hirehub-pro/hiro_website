@@ -36,7 +36,7 @@ export default function Header() {
                 <span className="relative text-base font-extrabold text-white">H</span>
               </div>
               <div>
-                <p className="font-display text-xl font-extrabold tracking-tight text-gray-950">HireHub</p>
+                <p className="font-display text-xl font-extrabold tracking-tight text-gray-950">Hiro</p>
                 <p className="text-xs font-medium uppercase tracking-[0.24em] text-primary/70">Trusted local pros</p>
               </div>
             </Link>
@@ -140,7 +140,7 @@ export default function Header() {
                 <span className="text-sm font-extrabold text-white">H</span>
               </div>
               <div>
-                <p className="font-display text-lg font-extrabold text-gray-950">HireHub</p>
+                <p className="font-display text-lg font-extrabold text-gray-950">Hiro</p>
                 <p className="text-[10px] uppercase tracking-[0.2em] text-primary/60">Local services</p>
               </div>
             </Link>

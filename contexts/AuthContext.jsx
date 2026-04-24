@@ -53,6 +53,27 @@ function detectPlatform() {
   return 'web';
 }
 
+function getFirebaseAuthMessage(error) {
+  switch (error?.code) {
+    case 'auth/argument-error':
+    case 'auth/invalid-phone-number':
+      return 'Enter a valid phone number, including the country code if needed.';
+    case 'auth/captcha-check-failed':
+    case 'auth/missing-app-credential':
+      return 'Phone verification could not start. Refresh the page and try again.';
+    case 'auth/operation-not-allowed':
+      return 'This sign-in method is not enabled in Firebase Authentication.';
+    case 'auth/too-many-requests':
+      return 'Too many attempts. Please wait a little before trying again.';
+    case 'auth/invalid-verification-code':
+      return 'The verification code is incorrect.';
+    case 'auth/code-expired':
+      return 'The verification code expired. Please request a new code.';
+    default:
+      return error?.message || 'Authentication failed. Please try again.';
+  }
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser]       = useState(null);
   const [profile, setProfile] = useState(null);
@@ -155,15 +176,24 @@ export function AuthProvider({ children }) {
 
   async function sendPhoneVerification(phoneNumber, containerId = 'recaptcha-container') {
     const formattedPhoneNumber = normalizePhoneNumber(phoneNumber);
-    const verifier = getRecaptchaVerifier(containerId);
-    const confirmationResult = await signInWithPhoneNumber(auth, formattedPhoneNumber, verifier);
+    if (formattedPhoneNumber.length < 8) {
+      throw new Error('Enter a valid phone number.');
+    }
 
-    setPhoneConfirmation(confirmationResult);
+    try {
+      const verifier = getRecaptchaVerifier(containerId);
+      const confirmationResult = await signInWithPhoneNumber(auth, formattedPhoneNumber, verifier);
 
-    return {
-      confirmationResult,
-      formattedPhoneNumber,
-    };
+      setPhoneConfirmation(confirmationResult);
+
+      return {
+        confirmationResult,
+        formattedPhoneNumber,
+      };
+    } catch (error) {
+      clearRecaptchaVerifier();
+      throw new Error(getFirebaseAuthMessage(error));
+    }
   }
 
   async function confirmPhoneVerification(code) {
@@ -171,9 +201,13 @@ export function AuthProvider({ children }) {
       throw new Error('Please request a verification code first.');
     }
 
-    const credential = await phoneConfirmation.confirm(code);
-    setPhoneConfirmation(null);
-    return credential;
+    try {
+      const credential = await phoneConfirmation.confirm(code);
+      setPhoneConfirmation(null);
+      return credential;
+    } catch (error) {
+      throw new Error(getFirebaseAuthMessage(error));
+    }
   }
 
   const resetPhoneVerification = useCallback(() => {
@@ -301,7 +335,13 @@ export function AuthProvider({ children }) {
 
   // Anonymous guest sign-in (creates a lightweight guest profile if first time)
   async function signInAsGuest() {
-    const cred = await signInAnonymously(auth);
+    let cred;
+    try {
+      cred = await signInAnonymously(auth);
+    } catch (error) {
+      throw new Error(getFirebaseAuthMessage(error));
+    }
+
     const snap = await getDoc(doc(db, 'users', cred.user.uid));
 
     if (!snap.exists()) {

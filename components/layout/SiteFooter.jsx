@@ -25,8 +25,7 @@ export default function SiteFooter() {
                 <span className="relative text-base font-extrabold text-white">H</span>
               </div>
               <div>
-                <p className="font-display text-2xl font-extrabold tracking-tight text-white">HireHub</p>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-50/85">Trusted local pros</p>
+                  <p className="font-display text-2xl font-extrabold tracking-tight text-white">Hiro</p>
               </div>
             </Link>
 
@@ -90,7 +89,7 @@ export default function SiteFooter() {
           <div className="my-5 h-px w-full bg-white/20" />
 
           <div className="flex flex-col gap-4 text-sm text-blue-50/80 sm:flex-row sm:items-center sm:justify-between">
-            <p className="font-medium">HireHub Ltd. Copyright 2012-2026</p>
+            <p className="font-medium">Hiro Ltd. Copyright 2012-2026</p>
 
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
               {legalLinks.map(function (item) {

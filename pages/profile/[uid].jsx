@@ -450,7 +450,7 @@ export default function ProfilePage() {
   return (
     <>
       <Head>
-        <title>{profile.name} – HireHub</title>
+        <title>{profile.name} – Hiro</title>
       </Head>
 
       <ProfileHeader profile={profile} />

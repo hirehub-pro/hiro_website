@@ -3,27 +3,114 @@ import Head from 'next/head';
 import { useRouter } from 'next/router';
 import {
   HiSearch, HiAdjustments, HiLocationMarker, HiX,
-  HiBadgeCheck, HiStar, HiSparkles, HiChevronDown,
+  HiSparkles,
 } from 'react-icons/hi';
+import {
+  FaBolt,
+  FaBroom,
+  FaBug,
+  FaHammer,
+  FaHome,
+  FaPaintRoller,
+  FaSnowflake,
+  FaTools,
+  FaTree,
+  FaTruck,
+  FaWrench,
+} from 'react-icons/fa';
 import clsx from 'clsx';
+import { doc, getDoc } from 'firebase/firestore';
 import { searchWorkers } from '../lib/firestore';
+import { db } from '../lib/firebase';
 import WorkerCard from '../components/workers/WorkerCard';
 import { useLanguage } from '../contexts/LanguageContext';
 import toast from 'react-hot-toast';
 
+function getProfessionLabel(profession, locale) {
+  return profession[locale] || profession.en || profession.he || profession.ar || profession.logo || 'Profession';
+}
+
+const professionLogoIcons = {
+  ac: FaSnowflake,
+  air_conditioning: FaSnowflake,
+  carpentry: FaHammer,
+  carpenter: FaHammer,
+  cleaning: FaBroom,
+  cleaner: FaBroom,
+  electrical: FaBolt,
+  electrician: FaBolt,
+  flooring: FaHome,
+  handyman: FaTools,
+  landscaping: FaTree,
+  landscaper: FaTree,
+  moving: FaTruck,
+  mover: FaTruck,
+  painting: FaPaintRoller,
+  painter: FaPaintRoller,
+  pest_control: FaBug,
+  plumbing: FaWrench,
+  plumber: FaWrench,
+  roofing: FaHome,
+  roofer: FaHome,
+};
+
+function getProfessionIcon(profession) {
+  const logoKey = String(profession.logo || profession.en || '').trim().toLowerCase().replace(/\s+/g, '_');
+  return professionLogoIcons[logoKey] || FaTools;
+}
+
 export default function SearchPage() {
-  const { t, dir } = useLanguage();
+  const { t, dir, locale } = useLanguage();
   const router     = useRouter();
   const inputRef   = useRef(null);
 
   const [query, setQuery]           = useState('');
   const [workers, setWorkers]       = useState([]);
+  const [professions, setProfessions] = useState([]);
+  const [professionsLoading, setProfessionsLoading] = useState(true);
   const [loading, setLoading]       = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [radius, setRadius]         = useState(50);
   const [userLat, setUserLat]       = useState(null);
   const [userLng, setUserLng]       = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadProfessions() {
+      setProfessionsLoading(true);
+      try {
+        const snap = await getDoc(doc(db, 'metadata', 'professions'));
+        if (!isMounted) return;
+
+        const items = (snap.data()?.items || [])
+          .map((item, index) => ({
+            id: String(item.id ?? index),
+            value: item.en || item.logo || getProfessionLabel(item, locale),
+            ...item,
+          }))
+          .sort((a, b) => Number(a.id) - Number(b.id));
+
+        setProfessions(items);
+      } catch (err) {
+        if (isMounted) {
+          setProfessions([]);
+          toast.error('Failed to load professions');
+        }
+      } finally {
+        if (isMounted) {
+          setProfessionsLoading(false);
+        }
+      }
+    }
+
+    loadProfessions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [locale]);
 
   useEffect(() => {
     if (router.query.q) {
@@ -53,6 +140,12 @@ export default function SearchPage() {
     doSearch(query, userLat, userLng, radius);
   }
 
+  function chooseProfession(profession) {
+    const value = profession.value || profession.en || getProfessionLabel(profession, locale);
+    setQuery(value);
+    doSearch(value, userLat, userLng, radius);
+  }
+
   function clearQuery() {
     setQuery('');
     setWorkers([]);
@@ -77,10 +170,23 @@ export default function SearchPage() {
   }
 
   const radiusPresets = [10, 25, 50, 100];
+  const filteredProfessions = professions.filter((profession) => {
+    const searchValue = query.trim().toLowerCase();
+    if (!searchValue || hasSearched) return true;
+
+    return [
+      profession.en,
+      profession.he,
+      profession.ar,
+      profession.am,
+      profession.ru,
+      profession.logo,
+    ].some((value) => String(value || '').toLowerCase().includes(searchValue));
+  });
 
   return (
     <>
-      <Head><title>{query ? `"${query}" – HireHub` : 'Search – HireHub'}</title></Head>
+      <Head><title>{query ? `"${query}" – Hiro` : 'Search – Hiro'}</title></Head>
 
       {/* ── Sticky glass header ── */}
       <div
@@ -237,6 +343,62 @@ export default function SearchPage() {
 
       {/* ── Results area ── */}
       <div className="mx-auto max-w-3xl px-4 py-5" dir={dir}>
+        {!loading && !hasSearched && (
+          <section className="mb-8">
+            <div className="mb-4 flex items-end justify-between gap-3">
+              <div>
+                <p className="mb-1 text-xs font-bold uppercase tracking-[0.2em] text-primary/65">Browse all</p>
+                <h2 className="section-title">{t.home.popularCategories}</h2>
+              </div>
+              <span className="rounded-full bg-primary-50 px-3 py-1 text-xs font-bold text-primary">
+                {professions.length}
+              </span>
+            </div>
+
+            {professionsLoading ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {Array.from({ length: 9 }).map((_, index) => (
+                  <div key={index} className="h-32 rounded-[26px] bg-gray-100 animate-pulse" />
+                ))}
+              </div>
+            ) : filteredProfessions.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-4 py-8 text-center text-sm text-gray-500">
+                No professions found.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {filteredProfessions.map((profession, index) => {
+                  const Icon = getProfessionIcon(profession);
+                  const color = profession.color || '#1976D2';
+
+                  return (
+                    <button
+                      key={profession.id}
+                      type="button"
+                      onClick={() => chooseProfession(profession)}
+                      className="card-lift group relative min-h-32 overflow-hidden rounded-[26px] border border-white/70 bg-white p-4 text-left shadow-card animate-fade-up"
+                      style={{ animationDelay: `${index * 35}ms` }}
+                    >
+                      <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/70 to-transparent opacity-80" />
+                      <div
+                        className="relative mb-4 flex h-14 w-14 items-center justify-center rounded-2xl shadow-sm transition-transform duration-200 group-hover:scale-110 group-hover:-rotate-3"
+                        style={{ backgroundColor: `${color}1A`, color }}
+                      >
+                        <Icon className="h-6 w-6" />
+                      </div>
+                      <span className="relative line-clamp-2 text-sm font-bold leading-tight text-gray-800">
+                        {getProfessionLabel(profession, locale)}
+                      </span>
+                      <span className="relative mt-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400">
+                        Explore
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Skeleton loading */}
         {loading && (
@@ -295,7 +457,7 @@ export default function SearchPage() {
         )}
 
         {/* Initial state — nothing searched yet */}
-        {!loading && !hasSearched && (
+        {!loading && !hasSearched && professions.length === 0 && (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-[28px] bg-hero-gradient shadow-glow">
               <HiSparkles className="h-10 w-10 text-white" />

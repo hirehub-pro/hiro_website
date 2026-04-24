@@ -212,7 +212,7 @@ export default function CommunityPage() {
 
   return (
     <>
-      <Head><title>{'HireHub \u2013 ' + t.community.title}</title></Head>
+      <Head><title>{'Hiro  ' + t.community.title}</title></Head>
 
       <div className="relative overflow-hidden bg-hero-gradient" dir={dir}>
         <div className="absolute inset-0 bg-mesh opacity-20" />
@@ -225,7 +225,7 @@ export default function CommunityPage() {
           </div>
           <h1 className="font-display text-3xl font-extrabold text-white sm:text-4xl">{t.community.title}</h1>
           <p className="mt-3 text-sm leading-7 text-white/75 max-w-md">
-            Share tips, ask questions, and post service requests with the HireHub community.
+            Share tips, ask questions, and post service requests with the Hiro community.
           </p>
           <div className="mt-6 flex items-center gap-5 text-white/80 text-xs font-semibold">
             <span className="flex items-center gap-1.5">
@@ -297,7 +297,7 @@ export default function CommunityPage() {
               </div>
               <div>
                 <p className="font-bold text-white text-sm">{t.community.pinned}</p>
-                <p className="mt-0.5 text-xs text-white/70">Welcome to the HireHub community</p>
+                <p className="mt-0.5 text-xs text-white/70">Welcome to the Hiro community</p>
               </div>
             </div>
           </div>

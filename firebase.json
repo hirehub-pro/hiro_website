@@ -20,6 +20,8 @@
     "rules": "storage.rules"
   },
   "auth": {
-    "providers": {}
+    "providers": {
+      "anonymous": true
+    }
   }
 }

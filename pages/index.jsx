@@ -21,7 +21,7 @@ export default function HomePage() {
   return (
     <>
       <Head>
-        <title>HireHub – Find Professionals Near You</title>
+        <title>Hiro – Find Professionals Near You</title>
       </Head>
 
       <div className="relative overflow-hidden px-4 pb-10 pt-4 md:pb-14">
@@ -71,7 +71,7 @@ export default function HomePage() {
 
           <aside className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
             <div className="glass rounded-[32px] p-6 shadow-soft animate-slide-left">
-              <p className="text-xs font-bold uppercase tracking-[0.24em] text-primary/65">Why HireHub</p>
+              <p className="text-xs font-bold uppercase tracking-[0.24em] text-primary/65">Why Hiro</p>
               <h2 className="mt-2 font-display text-2xl font-extrabold text-gray-950">A marketplace that feels premium, not crowded.</h2>
               <div className="mt-5 grid grid-cols-2 gap-3">
                 <div className="rounded-3xl bg-white/80 p-4">

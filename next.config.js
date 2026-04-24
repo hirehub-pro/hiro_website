@@ -5,6 +5,7 @@ const nextConfig = {
     domains: [
       'firebasestorage.googleapis.com',
       'lh3.googleapis.com',
+      'loremflickr.com',
       'ui-avatars.com',
     ],
   },

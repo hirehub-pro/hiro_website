@@ -1,0 +1,20 @@
+[debug] [2026-04-24T14:34:59.066Z] ----------------------------------------------------------------------
+[debug] [2026-04-24T14:34:59.068Z] Command:       /opt/homebrew/Cellar/node/25.9.0_2/bin/node /Users/raslan/.npm/_npx/ba4f1959e38407b5/node_modules/.bin/firebase apphosting:backends:get hirehub --project hire-hub-fe6c4
+[debug] [2026-04-24T14:34:59.069Z] CLI Version:   15.15.0
+[debug] [2026-04-24T14:34:59.069Z] Platform:      darwin
+[debug] [2026-04-24T14:34:59.069Z] Node Version:  v25.9.0
+[debug] [2026-04-24T14:34:59.069Z] Time:          Fri Apr 24 2026 17:34:59 GMT+0300 (Israel Daylight Time)
+[debug] [2026-04-24T14:34:59.069Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-04-24T14:34:59.183Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-04-24T14:34:59.184Z] > authorizing via signed-in user (my.hire.hub@gmail.com)
+[debug] [2026-04-24T14:34:59.185Z] Checked if tokens are valid: true, expires at: 1777044168862
+[debug] [2026-04-24T14:34:59.185Z] Checked if tokens are valid: true, expires at: 1777044168862
+[debug] [2026-04-24T14:34:59.186Z] >>> [apiv2][query] GET https://firebaseapphosting.googleapis.com/v1beta/projects/hire-hub-fe6c4/locations/-/backends 
+[debug] [2026-04-24T14:35:00.116Z] <<< [apiv2][status] GET https://firebaseapphosting.googleapis.com/v1beta/projects/hire-hub-fe6c4/locations/-/backends 200
+[debug] [2026-04-24T14:35:00.116Z] <<< [apiv2][body] GET https://firebaseapphosting.googleapis.com/v1beta/projects/hire-hub-fe6c4/locations/-/backends {"backends":[{"name":"projects/hire-hub-fe6c4/locations/us-central1/backends/hirehub","createTime":"2026-03-30T20:55:10.930682864Z","updateTime":"2026-04-24T14:28:23.524016Z","labels":{"deployment-tool":"cli-firebase"},"uri":"hirehub--hire-hub-fe6c4.us-central1.hosted.app","managedResources":[{"runService":{"service":"projects/29257648718/locations/us-central1/services/hirehub"}}],"uid":"b40f8fcd-e197-403b-8cfd-a24204c3b850","etag":"gxocbUstAHxBJanIANWxZGsjpri3VWya0r0yUUwDApE","reconciling":false,"servingLocality":"GLOBAL_ACCESS","serviceAccount":"firebase-app-hosting-compute@hire-hub-fe6c4.iam.gserviceaccount.com","appId":"1:29257648718:web:d1219405f2aff549b8111f"}]}
+[info] ┌─────────┬────────────┬────────────────────────────────────────────────────────┬────────────────┬─────────────────────┐
+│ Backend │ Repository │ URL                                                    │ Primary Region │ Updated Date        │
+├─────────┼────────────┼────────────────────────────────────────────────────────┼────────────────┼─────────────────────┤
+│ hirehub │            │ https://hirehub--hire-hub-fe6c4.us-central1.hosted.app │ us-central1    │ 2026-04-24 17:28:23 │
+└─────────┴────────────┴────────────────────────────────────────────────────────┴────────────────┴─────────────────────┘

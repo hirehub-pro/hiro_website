@@ -132,7 +132,7 @@ export default function ProjectDetailsPage() {
 
   return (
     <>
-      <Head><title>{project ? 'Project - HireHub' : 'Project - HireHub'}</title></Head>
+      <Head><title>{project ? 'Project - Hiro' : 'Project - Hiro'}</title></Head>
 
       <div className="mx-auto max-w-3xl px-4 py-6 md:py-8">
         <div className="mb-4">

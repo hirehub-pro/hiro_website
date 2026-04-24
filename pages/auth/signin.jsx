@@ -55,6 +55,12 @@ export default function SignInPage() {
 
   async function handleSendCode(e) {
     e.preventDefault();
+
+    if (!phoneNumber.trim()) {
+      toast.error('Please enter your phone number.');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -71,6 +77,12 @@ export default function SignInPage() {
 
   async function handleVerifyCode(e) {
     e.preventDefault();
+
+    if (verificationCode.length < 6) {
+      toast.error('Please enter the 6-digit verification code.');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -105,7 +117,7 @@ export default function SignInPage() {
 
   return (
     <>
-      <Head><title>HireHub – Sign In</title></Head>
+      <Head><title>Hiro – Sign In</title></Head>
 
       <div
         className="min-h-screen overflow-hidden bg-slate-50"
@@ -160,7 +172,7 @@ export default function SignInPage() {
               forceMobileLayout ? 'max-w-xl' : 'max-w-md'
             )}
           >
-            <div className="absolute inset-0 bg-gradient-to-br from-white/90 via-white/70 to-primary-50/80" />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/90 via-white/70 to-primary-50/80" />
             <div className="relative mb-6 text-center">
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-[24px] bg-hero-gradient shadow-glow">
                 <span className="text-2xl font-extrabold text-white">H</span>
@@ -170,7 +182,7 @@ export default function SignInPage() {
             </div>
 
             {!verificationSent ? (
-              <form onSubmit={handleSendCode} className="space-y-4">
+              <form onSubmit={handleSendCode} className="relative space-y-4">
                 <div>
                   <label className="mb-1 block text-sm font-semibold text-gray-700">
                     {t.auth.phoneNumber}
@@ -190,14 +202,14 @@ export default function SignInPage() {
 
                 <button
                   type="submit"
-                  disabled={loading || !phoneNumber.trim()}
+                  disabled={loading}
                   className="btn-primary w-full"
                 >
                   {loading ? t.common.loading : t.auth.sendOtp}
                 </button>
               </form>
             ) : (
-              <form onSubmit={handleVerifyCode} className="space-y-4">
+              <form onSubmit={handleVerifyCode} className="relative space-y-4">
                 <div className="rounded-[24px] border border-primary-100 bg-primary-50 px-4 py-4 text-sm text-primary-dark shadow-sm">
                   <p className="font-semibold">{t.auth.codeSent}</p>
                   <p className="mt-1 break-all">{sentToPhone}</p>
@@ -225,7 +237,7 @@ export default function SignInPage() {
 
                 <button
                   type="submit"
-                  disabled={loading || verificationCode.length < 6}
+                  disabled={loading}
                   className="btn-primary w-full"
                 >
                   {loading ? t.common.loading : t.auth.verifyCode}
@@ -241,10 +253,10 @@ export default function SignInPage() {
               </form>
             )}
 
-            <div id="recaptcha-container" className="min-h-0" />
+            <div id="recaptcha-container" className="relative min-h-0" />
 
             {/* Divider */}
-            <div className="my-5 flex items-center gap-3">
+            <div className="relative my-5 flex items-center gap-3">
               <div className="flex-1 h-px bg-gray-100" />
               <span className="text-xs text-gray-400">{t.common.or}</span>
               <div className="flex-1 h-px bg-gray-100" />
@@ -253,7 +265,7 @@ export default function SignInPage() {
             <button
               onClick={handleGuestSignIn}
               disabled={loading}
-              className="btn-ghost flex w-full items-center justify-center gap-3"
+              className="btn-ghost relative flex w-full items-center justify-center gap-3"
             >
               <HiOutlineUser className="w-5 h-5" />
               {t.auth.continueAsGuest}

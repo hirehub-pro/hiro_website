@@ -143,7 +143,7 @@ export default function BlogPostPage() {
 
   return (
     <>
-      <Head><title>{post ? post.title + ' - HireHub' : 'Post - HireHub'}</title></Head>
+      <Head><title>{post ? post.title + ' - Hiro' : 'Post - Hiro'}</title></Head>
 
       <div className="mx-auto max-w-3xl px-4 py-6 md:py-8" dir={dir}>
         <div className="mb-4">

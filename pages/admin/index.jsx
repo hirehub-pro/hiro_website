@@ -99,7 +99,7 @@ export default function AdminPage() {
 
   return (
     <>
-      <Head><title>HireHub Admin</title></Head>
+      <Head><title>Hiro Admin</title></Head>
 
       <div className="max-w-3xl mx-auto px-4 py-6">
         <h1 className="text-2xl font-extrabold text-gray-900 mb-5">{t.admin.title}</h1>

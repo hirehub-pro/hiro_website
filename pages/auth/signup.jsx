@@ -5,7 +5,7 @@ import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { HiOutlineUser, HiBriefcase, HiOfficeBuilding, HiSparkles, HiDeviceMobile, HiKey, HiChevronDown, HiChevronUp, HiCheck, HiX, HiCreditCard } from 'react-icons/hi';
 import clsx from 'clsx';
-import { collection, getDocs, orderBy, query } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { db } from '../../lib/firebase';
@@ -68,22 +68,25 @@ export default function SignUpPage() {
     async function loadProfessions() {
       setProfessionsLoading(true);
       try {
-        const professionsQuery = query(collection(db, 'professions'), orderBy('id', 'asc'));
-        const snapshot = await getDocs(professionsQuery);
+        const professionsSnap = await getDoc(doc(db, 'metadata', 'professions'));
 
         if (!isMounted) return;
 
-        const items = snapshot.docs.map((doc) => {
-          const data = doc.data();
-          const label = data[locale] || data.en || data.he || data.ar || doc.id;
-          const value = data.en || label;
+        const items = (professionsSnap.data()?.items || [])
+          .map((item, index) => {
+            const label = item[locale] || item.en || item.he || item.ar || item.logo || `Profession ${index + 1}`;
+            const value = item.en || item.logo || label;
 
-          return {
-            id: doc.id,
-            label,
-            value,
-          };
-        });
+            return {
+              id: String(item.id ?? index),
+              label,
+              value,
+              bookingMode: item.bookingMode || '',
+              color: item.color || '#1976D2',
+              logo: item.logo || '',
+            };
+          })
+          .sort((a, b) => Number(a.id) - Number(b.id));
 
         setProfessionOptions(items);
       } catch (error) {
@@ -160,6 +163,12 @@ export default function SignUpPage() {
 
   async function handleSendCode(e) {
     e.preventDefault();
+
+    if (!phoneNumber.trim()) {
+      toast.error('Please enter your phone number.');
+      return;
+    }
+
     setLoading(true);
     try {
       const isAvailable = await checkPhoneAvailability(phoneNumber);
@@ -181,6 +190,12 @@ export default function SignUpPage() {
 
   async function handleVerifyAndCreate(e) {
     e.preventDefault();
+
+    if (verificationCode.length < 6) {
+      toast.error('Please enter the 6-digit verification code.');
+      return;
+    }
+
     setLoading(true);
     try {
       await confirmPhoneVerification(verificationCode);
@@ -249,7 +264,7 @@ export default function SignUpPage() {
         },
       });
 
-      toast.success('Subscription activated. Welcome to HireHub Pro!');
+      toast.success('Subscription activated. Welcome to Hiro Pro!');
       router.push('/');
     } catch (err) {
       toast.error(err.message);
@@ -265,7 +280,7 @@ export default function SignUpPage() {
 
   return (
     <>
-      <Head><title>HireHub – Sign Up</title></Head>
+      <Head><title>Hiro – Sign Up</title></Head>
 
       <div className="min-h-screen overflow-hidden bg-slate-50" dir={dir}>
         <div className="absolute inset-0 bg-mesh opacity-80" />
@@ -276,7 +291,7 @@ export default function SignUpPage() {
           <section className="animate-slide-right text-center lg:text-left">
             <div className="inline-flex items-center gap-2 rounded-full border border-primary/10 bg-white/80 px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] text-primary shadow-sm">
               <HiSparkles className="h-4 w-4" />
-              Join HireHub
+              Join Hiro
             </div>
 
             <h1 className="mt-5 font-display text-4xl font-extrabold leading-tight text-gray-950 sm:text-5xl">
@@ -505,7 +520,7 @@ export default function SignUpPage() {
                         />
                       </div>
                     </div>
-                    <button type="submit" disabled={loading || !phoneNumber.trim()} className="btn-primary w-full">
+                    <button type="submit" disabled={loading} className="btn-primary w-full">
                       {loading ? t.common.loading : t.auth.sendOtp}
                     </button>
                   </>
@@ -534,7 +549,7 @@ export default function SignUpPage() {
                       </div>
                     </div>
 
-                    <button type="submit" disabled={loading || verificationCode.length < 6} className="btn-primary w-full">
+                    <button type="submit" disabled={loading} className="btn-primary w-full">
                       {loading ? t.common.loading : t.auth.signUp}
                     </button>
 
@@ -647,4 +662,3 @@ export default function SignUpPage() {
     </>
   );
 }
-
