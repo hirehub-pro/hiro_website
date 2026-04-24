@@ -1,0 +1,51 @@
+# Settings for Backend (on Cloud Run).
+# See https://firebase.google.com/docs/app-hosting/configure#cloud-run
+runConfig:
+  minInstances: 0
+  # maxInstances: 100
+  # concurrency: 80
+  # cpu: 1
+  # memoryMiB: 512
+
+# Environment variables and secrets.
+env:
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: AIzaSyBL55dWOh2eIBDooZ0EwzXegyAMEiWMuNE
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: hire-hub-fe6c4.firebaseapp.com
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_DATABASE_URL
+    value: https://hire-hub-fe6c4-default-rtdb.firebaseio.com
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: hire-hub-fe6c4
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: hire-hub-fe6c4.firebasestorage.app
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: 29257648718
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: 1:29257648718:web:d94f398576623fbdb8111f
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
+    value: G-5YF7DTLCNM
+    availability:
+      - BUILD
+      - RUNTIME

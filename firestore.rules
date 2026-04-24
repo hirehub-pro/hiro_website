@@ -1,0 +1,109 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+  
+        match /{allSubcollections=**} {
+        allow read: if true;
+        allow write: if request.auth != null;
+      }
+  
+    match /metadata/analytics/professions/{profession} {
+  allow read: if true;
+  allow write: if request.auth != null;
+}
+    // Allow users to access chat rooms they are part of
+    match /chat_rooms/{roomId} {
+      allow get: if request.auth != null; 
+      allow create: if request.auth != null;
+      allow list, update: if request.auth != null && request.auth.uid in resource.data.users;
+
+      // Allow access to messages within those rooms
+      match /messages/{messageId} {
+        allow read, write: if request.auth != null;
+      }
+    }
+    // --- HELPERS ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // --- USERS & SUB-COLLECTIONS ---
+    match /users/{userId} {
+      // Allow everyone to see profiles, but only the owner can edit the main doc
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId);
+
+      // FIXED: Notifications sub-collection
+      match /notifications/{notificationId} {
+        // This allows user A to write a notification to user B
+        allow create: if isSignedIn(); 
+        // Only the recipient can read or manage their own notifications
+        allow read, update, delete: if isOwner(userId);
+      }
+
+      // Projects
+      match /projects/{projectId} {
+        allow read: if true;
+        allow write: if isOwner(userId);
+      }
+
+      // Reviews & Comments
+      match /reviews/{id} {
+        allow read: if true;
+        allow create: if isSignedIn();
+        allow delete: if isSignedIn() && (request.auth.uid == resource.data.userId || isOwner(userId));
+      }
+      
+      match /comments/{id} {
+        allow read: if true;
+        allow create: if isSignedIn();
+        allow delete: if isSignedIn() && (request.auth.uid == resource.data.userId || isOwner(userId));
+      }
+    }
+
+    // --- SCHEDULES & APPOINTMENTS ---
+    match /schedules/{workerId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isOwner(workerId);
+    }
+
+    match /appointments/{userId}/{allPaths=**} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // --- BLOG & COMMUNITY ---
+    match /blog_posts/{postId} {
+  allow read: if true;
+  allow create: if isSignedIn();
+  // עדכון: מאפשר לכותב לערוך הכל, ולאחרים לעדכן רק לייקים
+  allow update: if isSignedIn() && (
+    request.auth.uid == resource.data.authorUid || 
+    (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'likedBy']))
+  );
+  
+  // מחיקה: רק הכותב יכול למחוק
+  allow delete: if isSignedIn() && request.auth.uid == resource.data.authorUid;
+
+      match /blog_comments/{commentId} {
+        allow read: if true;
+        allow create: if isSignedIn();
+        allow delete: if isSignedIn() && (
+          request.auth.uid == resource.data.authorUid || 
+          request.auth.uid == get(/databases/$(database)/documents/blog_posts/$(postId)).data.authorUid
+        );
+      }
+    }
+
+    // --- SYSTEM ---
+    match /reports/{reportId} {
+      allow create: if isSignedIn();
+    }
+    match /metadata/stats {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "firestore": {
+    "database": "(default)",
+    "location": "me-west1",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "apphosting": {
+    "backendId": "hirehub",
+    "rootDir": "/",
+    "ignore": [
+      "node_modules",
+      ".git",
+      "firebase-debug.log",
+      "firebase-debug.*.log",
+      "functions"
+    ]
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
+  "auth": {
+    "providers": {}
+  }
+}
