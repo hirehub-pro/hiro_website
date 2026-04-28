@@ -21,6 +21,7 @@ export default function Header() {
     { href: '/search',    label: t.nav.search },
     ...(isWorker ? [{ href: '/worker/dashboard', label: t.nav.dashboard }] : []),
     { href: '/community', label: t.nav.blog },
+    { href: '/contact',   label: t.nav.contact },
     { href: '/messages',  label: t.nav.messages },
     ...(isAdmin ? [{ href: '/admin', label: 'Admin' }] : []),
   ];

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { HiHome, HiSearch, HiBookOpen, HiChat, HiUser, HiChartBar } from 'react-icons/hi';
+import { HiHome, HiSearch, HiBookOpen, HiChat, HiUser, HiChartBar, HiMail } from 'react-icons/hi';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useAuth } from '../../contexts/AuthContext';
 import clsx from 'clsx';
@@ -13,6 +13,7 @@ export default function BottomNav() {
   const tabs = [
     { href: '/',          label: t.nav.profile, icon: HiUser },
     { href: '/messages',  label: t.nav.messages, icon: HiChat },
+    { href: '/contact',   label: t.nav.contact, icon: HiMail },
     ...(isWorker ? [{ href: '/worker/dashboard', label: t.nav.dashboard, icon: HiChartBar }] : []),
     { href: '/community', label: t.nav.blog, icon: HiBookOpen },
     { href: '/search',    label: t.nav.search, icon: HiSearch },

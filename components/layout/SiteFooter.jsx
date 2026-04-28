@@ -3,6 +3,7 @@ import { FiFacebook, FiX } from 'react-icons/fi';
 import { FaGooglePlay, FaApple } from 'react-icons/fa';
 
 const legalLinks = [
+  { href: '/contact', label: 'Contact' },
   { href: 'https://hire-hub-fe6c4.web.app/terms-of-service', label: 'Terms of use' },
   { href: 'https://hire-hub-fe6c4.web.app/privacy-policy', label: 'Privacy' },
   { href: 'https://hire-hub-fe6c4.web.app/privacy-policy', label: 'Cookie preferences' },
@@ -93,6 +94,20 @@ export default function SiteFooter() {
 
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
               {legalLinks.map(function (item) {
+                const isInternal = item.href.startsWith('/');
+
+                if (isInternal) {
+                  return (
+                    <Link
+                      key={item.label}
+                      href={item.href}
+                      className="text-sm font-semibold text-blue-50/80 transition hover:text-white"
+                    >
+                      {item.label}
+                    </Link>
+                  );
+                }
+
                 return (
                   <a
                     key={item.label}

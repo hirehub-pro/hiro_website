@@ -1,22 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
-import { HiChat, HiPaperAirplane, HiSearch, HiUserCircle } from 'react-icons/hi';
+import { HiBell, HiChat, HiPaperAirplane, HiSearch, HiUserCircle } from 'react-icons/hi';
 import {
   FieldPath,
   addDoc,
   collection,
   doc,
+  getDocs,
   increment,
+  limit,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { registerForPushNotifications } from '../lib/notifications';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 
@@ -48,38 +53,57 @@ function getRoomName(room, currentUid) {
 }
 
 export default function MessagesPage() {
-  const { user } = useAuth();
+  const router = useRouter();
+  const { user, profile } = useAuth();
   const { t, dir } = useLanguage();
+  const supportChatHref = '/messages?support=admin';
+  const signInHref = `/auth/signin?next=${encodeURIComponent(supportChatHref)}`;
   const [rooms, setRooms] = useState([]);
   const [messages, setMessages] = useState([]);
   const [selectedRoomId, setSelectedRoomId] = useState('');
+  const [activeRoomId, setActiveRoomId] = useState('');
   const [search, setSearch] = useState('');
   const [draft, setDraft] = useState('');
   const [roomsLoading, setRoomsLoading] = useState(true);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [enablingPush, setEnablingPush] = useState(false);
+  const [supportRoomLoading, setSupportRoomLoading] = useState(false);
+  const [pendingSupportRoom, setPendingSupportRoom] = useState(null);
   const messagesEndRef = useRef(null);
 
+  const roomItems = useMemo(() => {
+    if (!pendingSupportRoom) return rooms;
+    if (rooms.some((room) => room.id === pendingSupportRoom.id)) return rooms;
+    return [pendingSupportRoom, ...rooms];
+  }, [pendingSupportRoom, rooms]);
+
   const selectedRoom = useMemo(
-    () => rooms.find((room) => room.id === selectedRoomId) || null,
-    [rooms, selectedRoomId]
+    () => roomItems.find((room) => room.id === selectedRoomId) || null,
+    [roomItems, selectedRoomId]
+  );
+  const activeRoom = useMemo(
+    () => roomItems.find((room) => room.id === activeRoomId) || null,
+    [activeRoomId, roomItems]
   );
 
   const filteredRooms = useMemo(() => {
     const searchValue = search.trim().toLowerCase();
-    if (!searchValue) return rooms;
+    if (!searchValue) return roomItems;
 
-    return rooms.filter((room) => (
+    return roomItems.filter((room) => (
       getRoomName(room, user?.uid).toLowerCase().includes(searchValue) ||
       String(room.lastMessage || '').toLowerCase().includes(searchValue)
     ));
-  }, [rooms, search, user?.uid]);
+  }, [roomItems, search, user?.uid]);
 
   useEffect(() => {
     if (!user) {
       setRooms([]);
       setMessages([]);
       setSelectedRoomId('');
+      setActiveRoomId('');
+      setPendingSupportRoom(null);
       setRoomsLoading(false);
       return undefined;
     }
@@ -96,12 +120,40 @@ export default function MessagesPage() {
         const nextRooms = snapshot.docs
           .map((roomDoc) => ({ id: roomDoc.id, ...roomDoc.data() }))
           .sort((a, b) => toMillis(b.lastTimestamp) - toMillis(a.lastTimestamp));
+        const mergedRooms = pendingSupportRoom && !nextRooms.some((room) => room.id === pendingSupportRoom.id)
+          ? [pendingSupportRoom, ...nextRooms]
+          : nextRooms;
 
         setRooms(nextRooms);
         setRoomsLoading(false);
 
+        if (pendingSupportRoom && nextRooms.some((room) => room.id === pendingSupportRoom.id)) {
+          setPendingSupportRoom(null);
+        }
+
+        const requestedRoomId = typeof router.query.roomId === 'string' ? router.query.roomId : '';
+
         setSelectedRoomId((currentRoomId) => {
-          if (currentRoomId && nextRooms.some((room) => room.id === currentRoomId)) {
+          if (requestedRoomId && mergedRooms.some((room) => room.id === requestedRoomId)) {
+            return requestedRoomId;
+          }
+          if (currentRoomId && mergedRooms.some((room) => room.id === currentRoomId)) {
+            return currentRoomId;
+          }
+          if (currentRoomId) {
+            return currentRoomId;
+          }
+          return nextRooms[0]?.id || '';
+        });
+
+        setActiveRoomId((currentRoomId) => {
+          if (requestedRoomId && mergedRooms.some((room) => room.id === requestedRoomId)) {
+            return requestedRoomId;
+          }
+          if (currentRoomId && mergedRooms.some((room) => room.id === currentRoomId)) {
+            return currentRoomId;
+          }
+          if (currentRoomId) {
             return currentRoomId;
           }
           return nextRooms[0]?.id || '';
@@ -112,17 +164,17 @@ export default function MessagesPage() {
         toast.error(error.message || t.common.error);
       }
     );
-  }, [t.common.error, user]);
+  }, [pendingSupportRoom, router.query.roomId, t.common.error, user]);
 
   useEffect(() => {
-    if (!user || !selectedRoomId) {
+    if (!user || !activeRoomId) {
       setMessages([]);
       return undefined;
     }
 
     setMessagesLoading(true);
     const messagesQuery = query(
-      collection(db, 'chat_rooms', selectedRoomId, 'messages'),
+      collection(db, 'chat_rooms', activeRoomId, 'messages'),
       orderBy('timestamp', 'asc')
     );
 
@@ -137,33 +189,120 @@ export default function MessagesPage() {
         toast.error(error.message || t.common.error);
       }
     );
-  }, [selectedRoomId, t.common.error, user]);
+  }, [activeRoomId, t.common.error, user]);
 
   useEffect(() => {
-    if (!user || !selectedRoomId) return;
+    if (!user || !activeRoomId) return;
 
     updateDoc(
-      doc(db, 'chat_rooms', selectedRoomId),
+      doc(db, 'chat_rooms', activeRoomId),
       new FieldPath('unreadCount', user.uid),
       0
     ).catch(() => {});
-  }, [selectedRoomId, user]);
+  }, [activeRoomId, user]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages]);
 
+  useEffect(() => {
+    if (!user) return undefined;
+    if (router.query.support !== 'admin') return undefined;
+
+    let cancelled = false;
+
+    async function ensureAdminSupportRoom() {
+      setSupportRoomLoading(true);
+
+      try {
+        const adminSnapshot = await getDocs(
+          query(collection(db, 'users'), where('role', '==', 'admin'), limit(1))
+        );
+
+        if (cancelled) return;
+
+        if (adminSnapshot.empty) {
+          toast.error('No admin account is available for chat yet.');
+          return;
+        }
+
+        const adminDoc = adminSnapshot.docs[0];
+        const adminUid = adminDoc.id;
+        const adminProfile = adminDoc.data();
+        const roomId = `support_${[user.uid, adminUid].sort().join('_')}`;
+        const roomDraft = {
+          id: roomId,
+          users: [user.uid, adminUid],
+          user_names: {
+            [user.uid]: profile?.name || user.displayName || 'User',
+            [adminUid]: adminProfile.name || t.messages.support,
+          },
+          userNames: {
+            [user.uid]: profile?.name || user.displayName || 'User',
+            [adminUid]: adminProfile.name || t.messages.support,
+          },
+          unreadCount: {
+            [user.uid]: 0,
+            [adminUid]: 0,
+          },
+          supportType: 'admin',
+          isSupportRoom: true,
+          lastMessage: '',
+          lastTimestamp: new Date(),
+        };
+
+        setPendingSupportRoom(roomDraft);
+        setSelectedRoomId(roomId);
+        setActiveRoomId(roomId);
+
+        await setDoc(
+          doc(db, 'chat_rooms', roomId),
+          {
+            ...roomDraft,
+            lastTimestamp: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        if (cancelled) return;
+
+        router.replace(
+          {
+            pathname: '/messages',
+            query: { roomId },
+          },
+          undefined,
+          { shallow: true }
+        );
+      } catch (error) {
+        if (!cancelled) {
+          toast.error(error.message || t.common.error);
+        }
+      } finally {
+        if (!cancelled) {
+          setSupportRoomLoading(false);
+        }
+      }
+    }
+
+    ensureAdminSupportRoom();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [profile?.name, router, router.query.support, t.common.error, t.messages.support, user]);
+
   async function handleSendMessage(e) {
     e.preventDefault();
 
     const text = draft.trim();
-    if (!user || !selectedRoom || !text) return;
+    if (!user || !activeRoom || !text) return;
 
-    const receiverId = getOtherUserId(selectedRoom, user.uid);
+    const receiverId = getOtherUserId(activeRoom, user.uid);
     setSending(true);
 
     try {
-      await addDoc(collection(db, 'chat_rooms', selectedRoom.id, 'messages'), {
+      const messageRef = await addDoc(collection(db, 'chat_rooms', activeRoom.id, 'messages'), {
         fileName: null,
         message: text,
         receiverId,
@@ -173,7 +312,7 @@ export default function MessagesPage() {
         url: null,
       });
 
-      const roomRef = doc(db, 'chat_rooms', selectedRoom.id);
+      const roomRef = doc(db, 'chat_rooms', activeRoom.id);
       if (receiverId && receiverId !== user.uid) {
         await updateDoc(
           roomRef,
@@ -198,11 +337,38 @@ export default function MessagesPage() {
         );
       }
 
+      if (receiverId && receiverId !== user.uid) {
+        await addDoc(collection(db, 'users', receiverId, 'notifications'), {
+          createdAt: serverTimestamp(),
+          fromUserId: user.uid,
+          fromUserName: profile?.name || user.displayName || 'Someone',
+          message: text,
+          messageId: messageRef.id,
+          read: false,
+          roomId: activeRoom.id,
+          title: 'New message',
+          type: 'message',
+          url: `/messages?roomId=${encodeURIComponent(activeRoom.id)}`,
+        });
+      }
+
       setDraft('');
     } catch (error) {
       toast.error(error.message || t.common.error);
     } finally {
       setSending(false);
+    }
+  }
+
+  async function handleEnablePushNotifications() {
+    setEnablingPush(true);
+    try {
+      await registerForPushNotifications(user);
+      toast.success('Push notifications enabled.');
+    } catch (error) {
+      toast.error(error.message || 'Could not enable notifications.');
+    } finally {
+      setEnablingPush(false);
     }
   }
 
@@ -213,6 +379,17 @@ export default function MessagesPage() {
       <div className="mx-auto max-w-6xl px-4 pb-24" dir={dir}>
         <div className="flex items-center justify-between py-5">
           <h1 className="text-2xl font-extrabold text-gray-900">{t.messages.title}</h1>
+          {user && (
+            <button
+              type="button"
+              onClick={handleEnablePushNotifications}
+              disabled={enablingPush}
+              className="btn-ghost flex items-center gap-2 rounded-2xl px-4 py-2 text-sm"
+            >
+              <HiBell className="h-5 w-5" />
+              <span className="hidden sm:inline">{enablingPush ? t.common.loading : 'Enable push'}</span>
+            </button>
+          )}
         </div>
 
         {!user ? (
@@ -223,7 +400,7 @@ export default function MessagesPage() {
             <p className="mb-1 font-medium text-gray-500">{t.messages.noMessages}</p>
             <p className="mb-6 text-sm text-gray-400">{t.messages.yourMessages}</p>
             <Link
-              href="/auth/signin"
+              href={signInHref}
               className="rounded-2xl bg-primary px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-primary-dark"
             >
               {t.auth.signIn}
@@ -252,6 +429,12 @@ export default function MessagesPage() {
                       <div key={item} className="h-16 rounded-2xl bg-gray-100" />
                     ))}
                   </div>
+                ) : supportRoomLoading && roomItems.length === 0 ? (
+                  <div className="space-y-3 p-4">
+                    {[0, 1, 2].map((item) => (
+                      <div key={item} className="h-16 rounded-2xl bg-gray-100" />
+                    ))}
+                  </div>
                 ) : filteredRooms.length === 0 ? (
                   <div className="px-6 py-14 text-center">
                     <HiChat className="mx-auto h-10 w-10 text-gray-300" />
@@ -266,9 +449,12 @@ export default function MessagesPage() {
                       <button
                         key={room.id}
                         type="button"
-                        onClick={() => setSelectedRoomId(room.id)}
+                        onClick={() => {
+                          setSelectedRoomId(room.id);
+                          setActiveRoomId(room.id);
+                        }}
                         className={`flex w-full items-center gap-3 border-b border-gray-50 px-4 py-4 text-left transition-colors ${
-                          active ? 'bg-primary-50' : 'hover:bg-gray-50'
+                          room.id === activeRoomId ? 'bg-primary-50' : 'hover:bg-gray-50'
                         }`}
                       >
                         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gray-100">
@@ -296,15 +482,15 @@ export default function MessagesPage() {
             </aside>
 
             <section className="flex min-h-[520px] flex-col">
-              {selectedRoom ? (
+              {activeRoom ? (
                 <>
                   <div className="flex items-center gap-3 border-b border-gray-100 px-5 py-4">
                     <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary-50">
                       <HiUserCircle className="h-8 w-8 text-primary" />
                     </div>
                     <div className="min-w-0">
-                      <p className="truncate font-bold text-gray-900">{getRoomName(selectedRoom, user.uid)}</p>
-                      <p className="text-xs text-gray-400">{selectedRoom.lastMessage || 'Conversation'}</p>
+                      <p className="truncate font-bold text-gray-900">{getRoomName(activeRoom, user.uid)}</p>
+                      <p className="text-xs text-gray-400">{activeRoom.lastMessage || 'Conversation'}</p>
                     </div>
                   </div>
 

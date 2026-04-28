@@ -14,10 +14,10 @@ SignInPage.getLayout = (page) => page;
 
 export default function SignInPage() {
   const {
-    signInAsGuest,
     sendPhoneVerification,
     confirmPhoneVerification,
     resetPhoneVerification,
+    signInAsGuest,
   } = useAuth();
   const { t, dir } = useLanguage();
   const router = useRouter();
@@ -30,6 +30,7 @@ export default function SignInPage() {
   const [forceMobileLayout, setForceMobileLayout] = useState(false);
   const appStoreUrl = '#';
   const googlePlayUrl = '#';
+  const nextUrl = typeof router.query.next === 'string' ? router.query.next : '/';
 
   useEffect(() => {
     resetPhoneVerification();
@@ -88,7 +89,7 @@ export default function SignInPage() {
     try {
       await confirmPhoneVerification(verificationCode);
       toast.success(t.auth.signIn);
-      router.push('/');
+      router.push(nextUrl);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -105,9 +106,11 @@ export default function SignInPage() {
 
   async function handleGuestSignIn() {
     setLoading(true);
+
     try {
       await signInAsGuest();
-      router.push('/');
+      toast.success(t.auth.continueAsGuest);
+      router.push(nextUrl);
     } catch (err) {
       toast.error(err.message);
     } finally {
