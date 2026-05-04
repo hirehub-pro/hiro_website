@@ -13,12 +13,27 @@ exports.sendNotificationPush = onDocumentCreated('users/{userId}/notifications/{
     notification,
   });
 
-  const userSnap = await admin.firestore().doc(`users/${event.params.userId}`).get();
+  const userRef = admin.firestore().doc(`users/${event.params.userId}`);
+  const deviceTokensRef = admin.firestore().collection(`users/${event.params.userId}/deviceTokens`);
+  const [userSnap, deviceTokensSnap] = await Promise.all([
+    userRef.get(),
+    deviceTokensRef.get(),
+  ]);
+
   const userData = userSnap.data() || {};
-  const tokens = Array.from(new Set([
+  const docTokens = [
     ...(Array.isArray(userData.fcmTokens) ? userData.fcmTokens : []),
     userData.fcmToken,
-  ].filter(Boolean)));
+  ].filter(Boolean);
+
+  const subcollectionTokens = deviceTokensSnap.docs
+    .map((tokenDoc) => tokenDoc.data()?.token)
+    .filter(Boolean);
+
+  const tokens = Array.from(new Set([
+    ...docTokens,
+    ...subcollectionTokens,
+  ]));
 
   console.log('tokens found', { tokens });
 

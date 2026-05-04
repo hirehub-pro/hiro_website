@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { HiCheckCircle, HiLightningBolt, HiShieldCheck, HiSparkles } from 'react-icons/hi';
 import SearchBar from '../components/home/SearchBar';
 import CategoryGrid from '../components/home/CategoryGrid';
-import TopRatedWorkers from '../components/home/TopRatedWorkers';
+import HomeShowcaseSections from '../components/home/HomeShowcaseSections';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 
@@ -120,7 +120,7 @@ export default function HomePage() {
 
       <div className="mx-auto max-w-7xl space-y-8 px-0 pb-28 md:pb-14">
         <CategoryGrid />
-        <TopRatedWorkers />
+        <HomeShowcaseSections />
       </div>
     </>
   );

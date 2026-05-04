@@ -21,7 +21,8 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { registerForPushNotifications } from '../lib/notifications';
+import { createMessageNotification } from '../lib/chat';
+import { registerForPushNotifications, syncGrantedPushNotifications } from '../lib/notifications';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 
@@ -202,6 +203,12 @@ export default function MessagesPage() {
   }, [activeRoomId, user]);
 
   useEffect(() => {
+    if (!user) return;
+
+    syncGrantedPushNotifications(user).catch(() => {});
+  }, [user]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages]);
 
@@ -338,17 +345,13 @@ export default function MessagesPage() {
       }
 
       if (receiverId && receiverId !== user.uid) {
-        await addDoc(collection(db, 'users', receiverId, 'notifications'), {
-          createdAt: serverTimestamp(),
-          fromUserId: user.uid,
-          fromUserName: profile?.name || user.displayName || 'Someone',
-          message: text,
+        await createMessageNotification({
+          recipientUserId: receiverId,
+          senderUserId: user.uid,
+          senderName: profile?.name || user.displayName || 'Someone',
           messageId: messageRef.id,
-          read: false,
           roomId: activeRoom.id,
-          title: 'New message',
-          type: 'message',
-          url: `/messages?roomId=${encodeURIComponent(activeRoom.id)}`,
+          text,
         });
       }
 

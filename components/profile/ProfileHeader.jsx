@@ -18,7 +18,7 @@ function StatPill({ value, label }) {
   );
 }
 
-export default function ProfileHeader({ profile }) {
+export default function ProfileHeader({ profile, showContactActions = true }) {
   const { t } = useLanguage();
 
   const avatarUrl =
@@ -149,19 +149,21 @@ export default function ProfileHeader({ profile }) {
           )}
 
           {/* CTA buttons */}
-          <div className="flex gap-3 mt-5 w-full max-w-xs">
-            <a
-              href={profile.phone ? `tel:${profile.phone}` : '#'}
-              className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-primary to-indigo-600 text-white py-3 rounded-2xl font-bold text-sm hover:opacity-90 active:scale-95 transition-all shadow-glow"
-            >
-              <FiPhone className="w-4 h-4" />
-              {t.profile.contact}
-            </a>
-            <button className="flex-1 flex items-center justify-center gap-2 bg-white border-2 border-primary/20 text-primary py-3 rounded-2xl font-bold text-sm hover:bg-primary/5 active:scale-95 transition-all shadow-sm">
-              <FiMessageSquare className="w-4 h-4" />
-              {t.profile.message}
-            </button>
-          </div>
+          {showContactActions && (
+            <div className="flex gap-3 mt-5 w-full max-w-xs">
+              <a
+                href={profile.phone ? `tel:${profile.phone}` : '#'}
+                className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-primary to-indigo-600 text-white py-3 rounded-2xl font-bold text-sm hover:opacity-90 active:scale-95 transition-all shadow-glow"
+              >
+                <FiPhone className="w-4 h-4" />
+                {t.profile.contact}
+              </a>
+              <button className="flex-1 flex items-center justify-center gap-2 bg-white border-2 border-primary/20 text-primary py-3 rounded-2xl font-bold text-sm hover:bg-primary/5 active:scale-95 transition-all shadow-sm">
+                <FiMessageSquare className="w-4 h-4" />
+                {t.profile.message}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

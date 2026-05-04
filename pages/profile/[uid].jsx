@@ -357,6 +357,10 @@ export default function ProfilePage() {
   }).format(calendarMonth);
 
   const canEditSchedule = user?.uid === uid && profile?.role === 'worker';
+  const isOwnProfile = user?.uid === profile?.uid;
+  const isSubscribedWorker =
+    profile?.role === 'worker' &&
+    (profile?.isSubscribed || profile?.subscriptionStatus === 'active');
 
   const availableDateSet = new Set(
     (workerSchedule?.availableDates || [])
@@ -453,7 +457,10 @@ export default function ProfilePage() {
         <title>{profile.name} – Hiro</title>
       </Head>
 
-      <ProfileHeader profile={profile} />
+      <ProfileHeader
+        profile={profile}
+        showContactActions={!isOwnProfile && isSubscribedWorker}
+      />
 
       <div className="mt-4 border-t border-gray-100" />
 

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import {
-  HiSearch, HiAdjustments, HiLocationMarker, HiX,
+  HiLocationMarker, HiSearch, HiSelector, HiSwitchHorizontal, HiX,
   HiSparkles,
 } from 'react-icons/hi';
 import {
@@ -18,12 +18,14 @@ import {
   FaTruck,
   FaWrench,
 } from 'react-icons/fa';
+import * as MdIcons from 'react-icons/md';
 import clsx from 'clsx';
 import { doc, getDoc } from 'firebase/firestore';
 import { searchWorkers } from '../lib/firestore';
 import { db } from '../lib/firebase';
 import WorkerCard from '../components/workers/WorkerCard';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
 
 function getProfessionLabel(profession, locale) {
@@ -55,12 +57,22 @@ const professionLogoIcons = {
 };
 
 function getProfessionIcon(profession) {
-  const logoKey = String(profession.logo || profession.en || '').trim().toLowerCase().replace(/\s+/g, '_');
+  const logoKey = String(profession.logo || profession.en || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+
+  const materialIcon = getMaterialIconByName(logoKey);
+  if (materialIcon) {
+    return materialIcon;
+  }
+
   return professionLogoIcons[logoKey] || FaTools;
 }
 
 export default function SearchPage() {
   const { t, dir, locale } = useLanguage();
+  const { profile } = useAuth();
   const router     = useRouter();
   const inputRef   = useRef(null);
 
@@ -70,10 +82,22 @@ export default function SearchPage() {
   const [professionsLoading, setProfessionsLoading] = useState(true);
   const [loading, setLoading]       = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
-  const [radius, setRadius]         = useState(50);
   const [userLat, setUserLat]       = useState(null);
   const [userLng, setUserLng]       = useState(null);
+  const [sortBy, setSortBy]         = useState('rating');
+  const [filterByWorkRadius, setFilterByWorkRadius] = useState(false);
+
+  useEffect(() => {
+    const preferredLat =
+      typeof profile?.activeSearchLat === 'number' ? profile.activeSearchLat : profile?.lat;
+    const preferredLng =
+      typeof profile?.activeSearchLng === 'number' ? profile.activeSearchLng : profile?.lng;
+
+    if (typeof preferredLat === 'number' && typeof preferredLng === 'number') {
+      setUserLat(preferredLat);
+      setUserLng(preferredLng);
+    }
+  }, [profile?.activeSearchLat, profile?.activeSearchLng, profile?.lat, profile?.lng]);
 
   useEffect(() => {
     let isMounted = true;
@@ -115,18 +139,36 @@ export default function SearchPage() {
   useEffect(() => {
     if (router.query.q) {
       setQuery(router.query.q);
-      doSearch(router.query.q, userLat, userLng, radius);
+      doSearch(router.query.q, userLat, userLng);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router.query.q]);
 
-  async function doSearch(profession, lat, lng, rad) {
+  useEffect(() => {
+    if (!hasSearched || !String(query || '').trim()) return;
+    if (typeof userLat !== 'number' || typeof userLng !== 'number') return;
+
+    doSearch(query, userLat, userLng);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userLat, userLng]);
+
+  async function doSearch(profession, lat, lng) {
     if (!String(profession || '').trim()) return;
     setLoading(true);
     setHasSearched(true);
     try {
-      const results = await searchWorkers({ profession, lat, lng, radiusKm: rad });
-      setWorkers(results);
+      const results = await searchWorkers({ profession });
+      const resultsWithDistance = results.map((worker) => ({
+        ...worker,
+        distanceKm:
+          typeof lat === 'number' &&
+          typeof lng === 'number' &&
+          typeof worker.lat === 'number' &&
+          typeof worker.lng === 'number'
+            ? haversineKm(lat, lng, worker.lat, worker.lng)
+            : null,
+      }));
+      setWorkers(resultsWithDistance);
     } catch (err) {
       toast.error(t.common.error);
       console.error(err);
@@ -137,13 +179,13 @@ export default function SearchPage() {
 
   function handleSubmit(e) {
     e.preventDefault();
-    doSearch(query, userLat, userLng, radius);
+    doSearch(query, userLat, userLng);
   }
 
   function chooseProfession(profession) {
     const value = profession.value || profession.en || getProfessionLabel(profession, locale);
     setQuery(value);
-    doSearch(value, userLat, userLng, radius);
+    doSearch(value, userLat, userLng);
   }
 
   function clearQuery() {
@@ -152,7 +194,7 @@ export default function SearchPage() {
     setHasSearched(false);
     inputRef.current?.focus();
   }
-
+ 
   function useLocation() {
     if (!navigator.geolocation) {
       toast.error('Geolocation not supported');
@@ -163,13 +205,17 @@ export default function SearchPage() {
         setUserLat(pos.coords.latitude);
         setUserLng(pos.coords.longitude);
         toast.success('Location acquired!');
-        doSearch(query, pos.coords.latitude, pos.coords.longitude, radius);
+        doSearch(query, pos.coords.latitude, pos.coords.longitude);
       },
       () => toast.error('Could not get location')
     );
   }
 
-  const radiusPresets = [10, 25, 50, 100];
+  const sortOptions = [
+    { value: 'rating', label: t.search.sortRating },
+    { value: 'nearest', label: t.search.sortNearest },
+    { value: 'name', label: t.search.sortName },
+  ];
   const filteredProfessions = professions.filter((profession) => {
     const searchValue = query.trim().toLowerCase();
     if (!searchValue || hasSearched) return true;
@@ -183,6 +229,14 @@ export default function SearchPage() {
       profession.logo,
     ].some((value) => String(value || '').toLowerCase().includes(searchValue));
   });
+  const sortedWorkers = sortWorkers(workers, sortBy);
+  const displayedWorkers = filterByWorkRadius
+    ? sortedWorkers.filter((worker) => (
+        typeof worker.distanceKm === 'number' &&
+        typeof worker.workRadius === 'number' &&
+        worker.distanceKm * 1000 <= worker.workRadius
+      ))
+    : sortedWorkers;
 
   return (
     <>
@@ -217,25 +271,20 @@ export default function SearchPage() {
               )}
             </div>
 
-            {/* Filter toggle */}
             <button
               type="button"
-              onClick={() => setShowFilters((v) => !v)}
+              onClick={useLocation}
               className={clsx(
-                'flex h-12 items-center gap-1.5 rounded-2xl border px-4 text-sm font-semibold transition-colors',
-                showFilters
-                  ? 'border-primary bg-primary-50 text-primary'
-                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                'flex h-12 w-12 items-center justify-center rounded-2xl border transition-colors',
+                userLat
+                  ? 'border-green-200 bg-green-50 text-green-600'
+                  : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:text-primary'
               )}
+              aria-label={t.search.useLocation}
             >
-              <HiAdjustments className="h-4 w-4" />
-              <span className="hidden sm:inline">Filters</span>
-              {userLat && (
-                <span className="ml-1 h-2 w-2 rounded-full bg-green-500" />
-              )}
+              <HiLocationMarker className="h-5 w-5" />
             </button>
 
-            {/* Search submit */}
             <button
               type="submit"
               disabled={!query.trim()}
@@ -246,96 +295,100 @@ export default function SearchPage() {
             </button>
           </form>
 
-          {/* ── Filter panel ── */}
-          {showFilters && (
-            <div className="mt-3 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-xl">
-              <div className="border-b border-gray-50 px-4 py-3">
-                <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Filters</p>
+          <div className="mt-4 rounded-[30px] border border-amber-200/80 bg-gradient-to-r from-amber-50 via-white to-amber-50/70 p-4 shadow-[0_20px_60px_-30px_rgba(245,158,11,0.45)]">
+            <div className="flex items-center gap-4">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[22px] bg-amber-100 text-amber-500 shadow-inner shadow-amber-200/70">
+                <HiSwitchHorizontal className="h-7 w-7" />
               </div>
-              <div className="px-4 py-4 space-y-4">
-                {/* Radius presets */}
-                <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <label className="text-sm font-semibold text-gray-700">
-                      {t.search.radius}
-                    </label>
-                    <span className="rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-bold text-primary">
-                      {radius} km
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {radiusPresets.map((r) => (
-                      <button
-                        key={r}
-                        type="button"
-                        onClick={() => setRadius(r)}
-                        className={clsx(
-                          'rounded-xl px-3 py-1.5 text-sm font-semibold transition-colors',
-                          radius === r
-                            ? 'bg-primary text-white shadow-glow-sm'
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                        )}
-                      >
-                        {r} km
-                      </button>
-                    ))}
-                    <span className="self-center text-xs text-gray-400">or</span>
-                    <input
-                      type="range"
-                      min={5}
-                      max={200}
-                      step={5}
-                      value={radius}
-                      onChange={(e) => setRadius(Number(e.target.value))}
-                      className="flex-1 accent-primary"
-                      style={{ minWidth: 80 }}
-                    />
-                  </div>
-                </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-lg font-extrabold tracking-tight text-slate-900">
+                  {t.search.workRadiusTitle}
+                </p>
+                <p className="mt-1 text-sm text-slate-500">
+                  {userLat
+                    ? t.search.workRadiusSubtitle
+                    : t.search.workRadiusNeedsLocation}
+                </p>
+                {userLat && (
+                  <p className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] text-amber-500">
+                    {filterByWorkRadius ? t.search.workRadiusOn : t.search.workRadiusOff}
+                  </p>
+                )}
+              </div>
 
-                {/* Location */}
-                <div className="flex items-center justify-between rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-3">
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <HiLocationMarker className={clsx('h-4 w-4', userLat ? 'text-green-500' : 'text-gray-400')} />
-                    {userLat ? (
-                      <span className="font-semibold text-green-700">Location active — searching nearby</span>
-                    ) : (
-                      <span>Enable location for nearby results</span>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={useLocation}
-                    className={clsx(
-                      'rounded-xl px-3 py-1.5 text-xs font-bold transition-colors',
-                      userLat
-                        ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                        : 'bg-primary-50 text-primary hover:bg-primary-100'
-                    )}
-                  >
-                    {userLat ? 'Update' : t.search.useLocation}
-                  </button>
-                </div>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!userLat || !userLng) {
+                    toast.error(t.search.workRadiusEnableLocation);
+                    return;
+                  }
+                  setFilterByWorkRadius((current) => !current);
+                }}
+                className={clsx(
+                  'relative flex h-14 w-24 shrink-0 items-center rounded-full p-1.5 transition-all duration-300',
+                  filterByWorkRadius
+                    ? 'bg-gradient-to-r from-amber-300 to-amber-200 shadow-[0_10px_30px_-15px_rgba(245,158,11,0.9)]'
+                    : 'bg-slate-200/90'
+                )}
+                aria-pressed={filterByWorkRadius}
+                aria-label={t.search.workRadiusTitle}
+              >
+                <span
+                  className={clsx(
+                    'absolute h-11 w-11 rounded-full transition-all duration-300',
+                    filterByWorkRadius
+                      ? 'translate-x-10 bg-amber-400 shadow-lg shadow-amber-300/80'
+                      : 'translate-x-0 bg-white shadow-lg shadow-slate-300/70'
+                  )}
+                />
+              </button>
             </div>
-          )}
+          </div>
+
         </div>
 
         {/* Results count bar */}
         {hasSearched && !loading && (
-          <div className="border-t border-gray-100 bg-gray-50/80 px-4 py-2">
-            <div className="mx-auto max-w-3xl flex items-center gap-2">
-              <span className={clsx(
-                'rounded-full px-2.5 py-0.5 text-xs font-bold',
-                workers.length > 0 ? 'bg-primary text-white' : 'bg-gray-200 text-gray-500'
-              )}>
-                {workers.length}
-              </span>
-              <span className="text-xs text-gray-500 font-medium">
-                {workers.length === 1
+          <div className="border-t border-gray-100 bg-gray-50/80 px-4 py-3">
+            <div className="mx-auto flex max-w-3xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2">
+                <span className={clsx(
+                  'rounded-full px-2.5 py-0.5 text-xs font-bold',
+                  displayedWorkers.length > 0 ? 'bg-primary text-white' : 'bg-gray-200 text-gray-500'
+                )}>
+                  {displayedWorkers.length}
+                </span>
+                <span className="text-xs font-medium text-gray-500">
+                  {displayedWorkers.length === 1
                   ? `result for "${query}"`
                   : `results for "${query}"`}
-              </span>
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 rounded-[22px] border border-white/80 bg-white/80 p-1.5 shadow-sm shadow-slate-200/60 backdrop-blur">
+                <div className="flex items-center gap-1 rounded-2xl bg-slate-100/80 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                  <HiSelector className="h-4 w-4 text-primary" />
+                  {t.search.sort}
+                </div>
+                <div className="flex flex-1 flex-wrap items-center gap-1">
+                  {sortOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setSortBy(option.value)}
+                      className={clsx(
+                        'rounded-2xl px-3 py-2 text-xs font-semibold transition-all duration-200',
+                        sortBy === option.value
+                          ? 'bg-hero-gradient text-white shadow-glow-sm'
+                          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                      )}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -422,9 +475,9 @@ export default function SearchPage() {
         )}
 
         {/* Results list */}
-        {!loading && workers.length > 0 && (
+        {!loading && displayedWorkers.length > 0 && (
           <div className="space-y-3">
-            {workers.map((w, i) => (
+            {displayedWorkers.map((w, i) => (
               <div
                 key={w.uid}
                 className="animate-fade-up"
@@ -437,7 +490,7 @@ export default function SearchPage() {
         )}
 
         {/* Empty state — after search */}
-        {!loading && hasSearched && workers.length === 0 && (
+        {!loading && hasSearched && displayedWorkers.length === 0 && (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-[28px] bg-gray-100">
               <HiSearch className="h-10 w-10 text-gray-300" />
@@ -471,4 +524,84 @@ export default function SearchPage() {
       </div>
     </>
   );
+}
+
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function toRad(deg) {
+  return (deg * Math.PI) / 180;
+}
+
+const materialIconAliases = {
+  door_front_door: 'MdDoorFront',
+  locksmith: 'MdLockOpen',
+  paint_rounded: 'MdFormatPaint',
+  construction_rounded: 'MdConstruction',
+  plumbing_rounded: 'MdPlumbing',
+  engineering_outlined: 'MdEngineering',
+  woman: 'MdWoman',
+  man: 'MdMan',
+  chair: 'MdChair',
+};
+
+function getMaterialIconByName(name) {
+  if (!name) return null;
+
+  const aliasedName = materialIconAliases[name];
+  if (aliasedName && typeof MdIcons[aliasedName] === 'function') {
+    return MdIcons[aliasedName];
+  }
+
+  const generatedName = `Md${name
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('')}`;
+
+  return typeof MdIcons[generatedName] === 'function'
+    ? MdIcons[generatedName]
+    : null;
+}
+
+function sortWorkers(workers, sortBy) {
+  const items = [...workers];
+
+  if (sortBy === 'name') {
+    return items.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  }
+
+  if (sortBy === 'nearest') {
+    return items.sort((a, b) => {
+      const distanceA = typeof a.distanceKm === 'number' ? a.distanceKm : Number.POSITIVE_INFINITY;
+      const distanceB = typeof b.distanceKm === 'number' ? b.distanceKm : Number.POSITIVE_INFINITY;
+
+      if (distanceA !== distanceB) {
+        return distanceA - distanceB;
+      }
+
+      return (b.avgRating || 0) - (a.avgRating || 0);
+    });
+  }
+
+  return items.sort((a, b) => {
+    const ratingDiff = (b.avgRating || 0) - (a.avgRating || 0);
+    if (ratingDiff !== 0) {
+      return ratingDiff;
+    }
+
+    const reviewDiff = (b.reviewCount || 0) - (a.reviewCount || 0);
+    if (reviewDiff !== 0) {
+      return reviewDiff;
+    }
+
+    return String(a.name || '').localeCompare(String(b.name || ''));
+  });
 }

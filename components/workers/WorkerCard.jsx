@@ -47,6 +47,12 @@ export default function WorkerCard({ worker, compact = false }) {
           </p>
         )}
 
+        {typeof worker.distanceKm === 'number' && (
+          <p className="mt-2 text-sm font-semibold text-primary">
+            {formatDistance(worker.distanceKm)} away
+          </p>
+        )}
+
         <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-slate-100">
           <div className="h-full rounded-full bg-hero-gradient" style={{ width: `${Math.min(((worker.avgRating || 0) / 5) * 100, 100)}%` }} />
         </div>
@@ -79,6 +85,9 @@ export default function WorkerCard({ worker, compact = false }) {
         {(worker.town || worker.city) && (
           <p className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">{worker.town || worker.city}</p>
         )}
+        {typeof worker.distanceKm === 'number' && (
+          <p className="mt-1 text-sm font-semibold text-primary">{formatDistance(worker.distanceKm)} away</p>
+        )}
       </div>
 
       <div className="shrink-0 rounded-2xl bg-amber-50 px-3 py-2 text-amber-600">
@@ -91,4 +100,12 @@ export default function WorkerCard({ worker, compact = false }) {
       </div>
     </Link>
   );
+}
+
+function formatDistance(distanceKm) {
+  if (distanceKm < 1) {
+    return `${Math.round(distanceKm * 1000)} m`;
+  }
+
+  return `${distanceKm.toFixed(distanceKm < 10 ? 1 : 0)} km`;
 }

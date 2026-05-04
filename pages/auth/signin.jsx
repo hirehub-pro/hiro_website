@@ -17,7 +17,6 @@ export default function SignInPage() {
     sendPhoneVerification,
     confirmPhoneVerification,
     resetPhoneVerification,
-    signInAsGuest,
   } = useAuth();
   const { t, dir } = useLanguage();
   const router = useRouter();
@@ -108,9 +107,8 @@ export default function SignInPage() {
     setLoading(true);
 
     try {
-      await signInAsGuest();
       toast.success(t.auth.continueAsGuest);
-      router.push(nextUrl);
+      router.push('/');
     } catch (err) {
       toast.error(err.message);
     } finally {
