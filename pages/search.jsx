@@ -193,7 +193,7 @@ export default function SearchPage() {
     setWorkers([]);
     setHasSearched(false);
     inputRef.current?.focus();
-  }
+  } 
  
   function useLocation() {
     if (!navigator.geolocation) {

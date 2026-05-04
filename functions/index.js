@@ -48,10 +48,6 @@ exports.sendNotificationPush = onDocumentCreated('users/{userId}/notifications/{
 
   const response = await admin.messaging().sendEachForMulticast({
     tokens,
-    notification: {
-      title,
-      body,
-    },
     data: {
       title,
       body,

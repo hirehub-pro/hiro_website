@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import { HiBell, HiCheck, HiLocationMarker, HiRefresh, HiX } from 'react-icons/hi';
-import { FiUser, FiLogOut, FiMenu, FiX } from 'react-icons/fi';
+import { FiSettings, FiUser, FiLogOut, FiMenu, FiX } from 'react-icons/fi';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import Image from 'next/image';
@@ -40,7 +40,6 @@ export default function Header() {
   const navLinks = [
     { href: '/',          label: t.nav.home },
     { href: '/search',    label: t.nav.search },
-    ...(isWorker ? [{ href: '/worker/dashboard', label: t.nav.dashboard }] : []),
     { href: '/community', label: t.nav.blog },
     { href: '/messages',  label: t.nav.messages },
     ...(isAdmin ? [{ href: '/admin', label: 'Admin' }] : []),
@@ -263,6 +262,14 @@ export default function Header() {
                     <HiBell className="h-5 w-5" />
                   </Link>
 
+                  <Link
+                    href="/settings"
+                    className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/70 text-gray-600 transition-all duration-200 hover:-translate-y-0.5 hover:text-primary hover:shadow-soft"
+                    title={t.nav.settings}
+                  >
+                    <FiSettings className="h-5 w-5" />
+                  </Link>
+
                   <Link href={`/profile/${user.uid}`} className="block rounded-full transition-transform duration-200 hover:scale-105">
                     {profile?.profileImageUrl ? (
                       <Image
@@ -349,16 +356,30 @@ export default function Header() {
                 ))}
               </nav>
               {user && (
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    handleOpenLocations();
-                  }}
-                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary-50 px-4 py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary-100"
-                >
-                  <HiLocationMarker className="h-5 w-5" />
-                  {locationTexts.button || 'GPS'}
-                </button>
+                <>
+                  <Link
+                    href="/settings"
+                    onClick={() => setMenuOpen(false)}
+                    className={clsx(
+                      'mt-3 flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition-colors',
+                      router.pathname === '/settings' ? 'bg-primary-50 text-primary' : 'bg-white/70 text-gray-700 hover:bg-white'
+                    )}
+                  >
+                    <FiSettings className="h-5 w-5" />
+                    {t.nav.settings}
+                  </Link>
+
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      handleOpenLocations();
+                    }}
+                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary-50 px-4 py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary-100"
+                  >
+                    <HiLocationMarker className="h-5 w-5" />
+                    {locationTexts.button || 'GPS'}
+                  </button>
+                </>
               )}
               <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-3">
                 <div className="flex items-center gap-1 rounded-2xl bg-slate-100/80 p-1">
