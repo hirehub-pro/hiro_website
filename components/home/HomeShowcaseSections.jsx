@@ -1,316 +1,212 @@
-import { HiArrowRight, HiCheckCircle, HiCog, HiHome, HiSparkles, HiScale } from 'react-icons/hi';
+import Link from 'next/link';
+import {
+  HiArrowRight,
+  HiCheckCircle,
+  HiCog,
+  HiHome,
+  HiLightBulb,
+  HiScale,
+  HiSparkles,
+  HiWrenchScrewdriver,
+} from 'react-icons/hi2';
 import { useLanguage } from '../../contexts/LanguageContext';
 
 const workCards = [
-  
   {
     title: 'Build or repair a roof',
-    description: 'Explore roof types before choosing the right pro',
+    description: 'Compare roof directions, materials, and typical project paths before you choose a pro.',
     badge: 'Project',
     action: 'View options',
+    profession: 'Roofer',
     icon: HiHome,
-    gradient: 'from-[#7c3aed] via-[#8b5cf6] to-[#6d28d9]',
+    gradient: 'from-[#0f3d91] via-[#2563eb] to-[#38bdf8]',
   },
   {
     title: 'Water leak repair',
-    description: 'Need a plumber to inspect, fix, and protect your home',
+    description: 'Find the right plumber fast for urgent leaks, pressure issues, and hidden damage.',
     badge: 'Plumber',
-    action: 'View options',
-    icon: HiCog,
-    gradient: 'from-[#0891b2] via-[#0ea5e9] to-[#2563eb]',
-  },
- 
-  {
-    title: 'Build or repair a roof',
-    description: 'Explore roof types before choosing the right pro',
-    badge: 'Project',
-    action: 'View options',
-    icon: HiHome,
-    gradient: 'from-[#7c3aed] via-[#8b5cf6] to-[#6d28d9]',
+    action: 'Find a pro',
+    profession: 'Plumber',
+    icon: HiWrenchScrewdriver,
+    gradient: 'from-[#0f766e] via-[#0ea5a4] to-[#67e8f9]',
   },
   {
-    title: 'Water leak repair',
-    description: 'Need a plumber to inspect, fix, and protect your home',
-    badge: 'Plumber',
-    action: 'View options',
-    icon: HiCog,
-    gradient: 'from-[#0891b2] via-[#0ea5e9] to-[#2563eb]',
-  },
- 
-  {
-    title: 'Build or repair a roof',
-    description: 'Explore roof types before choosing the right pro',
-    badge: 'Project',
-    action: 'View options',
-    icon: HiHome,
-    gradient: 'from-[#7c3aed] via-[#8b5cf6] to-[#6d28d9]',
+    title: 'Power and outlet issues',
+    description: 'Get help for overloads, failing outlets, flickering lights, and safer upgrades.',
+    badge: 'Electrician',
+    action: 'Find a pro',
+    profession: 'Electrician',
+    icon: HiLightBulb,
+    gradient: 'from-[#7c2d12] via-[#ea580c] to-[#fbbf24]',
   },
   {
-    title: 'Water leak repair',
-    description: 'Need a plumber to inspect, fix, and protect your home',
-    badge: 'Plumber',
-    action: 'View options',
-    icon: HiCog,
-    gradient: 'from-[#0891b2] via-[#0ea5e9] to-[#2563eb]',
+    title: 'Deep home refresh',
+    description: 'From move-in cleanup to post-renovation care, book the right team in one step.',
+    badge: 'Home care',
+    action: 'Explore',
+    profession: 'Cleaner',
+    icon: HiSparkles,
+    gradient: 'from-[#4c1d95] via-[#7c3aed] to-[#c084fc]',
   },
- 
-  {
-    title: 'Build or repair a roof',
-    description: 'Explore roof types before choosing the right pro',
-    badge: 'Project',
-    action: 'View options',
-    icon: HiHome,
-    gradient: 'from-[#7c3aed] via-[#8b5cf6] to-[#6d28d9]',
-  },
-  {
-    title: 'Water leak repair',
-    description: 'Need a plumber to inspect, fix, and protect your home',
-    badge: 'Plumber',
-    action: 'View options',
-    icon: HiCog,
-    gradient: 'from-[#0891b2] via-[#0ea5e9] to-[#2563eb]',
-  },
-
 ];
 
 const professionalCards = [
-
   {
     title: 'Private lessons or tutoring',
-    description: 'English, math, languages, exam prep, or student support',
-    badge: 'Private Teacher',
+    description: 'English, math, languages, exam prep, and one-on-one support for students.',
+    badge: 'Teacher',
     action: 'Find pros',
+    profession: 'Private Teacher',
     icon: HiSparkles,
     gradient: 'from-[#1d4ed8] via-[#2563eb] to-[#1e40af]',
   },
   {
     title: 'Legal consulting',
-    description: 'Contracts, claims, labor, or a quick filing question',
-    badge: 'Service',
+    description: 'Contracts, claims, work questions, and fast guidance when you need clarity.',
+    badge: 'Legal',
     action: 'Find pros',
+    profession: 'Lawyer',
     icon: HiScale,
-    gradient: 'from-[#0f172a] via-[#1e293b] to-[#334155]',
-  },
-  
-  {
-    title: 'Private lessons or tutoring',
-    description: 'English, math, languages, exam prep, or student support',
-    badge: 'Private Teacher',
-    action: 'Find pros',
-    icon: HiSparkles,
-    gradient: 'from-[#1d4ed8] via-[#2563eb] to-[#1e40af]',
+    gradient: 'from-[#0f172a] via-[#1e293b] to-[#475569]',
   },
   {
-    title: 'Legal consulting',
-    description: 'Contracts, claims, labor, or a quick filing question',
-    badge: 'Service',
-    action: 'Find pros',
-    icon: HiScale,
-    gradient: 'from-[#0f172a] via-[#1e293b] to-[#334155]',
-  },
-  
-  {
-    title: 'Private lessons or tutoring',
-    description: 'English, math, languages, exam prep, or student support',
-    badge: 'Private Teacher',
-    action: 'Find pros',
-    icon: HiSparkles,
-    gradient: 'from-[#1d4ed8] via-[#2563eb] to-[#1e40af]',
+    title: 'Wellness and therapy',
+    description: 'Support for mental health, personal wellness, and family care in one place.',
+    badge: 'Wellness',
+    action: 'Explore',
+    profession: 'Therapist',
+    icon: HiCheckCircle,
+    gradient: 'from-[#14532d] via-[#16a34a] to-[#86efac]',
   },
   {
-    title: 'Legal consulting',
-    description: 'Contracts, claims, labor, or a quick filing question',
-    badge: 'Service',
+    title: 'Design and branding',
+    description: 'Logos, social visuals, menus, and branded assets for your business or project.',
+    badge: 'Creative',
     action: 'Find pros',
-    icon: HiScale,
-    gradient: 'from-[#0f172a] via-[#1e293b] to-[#334155]',
+    profession: 'Graphic Designer',
+    icon: HiCog,
+    gradient: 'from-[#831843] via-[#db2777] to-[#f9a8d4]',
   },
-  
-  {
-    title: 'Private lessons or tutoring',
-    description: 'English, math, languages, exam prep, or student support',
-    badge: 'Private Teacher',
-    action: 'Find pros',
-    icon: HiSparkles,
-    gradient: 'from-[#1d4ed8] via-[#2563eb] to-[#1e40af]',
-  },
-  {
-    title: 'Legal consulting',
-    description: 'Contracts, claims, labor, or a quick filing question',
-    badge: 'Service',
-    action: 'Find pros',
-    icon: HiScale,
-    gradient: 'from-[#0f172a] via-[#1e293b] to-[#334155]',
-  },
-  
 ];
 
 const maintenanceCards = [
-
   {
     title: 'Clean AC filters',
-    description: 'Improve cooling and air quality at home',
+    description: 'A simple seasonal fix that improves airflow, cooling, and indoor comfort.',
     badge: 'AC Technician',
     action: 'Find a pro',
+    profession: 'AC Technician',
     icon: HiCog,
-    gradient: 'from-[#0ea5e9] via-[#1d9bf0] to-[#38bdf8]',
+    gradient: 'from-[#0f766e] via-[#0ea5a4] to-[#67e8f9]',
   },
   {
     title: 'Check water leaks',
-    description: 'Prevent leaks before they get expensive',
+    description: 'Catch weak seals and hidden drip points before they become costly repairs.',
     badge: 'Seasonal pick',
     action: 'Find a pro',
+    profession: 'Plumber',
     icon: HiCheckCircle,
-    gradient: 'from-[#2563eb] via-[#3b82f6] to-[#4f46e5]',
-  },
-  
-  {
-    title: 'Clean AC filters',
-    description: 'Improve cooling and air quality at home',
-    badge: 'AC Technician',
-    action: 'Find a pro',
-    icon: HiCog,
-    gradient: 'from-[#0ea5e9] via-[#1d9bf0] to-[#38bdf8]',
+    gradient: 'from-[#1d4ed8] via-[#3b82f6] to-[#93c5fd]',
   },
   {
-    title: 'Check water leaks',
-    description: 'Prevent leaks before they get expensive',
-    badge: 'Seasonal pick',
-    action: 'Find a pro',
-    icon: HiCheckCircle,
-    gradient: 'from-[#2563eb] via-[#3b82f6] to-[#4f46e5]',
-  },
-  
-  {
-    title: 'Clean AC filters',
-    description: 'Improve cooling and air quality at home',
-    badge: 'AC Technician',
-    action: 'Find a pro',
-    icon: HiCog,
-    gradient: 'from-[#0ea5e9] via-[#1d9bf0] to-[#38bdf8]',
+    title: 'Inspect outdoor drainage',
+    description: 'Keep balconies, yards, and roof drains clear before heavy weather hits.',
+    badge: 'Preventive',
+    action: 'Explore',
+    profession: 'Plumber',
+    icon: HiWrenchScrewdriver,
+    gradient: 'from-[#334155] via-[#475569] to-[#94a3b8]',
   },
   {
-    title: 'Check water leaks',
-    description: 'Prevent leaks before they get expensive',
-    badge: 'Seasonal pick',
+    title: 'Test lights and switches',
+    description: 'A fast safety check for loose fittings, weak lighting, and failing switches.',
+    badge: 'Electrical',
     action: 'Find a pro',
-    icon: HiCheckCircle,
-    gradient: 'from-[#2563eb] via-[#3b82f6] to-[#4f46e5]',
+    profession: 'Electrician',
+    icon: HiLightBulb,
+    gradient: 'from-[#92400e] via-[#d97706] to-[#fde68a]',
   },
-  
-  {
-    title: 'Clean AC filters',
-    description: 'Improve cooling and air quality at home',
-    badge: 'AC Technician',
-    action: 'Find a pro',
-    icon: HiCog,
-    gradient: 'from-[#0ea5e9] via-[#1d9bf0] to-[#38bdf8]',
-  },
-  {
-    title: 'Check water leaks',
-    description: 'Prevent leaks before they get expensive',
-    badge: 'Seasonal pick',
-    action: 'Find a pro',
-    icon: HiCheckCircle,
-    gradient: 'from-[#2563eb] via-[#3b82f6] to-[#4f46e5]',
-  },
-  
-  {
-    title: 'Clean AC filters',
-    description: 'Improve cooling and air quality at home',
-    badge: 'AC Technician',
-    action: 'Find a pro',
-    icon: HiCog,
-    gradient: 'from-[#0ea5e9] via-[#1d9bf0] to-[#38bdf8]',
-  },
-  {
-    title: 'Check water leaks',
-    description: 'Prevent leaks before they get expensive',
-    badge: 'Seasonal pick',
-    action: 'Find a pro',
-    icon: HiCheckCircle,
-    gradient: 'from-[#2563eb] via-[#3b82f6] to-[#4f46e5]',
-  },
-  
-  {
-    title: 'Clean AC filters',
-    description: 'Improve cooling and air quality at home',
-    badge: 'AC Technician',
-    action: 'Find a pro',
-    icon: HiCog,
-    gradient: 'from-[#0ea5e9] via-[#1d9bf0] to-[#38bdf8]',
-  },
-  {
-    title: 'Check water leaks',
-    description: 'Prevent leaks before they get expensive',
-    badge: 'Seasonal pick',
-    action: 'Find a pro',
-    icon: HiCheckCircle,
-    gradient: 'from-[#2563eb] via-[#3b82f6] to-[#4f46e5]',
-  },
-  
 ];
 
-function ShowcaseCard({ card }) {
+function ShowcaseCard({ card, accent }) {
   const Icon = card.icon;
+  const href = `/search?q=${encodeURIComponent(card.profession || card.title)}`;
 
   return (
-    <article className="card-lift relative flex shrink-0 min-h-[320px] w-[290px] flex-col justify-between overflow-hidden rounded-[32px] p-5 text-white shadow-card sm:w-[340px] lg:w-[360px] sm:p-6">
-      <div className={`absolute inset-0 bg-gradient-to-br ${card.gradient}`} />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.28),_transparent_52%)]" />
+    <Link href={href} className="block h-full">
+      <article className="group relative flex min-h-[280px] h-full flex-col justify-between overflow-hidden rounded-[28px] border border-white/50 bg-white/90 p-5 shadow-[0_18px_40px_rgba(15,23,42,0.10)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_rgba(15,23,42,0.16)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 sm:p-6">
+        <div className={`absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r ${card.gradient}`} />
+        <div className={`absolute -right-10 -top-10 h-32 w-32 rounded-full bg-gradient-to-br ${card.gradient} opacity-10 blur-2xl`} />
 
-      <div className="relative flex items-start justify-between gap-3">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/20 text-white/95 shadow-sm backdrop-blur-sm">
-          <Icon className="h-6 w-6" />
+        <div className="relative flex items-start justify-between gap-3">
+          <div className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ${card.gradient} text-white shadow-lg shadow-slate-200/70`}>
+            <Icon className="h-6 w-6" />
+          </div>
+          <span className={`rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] ${accent.badge}`}>
+            {card.badge}
+          </span>
         </div>
-        <span className="rounded-full bg-white/20 px-4 py-2 text-xs font-bold text-white/95 backdrop-blur-sm">
-          {card.badge}
-        </span>
-      </div>
 
-      <div className="relative pt-7">
-        <h3 className="max-w-[14ch] text-[1.9rem] font-extrabold leading-[0.96] tracking-tight sm:text-[2.2rem]">
-          {card.title}
-        </h3>
-        <p className="mt-4 max-w-[18ch] text-sm leading-6 text-white/90 sm:text-base">
-          {card.description}
-        </p>
-      </div>
-
-      <div className="relative flex items-center justify-between pt-8">
-        <span className="rounded-full bg-white/15 px-5 py-3 text-sm font-bold text-white/95 backdrop-blur-sm">
-          {card.action}
-        </span>
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 backdrop-blur-sm">
-          <HiArrowRight className="h-6 w-6" />
+        <div className="relative pt-6">
+          <h3 className="max-w-[18ch] text-[1.55rem] font-extrabold leading-tight tracking-tight text-slate-950 sm:text-[1.75rem]">
+            {card.title}
+          </h3>
+          <p className="mt-3 max-w-[30ch] text-sm leading-6 text-slate-600 sm:text-[0.98rem]">
+            {card.description}
+          </p>
         </div>
-      </div>
-    </article>
+
+        <div className="relative flex items-center justify-between pt-6">
+          <span className={`inline-flex items-center rounded-full px-4 py-2 text-sm font-bold ${accent.cta}`}>
+            {card.action}
+          </span>
+          <div className={`flex h-11 w-11 items-center justify-center rounded-full transition-transform duration-300 group-hover:translate-x-1 ${accent.arrow}`}>
+            <HiArrowRight className="h-5 w-5" />
+          </div>
+        </div>
+      </article>
+    </Link>
   );
 }
 
-function SectionBlock({ eyebrow, title, subtitle, support, cards }) {
+function SectionBlock({ eyebrow, title, subtitle, support, cards, accent }) {
   return (
-    <section className="px-4 md:px-0 animate-fade-up">
-      <div className="mb-5 sm:mb-6">
-        <p className="mb-2 text-xs font-bold uppercase tracking-[0.24em] text-primary/70">
-          {eyebrow}
-        </p>
-        <h2 className="section-title text-3xl sm:text-4xl">
-          {title}
-        </h2>
-        <p className="mt-4 max-w-4xl text-lg leading-8 text-slate-500 sm:text-[1.45rem]">
-          {subtitle}
-        </p>
-        <p className="mt-6 max-w-4xl text-2xl font-extrabold leading-tight text-primary sm:text-[2rem]">
-          {support}
-        </p>
-      </div>
+    <section className="animate-fade-up px-4 md:px-0">
+      <div className={`relative overflow-hidden rounded-[34px] border ${accent.frame} px-6 py-7 shadow-[0_18px_45px_rgba(15,23,42,0.08)] sm:px-8 sm:py-9`}>
+        <div className={`absolute inset-0 bg-gradient-to-br ${accent.panel}`} />
+        <div className="absolute right-0 top-0 h-44 w-44 rounded-full bg-white/40 blur-3xl" />
+        <div className="absolute left-0 bottom-0 h-36 w-36 rounded-full bg-white/25 blur-3xl" />
 
-      <div className="-mx-4 flex gap-4 overflow-x-auto px-4 pb-2 scrollbar-hide sm:mx-0 sm:px-0">
-        {cards.map((card) => (
-          <ShowcaseCard key={card.title} card={card} />
-        ))}
+        <div className="relative">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl">
+              <p className={`mb-3 text-xs font-black uppercase tracking-[0.24em] ${accent.eyebrow}`}>
+                {eyebrow}
+              </p>
+              <h2 className="text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl lg:text-[2.8rem]">
+                {title}
+              </h2>
+              <p className="mt-4 max-w-3xl text-base leading-7 text-slate-600 sm:text-lg">
+                {subtitle}
+              </p>
+            </div>
+
+            <div className={`max-w-md rounded-[24px] border px-5 py-4 ${accent.supportBox}`}>
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-500">
+                Quick direction
+              </p>
+              <p className="mt-2 text-lg font-extrabold leading-snug text-slate-900 sm:text-[1.35rem]">
+                {support}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {cards.map((card) => (
+              <ShowcaseCard key={`${title}_${card.title}`} card={card} accent={accent} />
+            ))}
+          </div>
+        </div>
       </div>
     </section>
   );
@@ -327,6 +223,15 @@ export default function HomeShowcaseSections() {
         subtitle={t.home.whatWorkSubtitle}
         support={t.home.whatWorkSupport}
         cards={workCards}
+        accent={{
+          frame: 'border-[#dbeafe]',
+          panel: 'from-[#f8fbff] via-[#eef6ff] to-[#f4fbff]',
+          eyebrow: 'text-[#2563eb]',
+          supportBox: 'border-white/70 bg-white/70 shadow-sm',
+          badge: 'border-[#bfdbfe] bg-[#eff6ff] text-[#1d4ed8]',
+          cta: 'bg-[#eff6ff] text-[#1d4ed8]',
+          arrow: 'bg-[#eff6ff] text-[#1d4ed8]',
+        }}
       />
 
       <SectionBlock
@@ -335,6 +240,15 @@ export default function HomeShowcaseSections() {
         subtitle={t.home.otherServicesSubtitle}
         support={t.home.otherServicesSupport}
         cards={professionalCards}
+        accent={{
+          frame: 'border-[#e9d5ff]',
+          panel: 'from-[#fcfaff] via-[#f7f1ff] to-[#fff8fb]',
+          eyebrow: 'text-[#7c3aed]',
+          supportBox: 'border-white/70 bg-white/75 shadow-sm',
+          badge: 'border-[#e9d5ff] bg-[#faf5ff] text-[#7c3aed]',
+          cta: 'bg-[#faf5ff] text-[#7c3aed]',
+          arrow: 'bg-[#faf5ff] text-[#7c3aed]',
+        }}
       />
 
       <SectionBlock
@@ -343,6 +257,15 @@ export default function HomeShowcaseSections() {
         subtitle={t.home.maintenanceSubtitle}
         support={t.home.maintenanceSupport}
         cards={maintenanceCards}
+        accent={{
+          frame: 'border-[#d1fae5]',
+          panel: 'from-[#f7fffb] via-[#effcf7] to-[#f5fffd]',
+          eyebrow: 'text-[#0f766e]',
+          supportBox: 'border-white/70 bg-white/75 shadow-sm',
+          badge: 'border-[#a7f3d0] bg-[#ecfdf5] text-[#0f766e]',
+          cta: 'bg-[#ecfdf5] text-[#0f766e]',
+          arrow: 'bg-[#ecfdf5] text-[#0f766e]',
+        }}
       />
     </div>
   );

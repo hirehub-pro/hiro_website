@@ -36,6 +36,7 @@ function buildPreviewPayloadFromSavedInvoice(item) {
     : '';
 
   return {
+    id: item?.id || '',
     invoiceNumber: item?.invoiceNumber || '',
     issueDate,
     dueDate: issueDate,
@@ -84,6 +85,9 @@ function buildPreviewPayloadFromSavedInvoice(item) {
         accountNumber: '',
       },
     ],
+    savedFileName: item?.fileName || '',
+    savedInvoiceUrl: item?.url || '',
+    savedStoragePath: item?.storagePath || '',
   };
 }
 
@@ -173,7 +177,13 @@ export default function SavedInvoicesPage() {
     if (!user?.uid) return;
 
     const previewStorageKey = getInvoicePreviewStorageKey(user.uid);
-    const previewPayload = item?.payload || buildPreviewPayloadFromSavedInvoice(item);
+    const previewPayload = {
+      ...buildPreviewPayloadFromSavedInvoice(item),
+      ...(item?.payload || {}),
+      savedFileName: item?.fileName || item?.payload?.savedFileName || '',
+      savedInvoiceUrl: item?.url || item?.payload?.savedInvoiceUrl || '',
+      savedStoragePath: item?.storagePath || item?.payload?.savedStoragePath || '',
+    };
     window.localStorage.setItem(previewStorageKey, JSON.stringify(previewPayload));
     toast.success(copy.savedInvoiceReady);
     router.push('/worker/invoices/preview?source=saved');
