@@ -43,6 +43,20 @@ export default function InvoicePreviewPage() {
   const savedInvoiceUrl = invoice?.savedInvoiceUrl || '';
   const savedInvoiceFileName = invoice?.savedFileName || `${invoice?.invoiceNumber || 'invoice'}.pdf`;
   const shouldUseStoredPdf = openedFromSaved && savedInvoiceUrl;
+  const docType = invoice?.documentType || invoice?.docType || 'receipt';
+  const docTypeLabel = (
+    docType === 'tax_invoice'
+      ? copy.taxInvoiceDoc
+      : docType === 'tax_invoice_receipt'
+        ? copy.taxInvoiceReceiptDoc
+        : docType === 'credit_note'
+          ? copy.creditNoteDoc
+          : docType === 'quote'
+            ? copy.quoteDoc
+            : docType === 'work_order'
+              ? copy.workOrderDoc
+          : copy.receiptDoc
+  );
 
   useEffect(() => {
     if (!loading && !user) {
@@ -88,7 +102,7 @@ export default function InvoicePreviewPage() {
     try {
       await saveUserInvoice(user.uid, {
         ...invoice,
-        docType: 'receipt',
+        docType,
       });
       setIsSaved(true);
       toast.success(copy.savedInvoiceStored);
@@ -109,7 +123,7 @@ export default function InvoicePreviewPage() {
 
   function handleSendInvoice() {
     if (shouldUseStoredPdf) {
-      const subject = `${copy.receiptDoc} ${invoice?.invoiceNumber || ''}`.trim();
+      const subject = `${docTypeLabel} ${invoice?.invoiceNumber || ''}`.trim();
       const body = [
         `${copy.clientName}: ${invoice?.clientName || '-'}`,
         `${copy.documentNo}: ${invoice?.invoiceNumber || '-'}`,
@@ -120,7 +134,7 @@ export default function InvoicePreviewPage() {
       return;
     }
 
-    const subject = `${copy.receiptDoc} ${invoice?.invoiceNumber || ''}`.trim();
+    const subject = `${docTypeLabel} ${invoice?.invoiceNumber || ''}`.trim();
     const body = [
       `${copy.clientName}: ${invoice?.clientName || '-'}`,
       `${copy.documentNo}: ${invoice?.invoiceNumber || '-'}`,
@@ -134,7 +148,7 @@ export default function InvoicePreviewPage() {
   async function handleShareInvoice() {
     if (shouldUseStoredPdf) {
       const shareText = [
-        `${copy.receiptDoc} ${invoice?.invoiceNumber || ''}`.trim(),
+        `${docTypeLabel} ${invoice?.invoiceNumber || ''}`.trim(),
         `${copy.clientName}: ${invoice?.clientName || '-'}`,
         savedInvoiceUrl,
       ].join('\n');
@@ -160,7 +174,7 @@ export default function InvoicePreviewPage() {
     }
 
     const shareText = [
-      `${copy.receiptDoc} ${invoice?.invoiceNumber || ''}`.trim(),
+      `${docTypeLabel} ${invoice?.invoiceNumber || ''}`.trim(),
       `${copy.clientName}: ${invoice?.clientName || '-'}`,
       `${copy.total}: ${formatCurrency(total, locale)}`,
     ].join('\n');
@@ -245,7 +259,7 @@ export default function InvoicePreviewPage() {
             {shouldUseStoredPdf ? (
               <div className="px-6 py-8 sm:px-14 sm:py-14">
                 <div className="rounded-[22px] bg-[#dcebfa] px-6 py-5 sm:px-7 sm:py-6">
-                  <h2 className="text-4xl font-light text-[#2e63b2]">{copy.shortTitle}</h2>
+                  <h2 className="text-4xl font-light text-[#2e63b2]">{docTypeLabel}</h2>
                   <p className="mt-1 text-2xl font-light text-[#485a71]">{copy.originalCopy}</p>
                   <div className="mt-4 text-[15px] leading-6 text-[#55677d]">
                     <p>{`${copy.documentNo}: ${invoice.invoiceNumber || '-'}`}</p>
@@ -264,7 +278,7 @@ export default function InvoicePreviewPage() {
             ) : (
             <div className="px-6 py-8 sm:px-14 sm:py-14">
               <div className="rounded-[22px] bg-[#dcebfa] px-6 py-5 sm:px-7 sm:py-6">
-                <h2 className="text-4xl font-light text-[#2e63b2]">{copy.shortTitle}</h2>
+                <h2 className="text-4xl font-light text-[#2e63b2]">{docTypeLabel}</h2>
                 <p className="mt-1 text-2xl font-light text-[#485a71]">{copy.originalCopy}</p>
                 <div className="mt-4 text-[15px] leading-6 text-[#55677d]">
                   <p>{`${copy.documentNo}: ${invoice.invoiceNumber}`}</p>
@@ -370,7 +384,7 @@ export default function InvoicePreviewPage() {
                   {copy.preview}
                 </p>
                 <p className="truncate text-sm font-semibold text-slate-600 sm:text-base">
-                  {invoice?.invoiceNumber || copy.shortTitle}
+                  {invoice?.invoiceNumber || docTypeLabel}
                 </p>
               </div>
               <button
@@ -394,32 +408,34 @@ export default function InvoicePreviewPage() {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <button
-                type="button"
-                onClick={handleSendInvoice}
-                className="flex items-center justify-center gap-2.5 rounded-[18px] bg-[#20a3dd] px-4 py-3.5 text-base font-bold text-white transition-colors hover:bg-[#178fc7] sm:text-lg"
-              >
-                <FiSend className="h-5 w-5" />
-                {copy.sendAction}
-              </button>
-              <button
-                type="button"
-                onClick={handlePrintInvoice}
-                className="flex items-center justify-center gap-2.5 rounded-[18px] bg-[#2c78d0] px-4 py-3.5 text-base font-bold text-white transition-colors hover:bg-[#246bb9] sm:text-lg"
-              >
-                <FiPrinter className="h-5 w-5" />
-                {copy.printAction}
-              </button>
-              <button
-                type="button"
-                onClick={handleShareInvoice}
-                className="flex items-center justify-center gap-2.5 rounded-[18px] bg-[#0f8074] px-4 py-3.5 text-base font-bold text-white transition-colors hover:bg-[#0d7066] sm:text-lg"
-              >
-                <FiShare2 className="h-5 w-5" />
-                {copy.shareAction}
-              </button>
-            </div>
+            {(isSaved || shouldUseStoredPdf) ? (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <button
+                  type="button"
+                  onClick={handleSendInvoice}
+                  className="flex items-center justify-center gap-2.5 rounded-[18px] bg-[#20a3dd] px-4 py-3.5 text-base font-bold text-white transition-colors hover:bg-[#178fc7] sm:text-lg"
+                >
+                  <FiSend className="h-5 w-5" />
+                  {copy.sendAction}
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrintInvoice}
+                  className="flex items-center justify-center gap-2.5 rounded-[18px] bg-[#2c78d0] px-4 py-3.5 text-base font-bold text-white transition-colors hover:bg-[#246bb9] sm:text-lg"
+                >
+                  <FiPrinter className="h-5 w-5" />
+                  {copy.printAction}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleShareInvoice}
+                  className="flex items-center justify-center gap-2.5 rounded-[18px] bg-[#0f8074] px-4 py-3.5 text-base font-bold text-white transition-colors hover:bg-[#0d7066] sm:text-lg"
+                >
+                  <FiShare2 className="h-5 w-5" />
+                  {copy.shareAction}
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
       </main>

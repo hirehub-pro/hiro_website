@@ -4,11 +4,10 @@ import Image from 'next/image';
 import { useRouter } from 'next/router';
 import {
   HiPlusCircle, HiChat, HiLightBulb, HiQuestionMarkCircle,
-  HiSparkles, HiHashtag, HiViewGrid, HiArrowRight,
-  HiHeart, HiShare, HiDotsHorizontal,
-  HiBadgeCheck, HiPencilAlt, HiX, HiPhotograph,
-  HiLocationMarker,
+  HiViewGrid, HiHeart, HiDotsHorizontal,
+  HiPencilAlt, HiX, HiPhotograph,
 } from 'react-icons/hi';
+import { FiCalendar, FiCheck, FiFilter, FiMapPin, FiRefreshCw, FiSearch, FiUser } from 'react-icons/fi';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { getBlogPosts, createBlogPost, toggleBlogPostLike } from '../lib/firestore';
@@ -23,6 +22,7 @@ const CATEGORY_NORMALIZE = {
   tip: 'tip', '\u05d8\u05d9\u05e4': 'tip',
   request: 'request', '\u05d1\u05e7\u05e9\u05d4': 'request',
   question: 'question', '\u05e9\u05d0\u05dc\u05d4': 'question',
+  'job request': 'request', '\u05d3\u05e8\u05d5\u05e9 \u05d1\u05e2\u05dc \u05de\u05e7\u05e6\u05d5\u05e2': 'request',
 };
 
 const AVATAR_GRADIENTS = [
@@ -41,17 +41,6 @@ function getAvatarGradient(str) {
     hash = str.charCodeAt(i) + ((hash << 5) - hash);
   }
   return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length];
-}
-
-function timeAgo(timestamp) {
-  if (!timestamp) return '';
-  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-  const diff = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (diff < 60) return 'just now';
-  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
-  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
-  if (diff < 604800) return Math.floor(diff / 86400) + 'd ago';
-  return date.toLocaleDateString();
 }
 
 const FILTER_META = {
@@ -91,6 +80,7 @@ export default function CommunityPage() {
   const router = useRouter();
 
   const [filter, setFilter] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showPublish, setShowPublish] = useState(false);
@@ -126,12 +116,50 @@ export default function CommunityPage() {
     loadPosts();
   }, []);
 
-  const filteredPosts = posts.filter(function (p) {
-    if (filter === 'all') return true;
-    return (CATEGORY_NORMALIZE[p.category] || p.category) === filter;
-  });
+  function formatShortDate(value) {
+    if (!value) return '';
+    const date = value.toDate ? value.toDate() : new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: '2-digit',
+    });
+  }
 
-  const pinnedPost = posts.find(function (p) { return p.isPinned; });
+  function haversineKm(lat1, lng1, lat2, lng2) {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function formatDistance(post) {
+    if (
+      typeof post.locationLat !== 'number' ||
+      typeof post.locationLng !== 'number' ||
+      typeof myProfile?.lat !== 'number' ||
+      typeof myProfile?.lng !== 'number'
+    ) {
+      return '';
+    }
+
+    const km = haversineKm(myProfile.lat, myProfile.lng, post.locationLat, post.locationLng);
+    if (km < 1) return `${Math.round(km * 1000)} m`;
+    return `${km.toFixed(1)} km`;
+  }
+
+  const filteredPosts = posts.filter(function (p) {
+    const categoryMatch = filter === 'all' || (CATEGORY_NORMALIZE[p.category] || p.category) === filter;
+    const haystack = [p.title, p.content, p.location, p.authorName, p.professionLabel, p.profession]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    const searchMatch = !searchTerm.trim() || haystack.includes(searchTerm.trim().toLowerCase());
+    return categoryMatch && searchMatch;
+  });
 
   function openPost(postId) {
     if (!postId) return;
@@ -214,50 +242,52 @@ export default function CommunityPage() {
     <>
       <Head><title>{'Hiro  ' + t.community.title}</title></Head>
 
-      <div className="relative overflow-hidden bg-hero-gradient" dir={dir}>
-        <div className="absolute inset-0 bg-mesh opacity-20" />
-        <div className="absolute -right-10 -top-10 h-48 w-48 rounded-full bg-white/10 blur-3xl" />
-        <div className="absolute -left-10 bottom-0 h-32 w-32 rounded-full bg-white/10 blur-2xl" />
-        <div className="relative mx-auto max-w-2xl px-4 py-10">
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/15 px-4 py-1.5 text-xs font-bold uppercase tracking-[0.2em] text-white/90 backdrop-blur-sm mb-4">
-            <HiSparkles className="h-3.5 w-3.5" />
-            Community Hub
+      <div className="min-h-screen bg-[#edf4fb]" dir={dir}>
+        <div className="mx-auto max-w-4xl px-4 pt-8">
+          <div className="flex items-center justify-between gap-3">
+            <h1 className="text-2xl font-black tracking-tight text-slate-950 md:text-4xl">Community & Jobs</h1>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={loadPosts}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-primary hover:bg-white/70"
+              >
+                <FiRefreshCw className="h-5 w-5" />
+              </button>
+              <button className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-primary hover:bg-white/70">
+                <FiFilter className="h-5 w-5" />
+              </button>
+            </div>
           </div>
-          <h1 className="font-display text-3xl font-extrabold text-white sm:text-4xl">{t.community.title}</h1>
-          <p className="mt-3 text-sm leading-7 text-white/75 max-w-md">
-            Share tips, ask questions, and post service requests with the Hiro community.
-          </p>
-          <div className="mt-6 flex items-center gap-5 text-white/80 text-xs font-semibold">
-            <span className="flex items-center gap-1.5">
-              <HiHashtag className="h-4 w-4" />
-              {FILTER_TYPES.length - 1} categories
-            </span>
-            <span className="flex items-center gap-1.5">
-              <HiChat className="h-4 w-4" />
-              {loading ? '...' : posts.length} posts
-            </span>
+
+          <div className="mt-6 rounded-[28px] border border-[#d7e4f3] bg-white p-3 shadow-sm">
+            <div className="flex items-center gap-3 rounded-[22px] border border-[#d7e4f3] bg-[#f8fbff] px-4 py-3">
+              <FiSearch className="h-5 w-5 text-slate-500" />
+              <input
+                value={searchTerm}
+                onChange={function (e) { setSearchTerm(e.target.value); }}
+                placeholder="Search posts..."
+                className="w-full bg-transparent text-base text-slate-700 placeholder:text-slate-400 focus:outline-none md:text-lg"
+              />
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="sticky top-0 md:top-16 z-40 border-b border-gray-100 bg-white/90 backdrop-blur-xl" dir={dir}>
-        <div className="mx-auto max-w-2xl flex items-center gap-2 overflow-x-auto scrollbar-hide px-4 py-3">
+        <div className="sticky top-0 z-40 bg-[#edf4fb]/95 pt-4 backdrop-blur-xl" dir={dir}>
+          <div className="mx-auto flex max-w-4xl items-center gap-2 overflow-x-auto scrollbar-hide px-4 pb-3">
           {FILTER_TYPES.map(function (type) {
-            const meta = FILTER_META[type];
-            const Icon = meta.icon;
             const active = filter === type;
             return (
               <button
                 key={type}
                 onClick={function () { setFilter(type); }}
                 className={clsx(
-                  'shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-semibold border transition-all duration-200',
+                  'shrink-0 flex items-center gap-2 rounded-[18px] border px-4 py-2.5 text-sm font-bold transition-all duration-200 md:px-5 md:text-base',
                   active
-                    ? meta.bg + ' ' + meta.border + ' ' + meta.text + ' shadow-sm scale-[1.03]'
-                    : 'bg-white border-gray-100 text-gray-500 hover:border-gray-200 hover:bg-gray-50'
+                    ? 'border-primary bg-[#dcebfb] text-primary shadow-sm'
+                    : 'border-[#d7e4f3] bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50'
                 )}
               >
-                <Icon className="h-4 w-4" />
+                {active ? <FiCheck className="h-4 w-4" /> : null}
                 {filterLabels[type]}
               </button>
             );
@@ -265,85 +295,19 @@ export default function CommunityPage() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-2xl px-4 py-5" dir={dir}>
-
-        {pinnedPost ? (
-          <div
-            className="relative mb-6 overflow-hidden rounded-[24px] bg-gradient-to-r from-primary to-sky-400 p-5 shadow-glow-sm cursor-pointer"
-            onClick={function () { openPost(pinnedPost.id); }}
-          >
-            <div className="absolute right-4 top-4 opacity-20"><HiSparkles className="h-16 w-16 text-white" /></div>
-            <div className="relative flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/20">
-                  <span className="text-xl">&#128204;</span>
-                </div>
-                <div>
-                  <p className="font-bold text-white text-sm">{pinnedPost.title}</p>
-                  <p className="mt-0.5 text-xs text-white/70 line-clamp-1">{pinnedPost.content}</p>
-                </div>
-              </div>
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-white/20 text-white hover:bg-white/30 transition-colors">
-                <HiArrowRight className="h-4 w-4" />
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="relative mb-6 overflow-hidden rounded-[24px] bg-gradient-to-r from-primary to-sky-400 p-5 shadow-glow-sm">
-            <div className="absolute right-4 top-4 opacity-20"><HiSparkles className="h-16 w-16 text-white" /></div>
-            <div className="relative flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/20">
-                <span className="text-xl">&#128204;</span>
-              </div>
-              <div>
-                <p className="font-bold text-white text-sm">{t.community.pinned}</p>
-                <p className="mt-0.5 text-xs text-white/70">Welcome to the Hiro community</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="mb-6 grid grid-cols-3 gap-3">
-          {FILTER_TYPES.filter(function (type) { return type !== 'all'; }).map(function (type) {
-            const meta = FILTER_META[type];
-            const Icon = meta.icon;
-            const count = posts.filter(function (p) {
-              return (CATEGORY_NORMALIZE[p.category] || p.category) === type;
-            }).length;
-            return (
-              <button
-                key={type}
-                onClick={function () { setFilter(type); }}
-                className={clsx(
-                  'card-lift group flex flex-col items-center gap-2 rounded-[20px] border py-4',
-                  filter === type ? meta.bg + ' ' + meta.border : 'border-gray-100 bg-white hover:border-gray-200'
-                )}
-              >
-                <div className={clsx('flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br', meta.color)}>
-                  <Icon className="h-5 w-5 text-white" />
-                </div>
-                <span className={clsx('text-xs font-bold', filter === type ? meta.text : 'text-gray-600')}>
-                  {filterLabels[type]}
-                </span>
-                {!loading && (
-                  <span className="text-[11px] text-gray-400 font-medium -mt-1">{count} posts</span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+      <div className="mx-auto max-w-4xl px-4 py-5" dir={dir}>
 
         {user && (
           <button
             onClick={function () { setShowPublish(true); }}
-            className="w-full mb-5 flex items-center gap-3 bg-white border border-gray-100 rounded-2xl px-4 py-3.5 shadow-sm hover:shadow-md hover:border-gray-200 transition-all text-left"
+            className="mb-5 flex w-full items-center gap-3 rounded-[24px] border border-[#d7e4f3] bg-white px-4 py-3 text-left shadow-sm transition-all hover:border-slate-300 hover:shadow-md"
           >
             <div className={'w-9 h-9 rounded-full bg-gradient-to-br ' + getAvatarGradient(user.uid) + ' flex items-center justify-center flex-shrink-0'}>
               <span className="text-white font-bold text-sm">
                 {((myProfile && myProfile.name) || user.displayName || 'U')[0].toUpperCase()}
               </span>
             </div>
-            <span className="text-sm text-gray-400 flex-1">Share a tip, question, or request...</span>
+            <span className="flex-1 text-sm text-slate-400 md:text-base">Share a tip, question, or request...</span>
             <HiPencilAlt className="h-5 w-5 text-primary flex-shrink-0" />
           </button>
         )}
@@ -392,8 +356,6 @@ export default function CommunityPage() {
 
         {!loading && filteredPosts.map(function (post) {
           const catKey = CATEGORY_NORMALIZE[post.category] || 'tip';
-          const meta = FILTER_META[catKey] || FILTER_META.tip;
-          const Icon = meta.icon;
           const nameParts = (post.authorName || 'U').split(' ');
           const initials = nameParts.map(function (w) { return w[0]; }).join('').slice(0, 2).toUpperCase();
           const gradient = getAvatarGradient(post.authorUid || post.authorName || '');
@@ -403,75 +365,74 @@ export default function CommunityPage() {
           return (
             <div
               key={post.id}
-              className="mb-4 bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md transition-shadow overflow-hidden cursor-pointer"
+              className="mb-5 cursor-pointer overflow-hidden rounded-[28px] border-2 border-[#b9d8fb] bg-white shadow-sm transition-shadow hover:shadow-md lg:mx-auto lg:max-w-2xl"
               onClick={function () { openPost(post.id); }}
             >
               {post.imageUrl && (
-                <div className="relative w-full h-48">
+                <div className="relative h-44 w-full md:h-52">
                   <Image src={post.imageUrl} alt={post.title} fill className="object-cover" />
                 </div>
               )}
-              <div className="p-4">
-                <div className="flex items-start justify-between gap-2 mb-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className={'w-10 h-10 rounded-full bg-gradient-to-br ' + gradient + ' flex items-center justify-center flex-shrink-0'}>
-                      <span className="text-white font-bold text-sm">{initials}</span>
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-1">
-                        <span className="font-semibold text-sm text-gray-900">{post.authorName || 'Anonymous'}</span>
-                        {post.isVerified && <HiBadgeCheck className="w-4 h-4 text-primary" />}
-                      </div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-xs text-gray-400">{timeAgo(post.timestamp)}</span>
-                        {post.location && (
-                          <span className="flex items-center gap-0.5 text-xs text-gray-400">
-                            <HiLocationMarker className="w-3 h-3" />
-                            {post.location}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <span className={clsx('flex items-center gap-1 shrink-0 text-xs font-bold px-2.5 py-1 rounded-full border', meta.bg, meta.text, meta.border)}>
-                    <Icon className="h-3.5 w-3.5" />
-                    {filterLabels[catKey]}
+              <div className="p-4 md:p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="inline-flex items-center rounded-2xl bg-[#dcebfb] px-3 py-1.5 text-sm font-black text-primary md:text-base">
+                    {catKey === 'request' ? 'Job Request' : filterLabels[catKey]}
                   </span>
+                  <button
+                    onClick={function (e) { e.stopPropagation(); }}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-2xl text-slate-400 hover:bg-slate-50"
+                  >
+                    <HiDotsHorizontal className="h-5 w-5" />
+                  </button>
                 </div>
 
-                <h3 className="font-bold text-gray-900 text-sm mb-1.5 leading-snug">{post.title}</h3>
-                <p className="text-sm text-gray-600 leading-relaxed line-clamp-3">{post.content}</p>
+                <h3 className="mt-5 text-2xl font-black leading-tight tracking-tight text-slate-950 md:text-3xl">{post.title}</h3>
+                <p className="mt-3 text-base leading-relaxed text-slate-500 line-clamp-2 md:text-lg">{post.content}</p>
 
-                <div className="flex items-center gap-4 mt-4 pt-3.5 border-t border-gray-50">
+                {post.isJobRequest && (post.requestDateFrom || post.requestDateTo) && (
+                  <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-[#f3f7fc] px-3 py-2 text-sm font-black text-slate-600 md:text-base">
+                    <FiCalendar className="h-4 w-4 md:h-5 md:w-5" />
+                    {formatShortDate(post.requestDateFrom)}{post.requestDateTo ? ` - ${formatShortDate(post.requestDateTo)}` : ''}
+                  </div>
+                )}
+
+                <div className="mt-5 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className={'flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br ' + gradient}>
+                      <span className="text-sm font-bold text-white">{initials}</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-sm font-black text-slate-500 md:text-base">
+                      <span className="inline-flex items-center gap-2">
+                        <FiUser className="h-4 w-4 text-slate-400" />
+                        {post.authorName || 'Anonymous'}
+                      </span>
+                      {(post.location || formatDistance(post)) && (
+                        <span className="inline-flex items-center gap-2 rounded-full bg-[#dcebfb] px-3 py-1.5 text-primary">
+                          <FiMapPin className="h-4 w-4" />
+                          {[formatDistance(post), post.location].filter(Boolean).join(' • ')}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                   <button
                     onClick={function (e) { e.stopPropagation(); handleLike(post); }}
                     className={clsx(
-                      'flex items-center gap-1.5 text-sm font-semibold transition-colors',
-                      hasLiked ? 'text-rose-500' : 'text-gray-400 hover:text-rose-400'
+                      'inline-flex items-center gap-1.5 text-lg font-bold transition-colors md:text-xl',
+                      hasLiked ? 'text-rose-500' : 'text-slate-400 hover:text-rose-400'
                     )}
                   >
-                    <HiHeart className={clsx('h-5 w-5 transition-transform', hasLiked && 'scale-110')} />
+                    <HiHeart className={clsx('h-6 w-6 transition-transform', hasLiked && 'scale-110')} />
                     {post.likes || 0}
                   </button>
+                </div>
+
+                <div className="mt-4 border-t border-[#edf3fa] pt-3">
                   <button
                     onClick={function (e) { e.stopPropagation(); openPost(post.id); }}
-                    className="flex items-center gap-1.5 text-sm font-semibold text-gray-400 hover:text-primary transition-colors"
+                    className="inline-flex items-center gap-2 text-sm font-bold text-slate-400 transition-colors hover:text-primary md:text-base"
                   >
                     <HiChat className="h-5 w-5" />
                     {post.commentsCount || 0}
-                  </button>
-                  <div className="flex-1" />
-                  <button
-                    onClick={function (e) { e.stopPropagation(); }}
-                    className="text-gray-400 hover:text-primary transition-colors"
-                  >
-                    <HiShare className="h-5 w-5" />
-                  </button>
-                  <button
-                    onClick={function (e) { e.stopPropagation(); }}
-                    className="text-gray-400 hover:text-gray-600 transition-colors"
-                  >
-                    <HiDotsHorizontal className="h-5 w-5" />
                   </button>
                 </div>
               </div>
@@ -485,12 +446,13 @@ export default function CommunityPage() {
       {user && !showPublish && (
         <button
           onClick={function () { setShowPublish(true); }}
-          className="fixed bottom-20 ltr:right-4 rtl:left-4 md:bottom-8 md:ltr:right-8 md:rtl:left-8 z-40 flex items-center gap-2 rounded-2xl bg-hero-gradient px-5 py-3.5 font-bold text-sm text-white shadow-glow transition-transform duration-200 hover:scale-105 active:scale-95"
+          className="fixed bottom-20 ltr:right-4 rtl:left-4 md:bottom-8 md:ltr:right-8 md:rtl:left-8 z-40 flex items-center gap-2 rounded-[22px] bg-primary px-5 py-3.5 text-base font-black text-white shadow-[0_16px_30px_rgba(37,99,235,0.35)] transition-transform duration-200 hover:scale-105 active:scale-95"
         >
           <HiPlusCircle className="h-5 w-5" />
           {t.community.publish}
         </button>
       )}
+      </div>
 
       {showPublish && (
         <div

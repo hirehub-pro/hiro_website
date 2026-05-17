@@ -1,6 +1,9 @@
 import Link from 'next/link';
+import { useRef } from 'react';
 import {
   HiArrowRight,
+  HiChevronLeft,
+  HiChevronRight,
   HiCheckCircle,
   HiCog,
   HiHome,
@@ -8,6 +11,8 @@ import {
   HiScale,
   HiSparkles,
   HiWrenchScrewdriver,
+  HiOutlineWindow,
+  HiWindow,
 } from 'react-icons/hi2';
 import { useLanguage } from '../../contexts/LanguageContext';
 
@@ -126,6 +131,79 @@ const maintenanceCards = [
     icon: HiLightBulb,
     gradient: 'from-[#92400e] via-[#d97706] to-[#fde68a]',
   },
+    {
+    title: 'Tune up doors and windows',
+    description: 'Fix squeaks , poor closing , and air or dust coming inside.',
+    badge: 'AC Technician',
+    action: 'Find a pro',
+    profession: 'AC Technician',
+    icon: HiWindow,
+    gradient: 'from-[#0f766e] via-[#0ea5a4] to-[#67e8f9]',
+  },
+   
+  {
+    title: 'Check home appliances',
+    description: 'spot noise , leaks , or weak performance.',
+    badge: 'Seasonal pick',
+    action: 'Find a pro',
+    profession: 'Appliance Technician',
+    icon: HiCheckCircle,
+    gradient: 'from-[#1d4ed8] via-[#3b82f6] to-[#93c5fd]',
+  },
+  {
+    title: 'Preventive pest treatment',
+    description: 'A smart seasonal check before insects or rodents become a problem.',
+    badge: 'Preventive',
+    action: 'Explore',
+    profession: 'Pest Control',
+    icon: HiWrenchScrewdriver,
+    gradient: 'from-[#831843] via-[#db2777] to-[#f9a8d4]',
+  },
+  {
+    title: 'Test lights and switches',
+    description: 'A fast safety check for loose fittings, weak lighting, and failing switches.',
+    badge: 'Electrical',
+    action: 'Find a pro',
+    profession: 'Electrician',
+    icon: HiLightBulb,
+    gradient: 'from-[#92400e] via-[#d97706] to-[#fde68a]',
+  },
+    {
+    title: 'Clean AC filters',
+    description: 'A simple seasonal fix that improves airflow, cooling, and indoor comfort.',
+    badge: 'AC Technician',
+    action: 'Find a pro',
+    profession: 'AC Technician',
+    icon: HiCog,
+    gradient: 'from-[#0f766e] via-[#0ea5a4] to-[#67e8f9]',
+  },
+  {
+    title: 'Check water leaks',
+    description: 'Catch weak seals and hidden drip points before they become costly repairs.',
+    badge: 'Seasonal pick',
+    action: 'Find a pro',
+    profession: 'Plumber',
+    icon: HiCheckCircle,
+    gradient: 'from-[#1d4ed8] via-[#3b82f6] to-[#93c5fd]',
+  },
+  {
+    title: 'Inspect outdoor drainage',
+    description: 'Keep balconies, yards, and roof drains clear before heavy weather hits.',
+    badge: 'Preventive',
+    action: 'Explore',
+    profession: 'Plumber',
+    icon: HiWrenchScrewdriver,
+    gradient: 'from-[#334155] via-[#475569] to-[#94a3b8]',
+  },
+  {
+    title: 'Test lights and switches',
+    description: 'A fast safety check for loose fittings, weak lighting, and failing switches.',
+    badge: 'Electrical',
+    action: 'Find a pro',
+    profession: 'Electrician',
+    icon: HiLightBulb,
+    gradient: 'from-[#92400e] via-[#d97706] to-[#fde68a]',
+  },
 ];
 
 function ShowcaseCard({ card, accent }) {
@@ -170,6 +248,19 @@ function ShowcaseCard({ card, accent }) {
 }
 
 function SectionBlock({ eyebrow, title, subtitle, support, cards, accent }) {
+  const railRef = useRef(null);
+
+  function scrollCards(direction) {
+    const rail = railRef.current;
+    if (!rail) return;
+
+    const distance = Math.min(rail.clientWidth * 0.92, 420);
+    rail.scrollBy({
+      left: direction === 'next' ? distance : -distance,
+      behavior: 'smooth',
+    });
+  }
+
   return (
     <section className="animate-fade-up px-4 md:px-0">
       <div className={`relative overflow-hidden rounded-[34px] border ${accent.frame} px-6 py-7 shadow-[0_18px_45px_rgba(15,23,42,0.08)] sm:px-8 sm:py-9`}>
@@ -201,9 +292,41 @@ function SectionBlock({ eyebrow, title, subtitle, support, cards, accent }) {
             </div>
           </div>
 
-          <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-7 flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-slate-500">
+              Swipe to explore
+            </p>
+            <div className="hidden items-center gap-2 sm:flex">
+              <button
+                type="button"
+                onClick={() => scrollCards('prev')}
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-600 transition hover:bg-white hover:text-slate-900"
+                aria-label={`Scroll ${title} left`}
+              >
+                <HiChevronLeft className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollCards('next')}
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-600 transition hover:bg-white hover:text-slate-900"
+                aria-label={`Scroll ${title} right`}
+              >
+                <HiChevronRight className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+
+          <div
+            ref={railRef}
+            className="-mx-2 mt-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-2 pb-3 scrollbar-hide sm:-mx-1 sm:px-1"
+          >
             {cards.map((card) => (
-              <ShowcaseCard key={`${title}_${card.title}`} card={card} accent={accent} />
+              <div
+                key={`${title}_${card.title}`}
+                className="min-w-[84%] snap-center sm:min-w-[360px] lg:min-w-[380px]"
+              >
+                <ShowcaseCard card={card} accent={accent} />
+              </div>
             ))}
           </div>
         </div>

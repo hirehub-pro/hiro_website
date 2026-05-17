@@ -1,11 +1,13 @@
 import Head from 'next/head';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import {
   FiCalendar,
   FiCheckCircle,
+  FiChevronDown,
+  FiChevronUp,
   FiLayers,
   FiPlus,
   FiPrinter,
@@ -16,6 +18,11 @@ import {
 } from 'react-icons/fi';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import {
+  getNextUserDocumentNumber,
+  getSystemVatPercent,
+  initializeUserDocumentCounter,
+} from '../../lib/firestore';
 import {
   dueDateKey,
   formatCurrency,
@@ -66,6 +73,29 @@ function Panel({ children, className = '' }) {
   );
 }
 
+function documentTypeUsesCounter(value) {
+  return value !== 'quote' && value !== 'work_order';
+}
+
+function documentTypeConfig(value) {
+  switch (value) {
+    case 'quote':
+      return { showDueDate: true, showPaymentDetails: false, showPaymentType: false };
+    case 'work_order':
+      return { showDueDate: false, showPaymentDetails: false, showPaymentType: false };
+    case 'receipt':
+      return { showDueDate: false, showPaymentDetails: true, showPaymentType: true };
+    case 'tax_invoice':
+      return { showDueDate: true, showPaymentDetails: false, showPaymentType: false };
+    case 'tax_invoice_receipt':
+      return { showDueDate: false, showPaymentDetails: true, showPaymentType: true };
+    case 'credit_note':
+      return { showDueDate: false, showPaymentDetails: false, showPaymentType: false };
+    default:
+      return { showDueDate: true, showPaymentDetails: true, showPaymentType: true };
+  }
+}
+
 export default function WorkerInvoicesPage() {
   const router = useRouter();
   const { user, profile, isWorker, loading } = useAuth();
@@ -87,8 +117,25 @@ export default function WorkerInvoicesPage() {
     copy.bit,
     copy.check,
   ]), [copy.bankTransfer, copy.bit, copy.card, copy.cash, copy.check]);
+  const documentTypeOptions = useMemo(() => ([
+    { value: 'quote', label: copy.quoteDoc },
+    { value: 'work_order', label: copy.workOrderDoc },
+    { value: 'receipt', label: copy.receiptDoc },
+    { value: 'tax_invoice', label: copy.taxInvoiceDoc },
+    { value: 'tax_invoice_receipt', label: copy.taxInvoiceReceiptDoc },
+    { value: 'credit_note', label: copy.creditNoteDoc },
 
-  const [invoiceNumber, setInvoiceNumber] = useState(`HIR-${Date.now().toString().slice(-6)}`);
+  ]), [copy.creditNoteDoc, copy.quoteDoc, copy.receiptDoc, copy.taxInvoiceDoc, copy.taxInvoiceReceiptDoc, copy.workOrderDoc]);
+  const defaultLineItems = useMemo(
+    () => [buildLineItem(0, copy.defaultLineDescription, 'ILS', copy.unitEach)],
+    [copy.defaultLineDescription, copy.unitEach]
+  );
+  const defaultPayments = useMemo(
+    () => [buildPayment(0, copy.bankTransfer, 'ILS')],
+    [copy.bankTransfer]
+  );
+
+  const [invoiceNumber, setInvoiceNumber] = useState('');
   const [issueDate, setIssueDate] = useState(todayKey());
   const [dueDate, setDueDate] = useState(dueDateKey());
   const [clientName, setClientName] = useState('');
@@ -96,14 +143,27 @@ export default function WorkerInvoicesPage() {
   const [clientEmail, setClientEmail] = useState('');
   const [clientPhone, setClientPhone] = useState('');
   const [clientCity, setClientCity] = useState('');
+  const [documentType, setDocumentType] = useState('receipt');
   const [documentDescription, setDocumentDescription] = useState('');
   const [vatRate, setVatRate] = useState(18);
   const [paymentTerms, setPaymentTerms] = useState('');
   const [notes, setNotes] = useState('');
   const [footerNotes, setFooterNotes] = useState('');
   const [bottomNotes, setBottomNotes] = useState('');
-  const [lineItems, setLineItems] = useState([buildLineItem(0, copy.defaultLineDescription, 'ILS', copy.unitEach)]);
-  const [payments, setPayments] = useState([buildPayment(0, copy.bankTransfer, 'ILS')]);
+  const [lineItems, setLineItems] = useState(defaultLineItems);
+  const [payments, setPayments] = useState(defaultPayments);
+  const [expandedLineItemId, setExpandedLineItemId] = useState(defaultLineItems[0]?.id || null);
+  const [expandedPaymentId, setExpandedPaymentId] = useState(defaultPayments[0]?.id || null);
+  const restoredDraftForUserRef = useRef('');
+  const promptedCounterTypesRef = useRef({});
+  const { showDueDate, showPaymentDetails, showPaymentType } = useMemo(
+    () => documentTypeConfig(documentType),
+    [documentType]
+  );
+
+  function getDocumentTypeLabel(value) {
+    return documentTypeOptions.find((option) => option.value === value)?.label || copy.documentType;
+  }
 
   useEffect(() => {
     if (!loading && !user) {
@@ -118,13 +178,14 @@ export default function WorkerInvoicesPage() {
 
   useEffect(() => {
     if (typeof window === 'undefined' || !user) return;
+    if (restoredDraftForUserRef.current === user.uid) return;
 
     const savedDraft = window.localStorage.getItem(draftStorageKey);
+    restoredDraftForUserRef.current = user.uid;
     if (!savedDraft) return;
 
     try {
       const parsed = JSON.parse(savedDraft);
-      setInvoiceNumber(parsed.invoiceNumber || `HIR-${Date.now().toString().slice(-6)}`);
       setIssueDate(parsed.issueDate || todayKey());
       setDueDate(parsed.dueDate || dueDateKey());
       setClientName(parsed.clientName || '');
@@ -132,18 +193,115 @@ export default function WorkerInvoicesPage() {
       setClientEmail(parsed.clientEmail || '');
       setClientPhone(parsed.clientPhone || '');
       setClientCity(parsed.clientCity || '');
+      setDocumentType(parsed.documentType || 'receipt');
       setDocumentDescription(parsed.documentDescription || '');
-      setVatRate(Number(parsed.vatRate) || 18);
       setPaymentTerms(parsed.paymentTerms || '');
       setNotes(parsed.notes || '');
       setFooterNotes(parsed.footerNotes || '');
       setBottomNotes(parsed.bottomNotes || '');
-      setLineItems(Array.isArray(parsed.lineItems) && parsed.lineItems.length > 0 ? parsed.lineItems : [buildLineItem(0, copy.defaultLineDescription, 'ILS', copy.unitEach)]);
-      setPayments(Array.isArray(parsed.payments) && parsed.payments.length > 0 ? parsed.payments : [buildPayment(0, copy.bankTransfer, 'ILS')]);
+      const nextLineItems = Array.isArray(parsed.lineItems) && parsed.lineItems.length > 0
+        ? parsed.lineItems
+        : defaultLineItems;
+      const nextPayments = Array.isArray(parsed.payments) && parsed.payments.length > 0
+        ? parsed.payments
+        : defaultPayments;
+      setLineItems(nextLineItems);
+      setPayments(nextPayments);
+      setExpandedLineItemId(nextLineItems[nextLineItems.length - 1]?.id || null);
+      setExpandedPaymentId(nextPayments[nextPayments.length - 1]?.id || null);
     } catch (error) {
       // Keep default draft state when parsing fails.
     }
-  }, [copy.bankTransfer, copy.defaultLineDescription, copy.unitEach, draftStorageKey, user]);
+  }, [defaultLineItems, defaultPayments, draftStorageKey, user]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadVatPercent() {
+      try {
+        const nextVatPercent = await getSystemVatPercent();
+        if (!cancelled && nextVatPercent !== null) {
+          setVatRate(nextVatPercent);
+        }
+      } catch (error) {
+        // Keep the fallback VAT value when metadata is unavailable.
+      }
+    }
+
+    loadVatPercent();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user?.uid) return undefined;
+
+    let cancelled = false;
+
+    async function loadDocumentNumber() {
+      if (!documentTypeUsesCounter(documentType)) {
+        setInvoiceNumber('');
+        promptedCounterTypesRef.current[documentType] = false;
+        return;
+      }
+
+      try {
+        const nextDocumentNumber = await getNextUserDocumentNumber(user.uid, documentType);
+        if (!cancelled) {
+          if (nextDocumentNumber) {
+            setInvoiceNumber(nextDocumentNumber);
+            promptedCounterTypesRef.current[documentType] = false;
+            return;
+          }
+
+          setInvoiceNumber('');
+
+          if (typeof window === 'undefined' || promptedCounterTypesRef.current[documentType]) {
+            return;
+          }
+
+          promptedCounterTypesRef.current[documentType] = true;
+          const documentTypeLabel = getDocumentTypeLabel(documentType);
+          const response = window.prompt(
+            `${copy.documentCounterSetupTitle} ${documentTypeLabel}.\n\n${copy.documentCounterSetupPrompt}\n\n${copy.documentCounterSetupWarning}`,
+            '1'
+          );
+
+          if (response === null) {
+            toast.error(copy.documentCounterSetupCancel);
+            router.push(`/profile/${user.uid}`);
+            return;
+          }
+
+          const parsedStartNumber = Number(response.trim());
+          if (!Number.isInteger(parsedStartNumber) || parsedStartNumber <= 0) {
+            toast.error(copy.documentCounterSetupInvalid);
+            promptedCounterTypesRef.current[documentType] = false;
+            return;
+          }
+
+          const initializedNumber = await initializeUserDocumentCounter(user.uid, documentType, parsedStartNumber);
+          if (!cancelled) {
+            setInvoiceNumber(initializedNumber);
+            toast.success(`${documentTypeLabel} ${copy.documentCounterSetupSuccess} ${initializedNumber}.`);
+          }
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setInvoiceNumber('');
+          promptedCounterTypesRef.current[documentType] = false;
+        }
+      }
+    }
+
+    loadDocumentNumber();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [documentType, user?.uid]);
 
   const subtotal = useMemo(
     () => lineItems.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0), 0),
@@ -198,24 +356,36 @@ export default function WorkerInvoicesPage() {
   }
 
   function addLineItem() {
-    setLineItems((current) => [...current, buildLineItem(current.length, '', 'ILS', copy.unitEach)]);
+    const nextItem = buildLineItem(lineItems.length, '', 'ILS', copy.unitEach);
+    setLineItems((current) => [...current, nextItem]);
+    setExpandedLineItemId(nextItem.id);
   }
 
   function removeLineItem(id) {
     setLineItems((current) => {
       if (current.length === 1) return current;
-      return current.filter((item) => item.id !== id);
+      const next = current.filter((item) => item.id !== id);
+      if (expandedLineItemId === id) {
+        setExpandedLineItemId(next[next.length - 1]?.id || null);
+      }
+      return next;
     });
   }
 
   function addPaymentRow() {
-    setPayments((current) => [...current, buildPayment(current.length, copy.bankTransfer, 'ILS')]);
+    const nextPayment = buildPayment(payments.length, copy.bankTransfer, 'ILS');
+    setPayments((current) => [...current, nextPayment]);
+    setExpandedPaymentId(nextPayment.id);
   }
 
   function removePaymentRow(id) {
     setPayments((current) => {
       if (current.length === 1) return current;
-      return current.filter((item) => item.id !== id);
+      const next = current.filter((item) => item.id !== id);
+      if (expandedPaymentId === id) {
+        setExpandedPaymentId(next[next.length - 1]?.id || null);
+      }
+      return next;
     });
   }
 
@@ -231,6 +401,7 @@ export default function WorkerInvoicesPage() {
       clientEmail,
       clientPhone,
       clientCity,
+      documentType,
       documentDescription,
       vatRate,
       paymentTerms,
@@ -255,6 +426,7 @@ export default function WorkerInvoicesPage() {
       clientEmail,
       clientPhone,
       clientCity,
+      documentType,
       documentDescription,
       vatRate: Number(vatRate) || 0,
       paymentTerms,
@@ -299,7 +471,7 @@ export default function WorkerInvoicesPage() {
         <div className="absolute right-0 top-0 h-72 w-72 rounded-full bg-sky-200/25 blur-3xl" />
 
         <div className="relative mx-auto max-w-7xl space-y-6">
-          <section className="grid gap-4 md:grid-cols-3">
+          <section className={`grid gap-4 ${showPaymentDetails ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
             <div className="glass rounded-[28px] p-5 shadow-soft">
               <div className="flex items-center gap-3">
                 <div className="rounded-2xl bg-emerald-50 p-3 text-emerald-700">
@@ -322,37 +494,20 @@ export default function WorkerInvoicesPage() {
                 </div>
               </div>
             </div>
-            <div className="glass rounded-[28px] p-5 shadow-soft">
-              <div className="flex items-center gap-3">
-                <div className="rounded-2xl bg-primary-50 p-3 text-primary">
-                  <FiCheckCircle className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-gray-400">{copy.paymentDetails}</p>
-                  <p className="mt-1 text-2xl font-extrabold text-gray-950">{readyPayments}/{payments.length}</p>
+            {showPaymentDetails ? (
+              <div className="glass rounded-[28px] p-5 shadow-soft">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-2xl bg-primary-50 p-3 text-primary">
+                    <FiCheckCircle className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-gray-400">{copy.paymentDetails}</p>
+                    <p className="mt-1 text-2xl font-extrabold text-gray-950">{readyPayments}/{payments.length}</p>
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : null}
           </section>
-
-          <Panel className="shadow-soft">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-gray-400">{copy.summary}</p>
-                <p className="mt-2 text-lg font-bold text-gray-950">{formatCurrency(total, locale)}</p>
-              </div>
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <button type="button" onClick={saveDraft} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-5 py-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50">
-                  <FiSave className="h-4.5 w-4.5" />
-                  {copy.saveDraft}
-                </button>
-                <button type="button" onClick={openPdfPreview} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-emerald-700">
-                  <FiPrinter className="h-4.5 w-4.5" />
-                  {copy.generatePdf}
-                </button>
-              </div>
-            </div>
-          </Panel>
 
           <div>
             <section className="space-y-6">
@@ -406,26 +561,26 @@ export default function WorkerInvoicesPage() {
                 <SectionTitle eyebrow={copy.invoiceProfile} title={copy.invoiceDetails} />
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="block">
-                    <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.invoiceNumber}</span>
-                    <input value={invoiceNumber} onChange={(event) => setInvoiceNumber(event.target.value)} className="input-field" />
-                  </label>
-                  <label className="block">
-                    <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.vatRate}</span>
-                    <input type="number" min="0" step="0.1" value={vatRate} onChange={(event) => setVatRate(event.target.value)} className="input-field" />
-                  </label>
-                  <label className="block">
                     <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.issueDate}</span>
                     <div className="relative">
                       <FiCalendar className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 rtl:left-auto rtl:right-4" />
                       <input type="date" value={issueDate} onChange={(event) => setIssueDate(event.target.value)} className="input-field pl-12 rtl:pl-4 rtl:pr-12" />
                     </div>
                   </label>
+                  {showDueDate ? (
+                    <label className="block">
+                      <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.dueDate}</span>
+                      <div className="relative">
+                        <FiCalendar className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 rtl:left-auto rtl:right-4" />
+                        <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="input-field pl-12 rtl:pl-4 rtl:pr-12" />
+                      </div>
+                    </label>
+                  ) : null}
                   <label className="block">
-                    <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.dueDate}</span>
-                    <div className="relative">
-                      <FiCalendar className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 rtl:left-auto rtl:right-4" />
-                      <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="input-field pl-12 rtl:pl-4 rtl:pr-12" />
-                    </div>
+                    <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.documentType}</span>
+                    <select value={documentType} onChange={(event) => setDocumentType(event.target.value)} className="input-field">
+                      {documentTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
                   </label>
                   <label className="block md:col-span-2">
                     <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.documentDescription}</span>
@@ -459,6 +614,7 @@ export default function WorkerInvoicesPage() {
                 <div className="space-y-4">
                   {lineItems.map((item, index) => {
                     const lineTotal = (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
+                    const isExpanded = expandedLineItemId === item.id;
                     return (
                       <div key={item.id} className="rounded-[30px] border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-emerald-50/30 p-4 shadow-sm sm:p-5">
                         <div className="mb-4 flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
@@ -479,9 +635,19 @@ export default function WorkerInvoicesPage() {
                             <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 shadow-sm">
                               {`${Number(item.quantity) || 0} × ${formatCurrency(item.unitPrice, locale)}`}
                             </div>
+                            <button
+                              type="button"
+                              onClick={() => setExpandedLineItemId(isExpanded ? null : item.id)}
+                              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-gray-600 transition-colors hover:bg-slate-50"
+                            >
+                              {isExpanded ? <FiChevronUp className="h-4 w-4" /> : <FiChevronDown className="h-4 w-4" />}
+                              {isExpanded ? copy.collapse : copy.expand}
+                            </button>
                           </div>
                         </div>
 
+                        {isExpanded ? (
+                        <>
                         <div className="grid gap-4 lg:grid-cols-2">
                           <label className="block lg:col-span-2">
                             <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.description}</span>
@@ -492,7 +658,7 @@ export default function WorkerInvoicesPage() {
                           </label>
 
                           <label className="block">
-                            <span className="mb-2 block text-sm font-semibold text-gray-700">מק״ט</span>
+                            <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.sku}</span>
                             <input value={item.sku} onChange={(event) => updateLineItem(item.id, 'sku', event.target.value)} className="input-field" />
                           </label>
                           <label className="block">
@@ -530,6 +696,8 @@ export default function WorkerInvoicesPage() {
                             </button>
                           </div>
                         </div>
+                        </>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -541,6 +709,7 @@ export default function WorkerInvoicesPage() {
                 </button>
               </Panel>
 
+              {showPaymentDetails ? (
               <Panel>
                 <SectionTitle eyebrow={copy.paymentDetails} title={copy.paymentDetails} subtitle={copy.paymentDetailsSubtitle} />
                 <div className="mb-5 grid gap-3 md:grid-cols-[1.2fr_0.8fr_0.8fr]">
@@ -570,7 +739,8 @@ export default function WorkerInvoicesPage() {
                 </div>
                 <div className="space-y-4">
                   {payments.map((payment, index) => {
-                    const showBankFields = payment.type === copy.bankTransfer || payment.type === copy.check;
+                    const showBankFields = showPaymentType && (payment.type === copy.bankTransfer || payment.type === copy.check);
+                    const isExpanded = expandedPaymentId === payment.id;
                     return (
                       <div key={payment.id} className="rounded-[30px] border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-primary/5 p-4 shadow-sm sm:p-5">
                         <div className="mb-4 flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
@@ -590,6 +760,14 @@ export default function WorkerInvoicesPage() {
                             </div>
                             <button
                               type="button"
+                              onClick={() => setExpandedPaymentId(isExpanded ? null : payment.id)}
+                              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-gray-600 transition-colors hover:bg-slate-50"
+                            >
+                              {isExpanded ? <FiChevronUp className="h-4 w-4" /> : <FiChevronDown className="h-4 w-4" />}
+                              {isExpanded ? copy.collapse : copy.expand}
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => removePaymentRow(payment.id)}
                               disabled={payments.length === 1}
                               className="inline-flex items-center gap-2 rounded-2xl border border-red-100 bg-red-50 px-3 py-3 text-sm font-semibold text-red-500 transition-colors hover:bg-red-100 disabled:opacity-50"
@@ -599,14 +777,18 @@ export default function WorkerInvoicesPage() {
                             </button>
                           </div>
                         </div>
-
+ 
+                        {isExpanded ? (
+                        <>                           
                         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                          <label className="block">
-                            <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.paymentType}</span>
-                            <select value={payment.type} onChange={(event) => updatePayment(payment.id, 'type', event.target.value)} className="input-field">
-                              {paymentTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                            </select>
-                          </label>
+                          {showPaymentType ? (
+                            <label className="block">
+                              <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.paymentType}</span>
+                              <select value={payment.type} onChange={(event) => updatePayment(payment.id, 'type', event.target.value)} className="input-field">
+                                {paymentTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                              </select>
+                            </label>
+                          ) : null}
                           <label className="block">
                             <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.paymentDate}</span>
                             <input type="date" value={payment.date} onChange={(event) => updatePayment(payment.id, 'date', event.target.value)} className="input-field" />
@@ -641,6 +823,8 @@ export default function WorkerInvoicesPage() {
                             </div>
                           </div>
                         ) : null}
+                        </>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -651,6 +835,7 @@ export default function WorkerInvoicesPage() {
                   {copy.addPayment}
                 </button>
               </Panel>
+              ) : null}
 
               <Panel>
                 <SectionTitle title={copy.notes} subtitle={copy.paymentTerms} />
@@ -689,20 +874,26 @@ export default function WorkerInvoicesPage() {
                 </Panel>
               </div>
 
-            </section>
-          </div>
-        </div>
+              <Panel className="shadow-soft">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-gray-400">{copy.summary}</p>
+                    <p className="mt-2 text-lg font-bold text-gray-950">{formatCurrency(total, locale)}</p>
+                  </div>
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <button type="button" onClick={saveDraft} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-5 py-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50">
+                      <FiSave className="h-4.5 w-4.5" />
+                      {copy.saveDraft}
+                    </button>
+                    <button type="button" onClick={openPdfPreview} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-emerald-700">
+                      <FiPrinter className="h-4.5 w-4.5" />
+                      {copy.generatePdf}
+                    </button>
+                  </div>
+                </div>
+              </Panel>
 
-        <div className="fixed inset-x-4 bottom-4 z-40 md:hidden">
-          <div className="glass rounded-[26px] border border-white/70 p-2 shadow-hero">
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={saveDraft} className="flex-1 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-gray-700">
-                {copy.saveDraft}
-              </button>
-              <button type="button" onClick={openPdfPreview} className="flex-1 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white">
-                {copy.generatePdf}
-              </button>
-            </div>
+            </section>
           </div>
         </div>
       </main>

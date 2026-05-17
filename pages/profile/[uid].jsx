@@ -466,42 +466,46 @@ export default function ProfilePage() {
       <div className="mt-4 border-t border-gray-100" />
 
       <div className="sticky top-0 md:top-16 bg-white/80 backdrop-blur-md border-b border-gray-100 z-30">
-        <div className="max-w-2xl mx-auto flex items-center gap-1 px-2">
-          <div className="flex min-w-0 flex-1">
-            {tabs.map((tb) => (
-              <button
-                key={tb.key}
-                onClick={() => setTab(tb.key)}
-                className={clsx(
-                  'flex-1 py-3.5 text-sm font-semibold transition-all duration-200 relative',
-                  tab === tb.key ? 'text-primary' : 'text-gray-400 hover:text-gray-600'
-                )}
-              >
-                {tb.label}
-                {tab === tb.key && (
-                  <span className="absolute bottom-0 left-4 right-4 h-0.5 rounded-full bg-gradient-to-r from-primary to-indigo-500" />
-                )}
-              </button>
-            ))}
+        <div className="max-w-2xl mx-auto px-2 py-2">
+          <div className="overflow-x-auto scrollbar-hide md:overflow-visible">
+            <div className="flex min-w-max items-center gap-1.5 md:min-w-0 md:justify-center">
+              {tabs.map((tb) => (
+                <button
+                  key={tb.key}
+                  onClick={() => setTab(tb.key)}
+                  className={clsx(
+                    'relative shrink-0 rounded-full px-4 py-2.5 text-sm font-semibold transition-all duration-200',
+                    tab === tb.key
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                  )}
+                >
+                  {tb.label}
+                  {tab === tb.key && (
+                    <span className="absolute inset-x-4 -bottom-1 h-0.5 rounded-full bg-gradient-to-r from-primary to-indigo-500" />
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
 
           {canEditSchedule && (
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="mt-3 flex gap-2 overflow-x-auto pb-1 scrollbar-hide md:justify-center md:overflow-visible">
               <Link
                 href="/worker/invoices"
-                className="rounded-2xl bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100"
+                className="shrink-0 rounded-2xl bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100"
               >
                 {t.invoices.shortTitle}
               </Link>
               <Link
                 href="/worker/invoices/saved"
-                className="rounded-2xl bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-700 transition-colors hover:bg-sky-100"
+                className="shrink-0 rounded-2xl bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-700 transition-colors hover:bg-sky-100"
               >
                 {t.invoices.savedButton}
               </Link>
               <Link
                 href="/worker/dashboard"
-                className="rounded-2xl bg-primary-50 px-4 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary-100"
+                className="shrink-0 rounded-2xl bg-primary-50 px-4 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary-100"
               >
                 {t.nav.dashboard}
               </Link>

@@ -410,8 +410,8 @@ export default function MessagesPage() {
             </Link>
           </div>
         ) : (
-          <div className="grid overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-card md:h-[calc(100vh-11rem)] md:grid-cols-[320px_1fr]">
-            <aside className="border-b border-gray-100 md:border-b-0 md:border-r">
+          <div className="grid rounded-2xl border border-gray-100 bg-white shadow-card md:h-[calc(100vh-11rem)] md:grid-cols-[320px_1fr] md:overflow-hidden">
+            <aside className="border-b border-gray-100 md:flex md:min-h-0 md:flex-col md:border-b-0 md:border-r">
               <div className="border-b border-gray-100 p-4">
                 <div className="relative">
                   <HiSearch className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
@@ -425,7 +425,7 @@ export default function MessagesPage() {
                 </div>
               </div>
 
-              <div className="max-h-80 overflow-y-auto md:max-h-none">
+              <div className="overflow-y-auto md:min-h-0 md:flex-1">
                 {roomsLoading ? (
                   <div className="space-y-3 p-4">
                     {[0, 1, 2].map((item) => (

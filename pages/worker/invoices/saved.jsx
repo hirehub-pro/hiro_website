@@ -45,6 +45,7 @@ function buildPreviewPayloadFromSavedInvoice(item) {
     clientEmail: '',
     clientPhone: '',
     clientCity: '',
+    documentType: item?.docType || 'receipt',
     documentDescription: item?.name || '',
     vatRate: 0,
     paymentTerms: '',
@@ -160,9 +161,12 @@ export default function SavedInvoicesPage() {
 
       const normalizedType = String(item.docType || '').toLowerCase();
       const matchesType = selectedType === 'all'
-        || (selectedType === 'invoice' && normalizedType.includes('invoice'))
+        || (selectedType === 'tax_invoice' && normalizedType === 'tax_invoice')
         || (selectedType === 'receipt' && normalizedType.includes('receipt'))
-        || (selectedType === 'invoice_receipt' && (normalizedType.includes('invoice') || normalizedType.includes('receipt')));
+        || (selectedType === 'tax_invoice_receipt' && normalizedType === 'tax_invoice_receipt')
+        || (selectedType === 'credit_note' && normalizedType === 'credit_note')
+        || (selectedType === 'quote' && normalizedType === 'quote')
+        || (selectedType === 'work_order' && normalizedType === 'work_order');
 
       return matchesSearch && matchesDate && matchesType;
     });
@@ -211,9 +215,12 @@ export default function SavedInvoicesPage() {
 
   const filterChips = [
     { key: 'all', label: copy.allDocs },
-    { key: 'invoice', label: copy.invoiceDoc },
+    { key: 'tax_invoice', label: copy.taxInvoiceDoc },
     { key: 'receipt', label: copy.receiptDoc },
-    { key: 'invoice_receipt', label: copy.invoiceReceiptDoc },
+    { key: 'tax_invoice_receipt', label: copy.taxInvoiceReceiptDoc },
+    { key: 'credit_note', label: copy.creditNoteDoc },
+    { key: 'quote', label: copy.quoteDoc },
+    { key: 'work_order', label: copy.workOrderDoc },
   ];
 
   return (
@@ -288,9 +295,18 @@ export default function SavedInvoicesPage() {
               </div>
             ) : (
               filteredInvoices.map((item) => {
-                const typeLabel = String(item.docType || '').toLowerCase().includes('invoice')
-                  ? copy.invoiceDoc
-                  : copy.receiptDoc;
+                const normalizedType = String(item.docType || '').toLowerCase();
+                const typeLabel = normalizedType === 'tax_invoice'
+                  ? copy.taxInvoiceDoc
+                  : normalizedType === 'tax_invoice_receipt'
+                    ? copy.taxInvoiceReceiptDoc
+                    : normalizedType === 'credit_note'
+                      ? copy.creditNoteDoc
+                      : normalizedType === 'quote'
+                        ? copy.quoteDoc
+                        : normalizedType === 'work_order'
+                          ? copy.workOrderDoc
+                      : copy.receiptDoc;
 
                 return (
                   <button
