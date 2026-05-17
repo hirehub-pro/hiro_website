@@ -471,44 +471,6 @@ export default function WorkerInvoicesPage() {
         <div className="absolute right-0 top-0 h-72 w-72 rounded-full bg-sky-200/25 blur-3xl" />
 
         <div className="relative mx-auto max-w-7xl space-y-6">
-          <section className={`grid gap-4 ${showPaymentDetails ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
-            <div className="glass rounded-[28px] p-5 shadow-soft">
-              <div className="flex items-center gap-3">
-                <div className="rounded-2xl bg-emerald-50 p-3 text-emerald-700">
-                  <FiUser className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-gray-400">{copy.clientDetails}</p>
-                  <p className="mt-1 text-2xl font-extrabold text-gray-950">{clientCompletion}/5</p>
-                </div>
-              </div>
-            </div>
-            <div className="glass rounded-[28px] p-5 shadow-soft">
-              <div className="flex items-center gap-3">
-                <div className="rounded-2xl bg-sky-50 p-3 text-sky-700">
-                  <FiLayers className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-gray-400">{copy.serviceLines}</p>
-                  <p className="mt-1 text-2xl font-extrabold text-gray-950">{readyServiceLines}/{lineItems.length}</p>
-                </div>
-              </div>
-            </div>
-            {showPaymentDetails ? (
-              <div className="glass rounded-[28px] p-5 shadow-soft">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-2xl bg-primary-50 p-3 text-primary">
-                    <FiCheckCircle className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-black uppercase tracking-[0.16em] text-gray-400">{copy.paymentDetails}</p>
-                    <p className="mt-1 text-2xl font-extrabold text-gray-950">{readyPayments}/{payments.length}</p>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </section>
-
           <div>
             <section className="space-y-6">
               <Panel className="shadow-soft">
