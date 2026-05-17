@@ -3,7 +3,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { HiStar } from 'react-icons/hi';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import {
   getUserProfile,
@@ -345,6 +345,48 @@ export default function ProfilePage() {
     }
   }
 
+  async function handleOpenMessage() {
+    if (!profile?.uid) return;
+
+    if (!user) {
+      router.push(`/auth/signin?next=${encodeURIComponent(`/profile/${profile.uid}`)}`);
+      return;
+    }
+
+    if (user.uid === profile.uid) {
+      router.push('/messages');
+      return;
+    }
+
+    const roomId = `direct_${[user.uid, profile.uid].sort().join('_')}`;
+    const roomDraft = {
+      id: roomId,
+      users: [user.uid, profile.uid],
+      user_names: {
+        [user.uid]: myProfile?.name || user.displayName || 'User',
+        [profile.uid]: profile.name || 'Worker',
+      },
+      userNames: {
+        [user.uid]: myProfile?.name || user.displayName || 'User',
+        [profile.uid]: profile.name || 'Worker',
+      },
+      unreadCount: {
+        [user.uid]: 0,
+        [profile.uid]: 0,
+      },
+      lastMessage: '',
+      lastTimestamp: serverTimestamp(),
+    };
+
+    try {
+      await setDoc(doc(db, 'chat_rooms', roomId), roomDraft, { merge: true });
+      router.push(`/messages?roomId=${encodeURIComponent(roomId)}`);
+    } catch (error) {
+      console.error('Failed to open chat room:', error);
+      toast.error('Could not open chat right now');
+    }
+  }
+
   const tabs = [
     { key: 'projects', label: t.profile.projects },
     { key: 'reviews',  label: t.profile.reviews },
@@ -359,9 +401,7 @@ export default function ProfilePage() {
 
   const canEditSchedule = user?.uid === uid && profile?.role === 'worker';
   const isOwnProfile = user?.uid === profile?.uid;
-  const isSubscribedWorker =
-    profile?.role === 'worker' &&
-    (profile?.isSubscribed || profile?.subscriptionStatus === 'active');
+  const shouldShowWorkerActions = profile?.role === 'worker' && !isOwnProfile;
 
   const availableDateSet = new Set(
     (workerSchedule?.availableDates || [])
@@ -460,7 +500,8 @@ export default function ProfilePage() {
 
       <ProfileHeader
         profile={profile}
-        showContactActions={!isOwnProfile && isSubscribedWorker}
+        showContactActions={shouldShowWorkerActions}
+        onMessageClick={handleOpenMessage}
       />
 
       <div className="mt-4 border-t border-gray-100" />

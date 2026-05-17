@@ -18,7 +18,7 @@ function StatPill({ value, label }) {
   );
 }
 
-export default function ProfileHeader({ profile, showContactActions = true }) {
+export default function ProfileHeader({ profile, showContactActions = true, onMessageClick = null }) {
   const { t } = useLanguage();
 
   const avatarUrl =
@@ -158,7 +158,11 @@ export default function ProfileHeader({ profile, showContactActions = true }) {
                 <FiPhone className="w-4 h-4" />
                 {t.profile.contact}
               </a>
-              <button className="flex-1 flex items-center justify-center gap-2 bg-white border-2 border-primary/20 text-primary py-3 rounded-2xl font-bold text-sm hover:bg-primary/5 active:scale-95 transition-all shadow-sm">
+              <button
+                type="button"
+                onClick={onMessageClick || undefined}
+                className="flex-1 flex items-center justify-center gap-2 bg-white border-2 border-primary/20 text-primary py-3 rounded-2xl font-bold text-sm hover:bg-primary/5 active:scale-95 transition-all shadow-sm"
+              >
                 <FiMessageSquare className="w-4 h-4" />
                 {t.profile.message}
               </button>
