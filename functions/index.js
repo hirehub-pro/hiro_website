@@ -48,6 +48,10 @@ exports.sendNotificationPush = onDocumentCreated('users/{userId}/notifications/{
 
   const response = await admin.messaging().sendEachForMulticast({
     tokens,
+    notification: {
+      title,
+      body,
+    },
     data: {
       title,
       body,
@@ -59,6 +63,34 @@ exports.sendNotificationPush = onDocumentCreated('users/{userId}/notifications/{
     webpush: {
       fcmOptions: {
         link: url,
+      },
+      notification: {
+        title,
+        body,
+        icon: '/favicon.ico',
+      },
+    },
+    android: {
+      priority: 'high',
+      notification: {
+        title,
+        body,
+        channelId: 'default',
+      },
+    },
+    apns: {
+      headers: {
+        'apns-priority': '10',
+      },
+      payload: {
+        aps: {
+          alert: {
+            title,
+            body,
+          },
+          sound: 'default',
+          badge: 1,
+        },
       },
     },
   });

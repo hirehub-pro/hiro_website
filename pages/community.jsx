@@ -116,39 +116,68 @@ export default function CommunityPage() {
     loadPosts();
   }, []);
 
+  function normalizeDateValue(value) {
+    if (!value) return null;
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+    if (typeof value.toDate === 'function') {
+      const nextDate = value.toDate();
+      return Number.isNaN(nextDate.getTime()) ? null : nextDate;
+    }
+    const nextDate = new Date(value);
+    return Number.isNaN(nextDate.getTime()) ? null : nextDate;
+  }
+
   function formatShortDate(value) {
-    if (!value) return '';
-    const date = value.toDate ? value.toDate() : new Date(value);
-    if (Number.isNaN(date.getTime())) return '';
+    const date = normalizeDateValue(value);
+    if (!date) return '';
     return date.toLocaleDateString('en-GB', {
       day: '2-digit',
       month: '2-digit',
     });
   }
 
+  function formatPostDate(value) {
+    const date = normalizeDateValue(value);
+    if (!date) return '';
+    return date.toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  }
+
   function haversineKm(lat1, lng1, lat2, lng2) {
     const R = 6371;
-    const dLat = ((lat2 - lat1) * Math.PI) / 180;
-    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
     const a =
       Math.sin(dLat / 2) ** 2 +
-      Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
+  function toRad(deg) {
+    return (deg * Math.PI) / 180;
+  }
+
   function formatDistance(post) {
+    const preferredLat =
+      typeof myProfile?.activeSearchLat === 'number' ? myProfile.activeSearchLat : myProfile?.lat;
+    const preferredLng =
+      typeof myProfile?.activeSearchLng === 'number' ? myProfile.activeSearchLng : myProfile?.lng;
+
     if (
       typeof post.locationLat !== 'number' ||
       typeof post.locationLng !== 'number' ||
-      typeof myProfile?.lat !== 'number' ||
-      typeof myProfile?.lng !== 'number'
+      typeof preferredLat !== 'number' ||
+      typeof preferredLng !== 'number'
     ) {
       return '';
     }
 
-    const km = haversineKm(myProfile.lat, myProfile.lng, post.locationLat, post.locationLng);
+    const km = haversineKm(preferredLat, preferredLng, post.locationLat, post.locationLng);
     if (km < 1) return `${Math.round(km * 1000)} m`;
-    return `${km.toFixed(1)} km`;
+    return `${km.toFixed(km < 10 ? 1 : 0)} km`;
   }
 
   const filteredPosts = posts.filter(function (p) {
@@ -243,7 +272,7 @@ export default function CommunityPage() {
       <Head><title>{'Hiro  ' + t.community.title}</title></Head>
 
       <div className="min-h-screen bg-[#edf4fb]" dir={dir}>
-        <div className="mx-auto max-w-4xl px-4 pt-8">
+        <div className="mx-auto max-w-6xl px-4 pt-8">
           <div className="flex items-center justify-between gap-3">
             <h1 className="text-2xl font-black tracking-tight text-slate-950 md:text-4xl">Community & Jobs</h1>
             <div className="flex items-center gap-2">
@@ -273,7 +302,7 @@ export default function CommunityPage() {
         </div>
 
         <div className="sticky top-0 z-40 bg-[#edf4fb]/95 pt-4 backdrop-blur-xl" dir={dir}>
-          <div className="mx-auto flex max-w-4xl items-center gap-2 overflow-x-auto scrollbar-hide px-4 pb-3">
+          <div className="mx-auto flex max-w-6xl items-center gap-2 overflow-x-auto scrollbar-hide px-4 pb-3">
           {FILTER_TYPES.map(function (type) {
             const active = filter === type;
             return (
@@ -295,12 +324,12 @@ export default function CommunityPage() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-4xl px-4 py-5" dir={dir}>
+      <div className="mx-auto max-w-6xl px-4 py-6" dir={dir}>
 
         {user && (
           <button
             onClick={function () { setShowPublish(true); }}
-            className="mb-5 flex w-full items-center gap-3 rounded-[24px] border border-[#d7e4f3] bg-white px-4 py-3 text-left shadow-sm transition-all hover:border-slate-300 hover:shadow-md"
+            className="mb-6 flex w-full items-center gap-3 rounded-[24px] border border-[#d7e4f3] bg-white px-4 py-3 text-left shadow-sm transition-all hover:border-slate-300 hover:shadow-md"
           >
             <div className={'w-9 h-9 rounded-full bg-gradient-to-br ' + getAvatarGradient(user.uid) + ' flex items-center justify-center flex-shrink-0'}>
               <span className="text-white font-bold text-sm">
@@ -354,91 +383,127 @@ export default function CommunityPage() {
           </div>
         )}
 
-        {!loading && filteredPosts.map(function (post) {
-          const catKey = CATEGORY_NORMALIZE[post.category] || 'tip';
-          const nameParts = (post.authorName || 'U').split(' ');
-          const initials = nameParts.map(function (w) { return w[0]; }).join('').slice(0, 2).toUpperCase();
-          const gradient = getAvatarGradient(post.authorUid || post.authorName || '');
-          const likedByArr = Array.isArray(post.likedBy) ? post.likedBy : [];
-          const hasLiked = user ? likedByArr.includes(user.uid) : false;
+        {!loading && filteredPosts.length > 0 && (
+          <div className="mx-auto flex max-w-3xl flex-col gap-5">
+            {filteredPosts.map(function (post) {
+              const catKey = CATEGORY_NORMALIZE[post.category] || 'tip';
+              const nameParts = (post.authorName || 'U').split(' ');
+              const initials = nameParts.map(function (w) { return w[0]; }).join('').slice(0, 2).toUpperCase();
+              const gradient = getAvatarGradient(post.authorUid || post.authorName || '');
+              const likedByArr = Array.isArray(post.likedBy) ? post.likedBy : [];
+              const hasLiked = user ? likedByArr.includes(user.uid) : false;
+              const distanceLabel = formatDistance(post);
+              const locationLabel = [distanceLabel, post.location].filter(Boolean).join(' • ');
+              const professionLabel = post.professionLabel || post.profession || '';
+              const dateLabel = formatPostDate(post.timestamp);
 
-          return (
-            <div
-              key={post.id}
-              className="mb-5 cursor-pointer overflow-hidden rounded-[28px] border-2 border-[#b9d8fb] bg-white shadow-sm transition-shadow hover:shadow-md lg:mx-auto lg:max-w-2xl"
-              onClick={function () { openPost(post.id); }}
-            >
-              {post.imageUrl && (
-                <div className="relative h-44 w-full md:h-52">
-                  <Image src={post.imageUrl} alt={post.title} fill className="object-cover" />
-                </div>
-              )}
-              <div className="p-4 md:p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <span className="inline-flex items-center rounded-2xl bg-[#dcebfb] px-3 py-1.5 text-sm font-black text-primary md:text-base">
-                    {catKey === 'request' ? 'Job Request' : filterLabels[catKey]}
-                  </span>
-                  <button
-                    onClick={function (e) { e.stopPropagation(); }}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-2xl text-slate-400 hover:bg-slate-50"
-                  >
-                    <HiDotsHorizontal className="h-5 w-5" />
-                  </button>
-                </div>
-
-                <h3 className="mt-5 text-2xl font-black leading-tight tracking-tight text-slate-950 md:text-3xl">{post.title}</h3>
-                <p className="mt-3 text-base leading-relaxed text-slate-500 line-clamp-2 md:text-lg">{post.content}</p>
-
-                {post.isJobRequest && (post.requestDateFrom || post.requestDateTo) && (
-                  <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-[#f3f7fc] px-3 py-2 text-sm font-black text-slate-600 md:text-base">
-                    <FiCalendar className="h-4 w-4 md:h-5 md:w-5" />
-                    {formatShortDate(post.requestDateFrom)}{post.requestDateTo ? ` - ${formatShortDate(post.requestDateTo)}` : ''}
-                  </div>
-                )}
-
-                <div className="mt-5 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className={'flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br ' + gradient}>
-                      <span className="text-sm font-bold text-white">{initials}</span>
+              return (
+                <article
+                  key={post.id}
+                  className="group flex cursor-pointer flex-col overflow-hidden rounded-[28px] border border-[#d7e4f3] bg-white shadow-[0_18px_45px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-1 hover:border-[#b8d5f4] hover:shadow-[0_24px_60px_rgba(15,23,42,0.1)]"
+                  onClick={function () { openPost(post.id); }}
+                >
+                  {post.imageUrl && (
+                    <div className="relative aspect-[16/10] w-full overflow-hidden border-b border-[#e5eef8] bg-[#f3f8fd]">
+                      <Image
+                        src={post.imageUrl}
+                        alt={post.title}
+                        fill
+                        className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                      />
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 text-sm font-black text-slate-500 md:text-base">
-                      <span className="inline-flex items-center gap-2">
-                        <FiUser className="h-4 w-4 text-slate-400" />
-                        {post.authorName || 'Anonymous'}
-                      </span>
-                      {(post.location || formatDistance(post)) && (
-                        <span className="inline-flex items-center gap-2 rounded-full bg-[#dcebfb] px-3 py-1.5 text-primary">
-                          <FiMapPin className="h-4 w-4" />
-                          {[formatDistance(post), post.location].filter(Boolean).join(' • ')}
+                  )}
+
+                  <div className="flex flex-1 flex-col p-5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center rounded-full bg-[#dcebfb] px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-primary">
+                            {catKey === 'request' ? 'Job Request' : filterLabels[catKey]}
+                          </span>
+                          {professionLabel ? (
+                            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
+                              {professionLabel}
+                            </span>
+                          ) : null}
+                        </div>
+                        {dateLabel ? (
+                          <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                            {dateLabel}
+                          </p>
+                        ) : null}
+                      </div>
+                      <button
+                        onClick={function (e) { e.stopPropagation(); }}
+                        className="inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-2xl text-slate-400 transition-colors hover:bg-slate-50"
+                      >
+                        <HiDotsHorizontal className="h-5 w-5" />
+                      </button>
+                    </div>
+
+                    <h3 className="mt-4 text-xl font-black leading-tight tracking-tight text-slate-950 md:text-2xl">
+                      {post.title}
+                    </h3>
+                    <p className="mt-3 line-clamp-3 text-sm leading-7 text-slate-600 md:text-[15px]">
+                      {post.content}
+                    </p>
+
+                    <div className="mt-4 flex flex-wrap gap-2 text-sm font-bold text-slate-600">
+                      {post.isJobRequest && (post.requestDateFrom || post.requestDateTo) ? (
+                        <span className="inline-flex items-center gap-2 rounded-full bg-[#f3f7fc] px-3 py-2">
+                          <FiCalendar className="h-4 w-4 text-slate-400" />
+                          {formatShortDate(post.requestDateFrom)}{post.requestDateTo ? ` - ${formatShortDate(post.requestDateTo)}` : ''}
                         </span>
-                      )}
+                      ) : null}
+                      {locationLabel ? (
+                        <span className="inline-flex items-center gap-2 rounded-full bg-[#eef5fc] px-3 py-2 text-primary">
+                          <FiMapPin className="h-4 w-4" />
+                          {locationLabel}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-6 flex items-center gap-3 border-t border-[#edf3fa] pt-4">
+                      <div className={'flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br ' + gradient}>
+                        <span className="text-sm font-bold text-white">{initials}</span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-black text-slate-800">
+                          {post.authorName || 'Anonymous'}
+                        </p>
+                        <p className="mt-0.5 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400">
+                          <FiUser className="h-3.5 w-3.5" />
+                          Community member
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={function (e) { e.stopPropagation(); handleLike(post); }}
+                          className={clsx(
+                            'inline-flex h-10 items-center gap-1.5 rounded-full border px-3 text-sm font-bold transition-all',
+                            hasLiked
+                              ? 'border-rose-200 bg-rose-50 text-rose-500'
+                              : 'border-slate-200 bg-white text-slate-500 hover:border-rose-200 hover:text-rose-400'
+                          )}
+                        >
+                          <HiHeart className={clsx('h-5 w-5 transition-transform', hasLiked && 'scale-110')} />
+                          {post.likes || 0}
+                        </button>
+                        <button
+                          onClick={function (e) { e.stopPropagation(); openPost(post.id); }}
+                          className="inline-flex h-10 items-center gap-2 rounded-full border border-slate-200 px-3 text-sm font-bold text-slate-500 transition-colors hover:border-primary hover:text-primary"
+                        >
+                          <HiChat className="h-4.5 w-4.5" />
+                          {post.commentsCount || 0}
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <button
-                    onClick={function (e) { e.stopPropagation(); handleLike(post); }}
-                    className={clsx(
-                      'inline-flex items-center gap-1.5 text-lg font-bold transition-colors md:text-xl',
-                      hasLiked ? 'text-rose-500' : 'text-slate-400 hover:text-rose-400'
-                    )}
-                  >
-                    <HiHeart className={clsx('h-6 w-6 transition-transform', hasLiked && 'scale-110')} />
-                    {post.likes || 0}
-                  </button>
-                </div>
-
-                <div className="mt-4 border-t border-[#edf3fa] pt-3">
-                  <button
-                    onClick={function (e) { e.stopPropagation(); openPost(post.id); }}
-                    className="inline-flex items-center gap-2 text-sm font-bold text-slate-400 transition-colors hover:text-primary md:text-base"
-                  >
-                    <HiChat className="h-5 w-5" />
-                    {post.commentsCount || 0}
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })}
+                </article>
+              );
+            })}
+          </div>
+        )}
 
         <div className="h-24 md:h-8" />
       </div>

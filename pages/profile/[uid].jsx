@@ -358,9 +358,8 @@ export default function ProfilePage() {
       return;
     }
 
-    const roomId = `direct_${[user.uid, profile.uid].sort().join('_')}`;
+    const roomId = [user.uid, profile.uid].sort().join('_');
     const roomDraft = {
-      id: roomId,
       users: [user.uid, profile.uid],
       user_names: {
         [user.uid]: myProfile?.name || user.displayName || 'User',
