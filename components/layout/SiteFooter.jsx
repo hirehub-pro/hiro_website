@@ -57,7 +57,7 @@ export default function SiteFooter() {
 
               {/* Google Play */}
               <a
-                href="https://play.google.com"
+                href="https://play.google.com/store/apps/details?id=com.hirehub.app"
                 target="_blank"
                 rel="noreferrer"
                 aria-label="Get it on Google Play"
@@ -72,7 +72,7 @@ export default function SiteFooter() {
 
               {/* App Store */}
               <a
-                href="https://www.apple.com/app-store/"
+                href="https://apps.apple.com/us/app/hiro-%D7%94%D7%99%D7%A8%D7%95/id6763238120"
                 target="_blank"
                 rel="noreferrer"
                 aria-label="Download on the App Store"

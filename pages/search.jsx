@@ -23,6 +23,7 @@ import clsx from 'clsx';
 import { doc, getDoc } from 'firebase/firestore';
 import { searchWorkers } from '../lib/firestore';
 import { db } from '../lib/firebase';
+import { findProfessionBySlug, slugifyProfession } from '../lib/search-routing';
 import WorkerCard from '../components/workers/WorkerCard';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -137,12 +138,26 @@ export default function SearchPage() {
   }, [locale]);
 
   useEffect(() => {
-    if (router.query.q) {
+    if (!router.isReady) return;
+
+    const categorySlug = typeof router.query.category === 'string' ? router.query.category : '';
+    if (categorySlug && professions.length > 0) {
+      const matchedProfession = findProfessionBySlug(professions, categorySlug);
+      const resolvedValue = matchedProfession?.value
+        || matchedProfession?.en
+        || String(categorySlug).replace(/-/g, ' ');
+
+      setQuery(resolvedValue);
+      doSearch(resolvedValue, userLat, userLng);
+      return;
+    }
+
+    if (typeof router.query.q === 'string' && router.query.q.trim()) {
       setQuery(router.query.q);
       doSearch(router.query.q, userLat, userLng);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router.query.q]);
+  }, [router.isReady, router.query.category, router.query.q, professions]);
 
   useEffect(() => {
     if (!hasSearched || !String(query || '').trim()) return;
@@ -179,19 +194,35 @@ export default function SearchPage() {
 
   function handleSubmit(e) {
     e.preventDefault();
-    doSearch(query, userLat, userLng);
+    const normalizedQuery = query.trim();
+    if (!normalizedQuery) return;
+
+    const matchedProfession = professions.find((profession) => {
+      const candidates = [profession.value, profession.en, profession.he, profession.ar, profession.logo];
+      return candidates.some((value) => (
+        String(value || '').trim().toLowerCase() === normalizedQuery.toLowerCase()
+      ));
+    });
+
+    if (matchedProfession) {
+      const professionValue = matchedProfession.value || matchedProfession.en || normalizedQuery;
+      router.push(`/search/${slugifyProfession(professionValue)}`);
+      return;
+    }
+
+    router.push(`/search?q=${encodeURIComponent(normalizedQuery)}`);
   }
 
   function chooseProfession(profession) {
     const value = profession.value || profession.en || getProfessionLabel(profession, locale);
-    setQuery(value);
-    doSearch(value, userLat, userLng);
+    router.push(`/search/${slugifyProfession(value)}`);
   }
 
   function clearQuery() {
     setQuery('');
     setWorkers([]);
     setHasSearched(false);
+    router.push('/search');
     inputRef.current?.focus();
   } 
  

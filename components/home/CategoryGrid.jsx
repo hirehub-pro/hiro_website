@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { collection, doc, getDoc, getDocs, limit, orderBy, query } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { slugifyProfession } from '../../lib/search-routing';
 
 const fallbackCategories = [
   { id: 'Electrician', labelEn: 'Electrician', labelHe: 'חשמלאי', labelAr: 'كهربائي', icon: '⚡', bg: 'bg-yellow-50', iconBg: 'bg-yellow-100' },
@@ -126,7 +127,7 @@ export default function CategoryGrid({ showAll = false }) {
         {displayed.map((cat) => (
           <Link
             key={cat.id}
-            href={`/search?q=${encodeURIComponent(cat.labelEn || cat.id)}`}
+            href={`/search/${slugifyProfession(cat.labelEn || cat.id)}`}
             className={`${cat.bg} card-lift group relative overflow-hidden rounded-[26px] border border-white/70 p-4 shadow-card cursor-pointer animate-fade-up`}
             style={{ animationDelay: `${categories.indexOf(cat) * 70}ms` }}
           >

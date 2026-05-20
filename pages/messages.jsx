@@ -3,7 +3,18 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
-import { HiBell, HiChat, HiPaperAirplane, HiSearch, HiUserCircle } from 'react-icons/hi';
+import {
+  HiBell,
+  HiChat,
+  HiDocumentText,
+  HiMicrophone,
+  HiPaperAirplane,
+  HiPaperClip,
+  HiPhotograph,
+  HiSearch,
+  HiUserCircle,
+  HiVideoCamera,
+} from 'react-icons/hi';
 import {
   FieldPath,
   addDoc,
@@ -20,7 +31,8 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
+import { db, storage } from '../lib/firebase';
 import { createMessageNotification } from '../lib/chat';
 import { registerForPushNotifications, syncGrantedPushNotifications } from '../lib/notifications';
 import { useAuth } from '../contexts/AuthContext';
@@ -53,6 +65,36 @@ function getRoomName(room, currentUid) {
   return room.user_names?.[otherUserId] || room.userNames?.[otherUserId] || otherUserId || 'Conversation';
 }
 
+function getAttachmentKind(message) {
+  const rawType = String(message?.type || '').trim().toLowerCase();
+  const rawUrl = String(message?.url || '').trim().toLowerCase();
+  const rawFileName = String(message?.fileName || '').trim().toLowerCase();
+  const combined = `${rawType} ${rawUrl} ${rawFileName}`;
+
+  if (/(image|photo|picture|jpg|jpeg|png|gif|webp|heic)/.test(combined)) return 'image';
+  if (/(video|mp4|mov|webm|m4v)/.test(combined)) return 'video';
+  if (/(voice|audio|recording|mp3|wav|ogg|m4a|aac)/.test(combined)) return 'audio';
+  if (/(file|document|doc|docx|pdf|xls|xlsx|ppt|pptx|txt|zip)/.test(combined)) return 'file';
+  return rawType === 'text' || (!message?.url && message?.message) ? 'text' : 'file';
+}
+
+function getAttachmentLabel(kind, fileName) {
+  if (fileName) return fileName;
+  if (kind === 'image') return 'Image';
+  if (kind === 'video') return 'Video';
+  if (kind === 'audio') return 'Voice message';
+  if (kind === 'file') return 'File';
+  return '';
+}
+
+function getAttachmentPreview(kind, fileName) {
+  if (kind === 'image') return 'Image';
+  if (kind === 'video') return 'Video';
+  if (kind === 'audio') return 'Voice message';
+  if (kind === 'file') return fileName || 'File';
+  return fileName || 'Attachment';
+}
+
 export default function MessagesPage() {
   const router = useRouter();
   const { user, profile } = useAuth();
@@ -68,10 +110,21 @@ export default function MessagesPage() {
   const [roomsLoading, setRoomsLoading] = useState(true);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [enablingPush, setEnablingPush] = useState(false);
   const [supportRoomLoading, setSupportRoomLoading] = useState(false);
   const [pendingSupportRoom, setPendingSupportRoom] = useState(null);
   const messagesEndRef = useRef(null);
+  const imageInputRef = useRef(null);
+  const videoInputRef = useRef(null);
+  const audioInputRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const composerFeatures = useMemo(() => ([
+    { label: 'Images', icon: HiPhotograph, inputRef: imageInputRef },
+    { label: 'Videos', icon: HiVideoCamera, inputRef: videoInputRef },
+    { label: 'Voice messages', icon: HiMicrophone, inputRef: audioInputRef },
+    { label: 'Files', icon: HiPaperClip, inputRef: fileInputRef },
+  ]), []);
 
   const roomItems = useMemo(() => {
     if (!pendingSupportRoom) return rooms;
@@ -363,6 +416,89 @@ export default function MessagesPage() {
     }
   }
 
+  async function updateRoomAfterSend(roomId, receiverId, previewText) {
+    const roomRef = doc(db, 'chat_rooms', roomId);
+
+    if (receiverId && receiverId !== user.uid) {
+      await updateDoc(
+        roomRef,
+        'lastMessage',
+        previewText,
+        'lastTimestamp',
+        serverTimestamp(),
+        new FieldPath('unreadCount', receiverId),
+        increment(1),
+        new FieldPath('unreadCount', user.uid),
+        0
+      );
+      return;
+    }
+
+    await updateDoc(
+      roomRef,
+      'lastMessage',
+      previewText,
+      'lastTimestamp',
+      serverTimestamp(),
+      new FieldPath('unreadCount', user.uid),
+      0
+    );
+  }
+
+  async function handleAttachmentSelected(kind, event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file || !user || !activeRoom) return;
+
+    const receiverId = getOtherUserId(activeRoom, user.uid);
+    const safeFileName = file.name || `${kind}-${Date.now()}`;
+    const previewText = getAttachmentPreview(kind, safeFileName);
+    const extension = safeFileName.includes('.') ? safeFileName.split('.').pop() : '';
+    const storagePath = [
+      'chat_attachments',
+      activeRoom.id,
+      `${Date.now()}_${user.uid}_${kind}${extension ? `.${extension}` : ''}`,
+    ].join('/');
+
+    setUploadingAttachment(true);
+
+    try {
+      const uploaded = await uploadBytes(storageRef(storage, storagePath), file, {
+        contentType: file.type || undefined,
+      });
+      const url = await getDownloadURL(uploaded.ref);
+
+      const messageRef = await addDoc(collection(db, 'chat_rooms', activeRoom.id, 'messages'), {
+        fileName: safeFileName,
+        message: '',
+        receiverId,
+        senderId: user.uid,
+        storagePath,
+        timestamp: serverTimestamp(),
+        type: kind,
+        url,
+      });
+
+      await updateRoomAfterSend(activeRoom.id, receiverId, previewText);
+
+      if (receiverId && receiverId !== user.uid) {
+        await createMessageNotification({
+          recipientUserId: receiverId,
+          senderUserId: user.uid,
+          senderName: profile?.name || user.displayName || 'Someone',
+          messageId: messageRef.id,
+          roomId: activeRoom.id,
+          text: previewText,
+        });
+      }
+    } catch (error) {
+      toast.error(error.message || t.common.error);
+    } finally {
+      setUploadingAttachment(false);
+    }
+  }
+
   async function handleEnablePushNotifications() {
     setEnablingPush(true);
     try {
@@ -513,6 +649,10 @@ export default function MessagesPage() {
                       <div className="space-y-3">
                         {messages.map((message) => {
                           const mine = message.senderId === user.uid;
+                          const attachmentKind = getAttachmentKind(message);
+                          const hasText = Boolean(String(message.message || '').trim());
+                          const attachmentUrl = String(message.url || '').trim();
+                          const attachmentLabel = getAttachmentLabel(attachmentKind, message.fileName);
 
                           return (
                             <div key={message.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
@@ -523,9 +663,69 @@ export default function MessagesPage() {
                                     : 'rounded-bl-md bg-white text-gray-900'
                                 }`}
                               >
-                                <p className="whitespace-pre-wrap break-words text-sm leading-6">
-                                  {message.message || ''}
-                                </p>
+                                {attachmentKind === 'image' && attachmentUrl ? (
+                                  <a href={attachmentUrl} target="_blank" rel="noreferrer" className="block">
+                                    <img
+                                      src={attachmentUrl}
+                                      alt={attachmentLabel}
+                                      className="max-h-72 w-full rounded-2xl object-cover"
+                                    />
+                                  </a>
+                                ) : null}
+
+                                {attachmentKind === 'video' && attachmentUrl ? (
+                                  <video controls className="max-h-72 w-full rounded-2xl bg-black">
+                                    <source src={attachmentUrl} />
+                                    Your browser does not support video playback.
+                                  </video>
+                                ) : null}
+
+                                {attachmentKind === 'audio' && attachmentUrl ? (
+                                  <div className={`rounded-2xl ${mine ? 'bg-white/10' : 'bg-slate-100'} p-3`}>
+                                    <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                                      <HiMicrophone className="h-4 w-4" />
+                                      <span>{attachmentLabel}</span>
+                                    </div>
+                                    <audio controls className="w-full">
+                                      <source src={attachmentUrl} />
+                                      Your browser does not support audio playback.
+                                    </audio>
+                                  </div>
+                                ) : null}
+
+                                {attachmentKind === 'file' && attachmentUrl ? (
+                                  <a
+                                    href={attachmentUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className={`flex items-center gap-3 rounded-2xl ${
+                                      mine ? 'bg-white/10 text-white' : 'bg-slate-100 text-slate-700'
+                                    } p-3 transition-opacity hover:opacity-85`}
+                                  >
+                                    <div className={`rounded-full ${mine ? 'bg-white/15' : 'bg-white'} p-2`}>
+                                      <HiDocumentText className="h-5 w-5" />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="truncate text-sm font-semibold">{attachmentLabel}</p>
+                                      <p className={`text-xs ${mine ? 'text-white/70' : 'text-slate-500'}`}>
+                                        Open file
+                                      </p>
+                                    </div>
+                                  </a>
+                                ) : null}
+
+                                {hasText ? (
+                                  <p className={`whitespace-pre-wrap break-words text-sm leading-6 ${
+                                    attachmentKind !== 'text' ? 'mt-3' : ''
+                                  }`}>
+                                    {message.message}
+                                  </p>
+                                ) : null}
+
+                                {!hasText && attachmentKind === 'text' ? (
+                                  <p className="text-sm leading-6 opacity-70">Unsupported message</p>
+                                ) : null}
+
                                 <p className={`mt-1 text-[11px] ${mine ? 'text-white/70' : 'text-gray-400'}`}>
                                   {formatMessageTime(message.timestamp)}
                                 </p>
@@ -538,23 +738,71 @@ export default function MessagesPage() {
                     )}
                   </div>
 
-                  <form onSubmit={handleSendMessage} className="flex gap-3 border-t border-gray-100 bg-white p-4">
+                  <div className="border-t border-gray-100 bg-white p-4">
+                    <div className="mb-3 flex flex-wrap gap-2">
+                      {composerFeatures.map(({ label, icon: Icon, inputRef }) => (
+                        <button
+                          key={label}
+                          type="button"
+                          onClick={() => inputRef.current?.click()}
+                          disabled={uploadingAttachment || sending || !activeRoom}
+                          className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <Icon className="h-4 w-4" />
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mb-3 text-xs text-gray-500">
+                      {uploadingAttachment
+                        ? 'Uploading attachment...'
+                        : 'You can send images, videos, voice messages, and files in this chat.'}
+                    </p>
                     <input
-                      type="text"
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      placeholder="Type a message"
-                      className="input-field"
+                      ref={imageInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(event) => handleAttachmentSelected('image', event)}
                     />
-                    <button
-                      type="submit"
-                      disabled={sending || !draft.trim()}
-                      className="btn-primary flex shrink-0 items-center gap-2 px-4"
-                    >
-                      <HiPaperAirplane className="h-5 w-5" />
-                      <span className="hidden sm:inline">Send</span>
-                    </button>
-                  </form>
+                    <input
+                      ref={videoInputRef}
+                      type="file"
+                      accept="video/*"
+                      className="hidden"
+                      onChange={(event) => handleAttachmentSelected('video', event)}
+                    />
+                    <input
+                      ref={audioInputRef}
+                      type="file"
+                      accept="audio/*"
+                      className="hidden"
+                      onChange={(event) => handleAttachmentSelected('audio', event)}
+                    />
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={(event) => handleAttachmentSelected('file', event)}
+                    />
+                    <form onSubmit={handleSendMessage} className="flex gap-3">
+                      <input
+                        type="text"
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        placeholder="Type a message"
+                        className="input-field"
+                      />
+                      <button
+                        type="submit"
+                        disabled={sending || uploadingAttachment || !draft.trim()}
+                        className="btn-primary flex shrink-0 items-center gap-2 px-4"
+                      >
+                        <HiPaperAirplane className="h-5 w-5" />
+                        <span className="hidden sm:inline">{sending ? 'Sending...' : 'Send'}</span>
+                      </button>
+                    </form>
+                  </div>
                 </>
               ) : (
                 <div className="flex flex-1 flex-col items-center justify-center px-6 py-20 text-center">

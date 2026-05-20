@@ -9,6 +9,11 @@ runConfig:
 
 # Environment variables and secrets.
 env:
+  - variable: MOBILE_SITE_URL
+    value: https://hiro-service.web.app
+    availability:
+      - BUILD
+      - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_API_KEY
     value: AIzaSyBL55dWOh2eIBDooZ0EwzXegyAMEiWMuNE
     availability:

@@ -51,6 +51,8 @@ export default function SignUpPage() {
   const [cardCvv, setCardCvv] = useState('');
   const [agreeSubscription, setAgreeSubscription] = useState(false);
   const professionMenuRef = useRef(null);
+  const appStoreUrl = 'https://apps.apple.com/us/app/hiro-%D7%94%D7%99%D7%A8%D7%95/id6763238120';
+  const googlePlayUrl = 'https://play.google.com/store/apps/details?id=com.hirehub.app';
 
   const roleCards = [
     { key: 'customer', label: t.auth.customer, subLabel: 'Find and hire local experts', icon: HiOutlineUser },
@@ -139,6 +141,22 @@ export default function SignUpPage() {
     setProfessions((current) => (
       current.includes(item) ? current.filter((p) => p !== item) : [...current, item]
     ));
+  }
+
+  function handleRoleSelection(nextRole) {
+    if (nextRole !== 'worker') {
+      setRole(nextRole);
+      return;
+    }
+
+    if (typeof window === 'undefined') return;
+
+    const userAgent = window.navigator.userAgent || window.navigator.vendor || '';
+    const platform = window.navigator.platform || '';
+    const isAppleDevice = /iPad|iPhone|iPod|Mac/.test(userAgent)
+      || /Mac/.test(platform);
+
+    window.location.href = isAppleDevice ? appStoreUrl : googlePlayUrl;
   }
 
   function handleDetailsContinue(e) {
@@ -362,7 +380,7 @@ export default function SignUpPage() {
                         <button
                           key={roleCard.key}
                           type="button"
-                          onClick={() => setRole(roleCard.key)}
+                          onClick={() => handleRoleSelection(roleCard.key)}
                           className={clsx(
                             'rounded-2xl border-2 px-3 py-3 text-left transition-all duration-200',
                             isActive ? 'border-primary bg-primary-50 shadow-sm' : 'border-gray-100 bg-white/80 hover:border-gray-200'

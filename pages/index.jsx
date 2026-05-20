@@ -13,15 +13,15 @@ export default function HomePage() {
 
   const firstName = profile?.name?.split(' ')[0] || '';
   const trustPoints = [
-    { icon: HiCheckCircle, label: 'Verified professionals' },
-    { icon: HiLightningBolt, label: 'Fast local responses' },
-    { icon: HiShieldCheck, label: 'Reliable profiles' },
+    { icon: HiCheckCircle, label: t.home.trustVerified },
+    { icon: HiLightningBolt, label: t.home.trustFast },
+    { icon: HiShieldCheck, label: t.home.trustReliable },
   ];
 
   return (
     <>
       <Head>
-        <title>Hiro – Find Professionals Near You</title>
+        <title>{`Hiro – ${t.home.title}`}</title>
       </Head>
 
       <div className="relative overflow-hidden px-4 pb-10 pt-4 md:pb-14">
@@ -35,7 +35,7 @@ export default function HomePage() {
             <div className="relative max-w-2xl">
               <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-white/90 animate-fade-in">
                 <HiSparkles className="h-4 w-4" />
-                Smart local hiring
+                {t.home.heroBadge}
               </div>
 
               {user && (
@@ -49,7 +49,7 @@ export default function HomePage() {
               </h1>
 
               <p className="mt-4 max-w-lg text-sm leading-7 text-white/75 animate-fade-up delay-150 sm:text-base">
-                Discover vetted workers, compare profiles fast, and book help with a cleaner, more professional marketplace experience.
+                {t.home.heroDescription}
               </p>
 
               <div className="mt-6 animate-fade-up delay-200">
@@ -71,45 +71,45 @@ export default function HomePage() {
 
           <aside className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
             <div className="glass rounded-[32px] p-6 shadow-soft animate-slide-left">
-              <p className="text-xs font-bold uppercase tracking-[0.24em] text-primary/65">Why Hiro</p>
-              <h2 className="mt-2 font-display text-2xl font-extrabold text-gray-950">A marketplace that feels premium, not crowded.</h2>
+              <p className="text-xs font-bold uppercase tracking-[0.24em] text-primary/65">{t.home.whyBadge}</p>
+              <h2 className="mt-2 font-display text-2xl font-extrabold text-gray-950">{t.home.whyTitle}</h2>
               <div className="mt-5 grid grid-cols-2 gap-3">
                 <div className="rounded-3xl bg-white/80 p-4">
                   <p className="text-3xl font-extrabold text-primary">10k+</p>
-                  <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">Searches</p>
+                  <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">{t.home.statSearches}</p>
                 </div>
                 <div className="rounded-3xl bg-white/80 p-4">
                   <p className="text-3xl font-extrabold text-primary">4.9</p>
-                  <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">Avg rating</p>
+                  <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">{t.home.statRating}</p>
                 </div>
               </div>
               <Link href="/search" className="btn-primary mt-5 inline-flex items-center justify-center">
-                Explore professionals
+                {t.home.exploreProfessionals}
               </Link>
             </div>
 
             <div className="rounded-[32px] bg-white p-6 shadow-card animate-slide-left delay-150">
-              <p className="text-xs font-bold uppercase tracking-[0.24em] text-primary/65">Instant clarity</p>
+              <p className="text-xs font-bold uppercase tracking-[0.24em] text-primary/65">{t.home.clarityBadge}</p>
               <div className="mt-4 space-y-4">
                 <div className="flex items-start gap-3">
                   <div className="mt-1 h-2.5 w-2.5 rounded-full bg-primary dot-active" />
                   <div>
-                    <p className="font-bold text-gray-900">Cleaner browsing</p>
-                    <p className="text-sm text-gray-500">Clear categories, better spacing, and more visual hierarchy.</p>
+                    <p className="font-bold text-gray-900">{t.home.clarityBrowseTitle}</p>
+                    <p className="text-sm text-gray-500">{t.home.clarityBrowseBody}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <div className="mt-1 h-2.5 w-2.5 rounded-full bg-primary/40" />
                   <div>
-                    <p className="font-bold text-gray-900">Faster decisions</p>
-                    <p className="text-sm text-gray-500">Ratings, location, and trust signals are easier to scan.</p>
+                    <p className="font-bold text-gray-900">{t.home.clarityDecisionsTitle}</p>
+                    <p className="text-sm text-gray-500">{t.home.clarityDecisionsBody}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <div className="mt-1 h-2.5 w-2.5 rounded-full bg-primary/40" />
                   <div>
-                    <p className="font-bold text-gray-900">Smoother experience</p>
-                    <p className="text-sm text-gray-500">Subtle motion and glass surfaces make the interface feel modern.</p>
+                    <p className="font-bold text-gray-900">{t.home.clarityExperienceTitle}</p>
+                    <p className="text-sm text-gray-500">{t.home.clarityExperienceBody}</p>
                   </div>
                 </div>
               </div>

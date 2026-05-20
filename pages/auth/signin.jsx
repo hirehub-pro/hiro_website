@@ -4,7 +4,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { FaApple, FaGooglePlay } from 'react-icons/fa';
-import { HiDeviceMobile, HiKey, HiOutlineUser, HiShieldCheck, HiSparkles } from 'react-icons/hi';
+import { HiDesktopComputer, HiDeviceMobile, HiKey, HiOutlineUser, HiShieldCheck, HiSparkles } from 'react-icons/hi';
 import clsx from 'clsx';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -155,9 +155,9 @@ export default function SignInPage() {
                 <p className="mt-1 text-xs text-gray-500">Phone verification built for trusted access.</p>
               </div>
               <div className="glass rounded-[28px] p-4 shadow-soft">
-                <HiDeviceMobile className="h-8 w-8 text-primary" />
-                <p className="mt-3 text-sm font-bold text-gray-900">Fast on mobile</p>
-                <p className="mt-1 text-xs text-gray-500">Optimized for quick entry and clear actions.</p>
+                <HiDesktopComputer className="h-8 w-8 text-primary" />
+                <p className="mt-3 text-sm font-bold text-gray-900">Fast everywhere</p>
+                <p className="mt-1 text-xs text-gray-500">Optimized for quick entry and clear actions on any device.</p>
               </div>
               <div className="glass rounded-[28px] p-4 shadow-soft">
                 <HiOutlineUser className="h-8 w-8 text-primary" />
