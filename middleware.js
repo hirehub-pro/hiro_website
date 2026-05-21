@@ -1,17 +1,31 @@
 import { NextResponse } from 'next/server';
 
-const MOBILE_SITE_URL = process.env.MOBILE_SITE_URL || 'https://hiro-service.web.app';
+const MOBILE_SITE_URL = process.env.MOBILE_SITE_URL || 'https://m.hiro-services.com';
 const DESKTOP_HOSTS = new Set(['hiro-services.com', 'www.hiro-services.com']);
 
 function isMobileDevice(userAgent) {
   return /Android|iPhone|iPod|Opera Mini|IEMobile|Mobile/i.test(userAgent || '');
 }
 
+function getRequestHost(request) {
+  const forwardedHost = request.headers.get('x-forwarded-host');
+  if (forwardedHost) {
+    return forwardedHost.split(',')[0].trim().toLowerCase();
+  }
+
+  const host = request.headers.get('host');
+  if (host) {
+    return host.split(':')[0].trim().toLowerCase();
+  }
+
+  return request.nextUrl.hostname.toLowerCase();
+}
+
 export function middleware(request) {
   const { nextUrl } = request;
   const userAgent = request.headers.get('user-agent') || '';
   const mobileUrl = new URL(MOBILE_SITE_URL);
-  const currentHost = nextUrl.hostname.toLowerCase();
+  const currentHost = getRequestHost(request);
 
   // Only redirect from the public desktop domains.
   if (!DESKTOP_HOSTS.has(currentHost)) {

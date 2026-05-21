@@ -10,7 +10,7 @@ runConfig:
 # Environment variables and secrets.
 env:
   - variable: MOBILE_SITE_URL
-    value: https://hiro-service.web.app
+    value: https://m.hiro-services.com
     availability:
       - BUILD
       - RUNTIME
