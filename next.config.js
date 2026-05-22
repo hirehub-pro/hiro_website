@@ -9,14 +9,6 @@ const nextConfig = {
       'ui-avatars.com',
     ],
   },
-  async rewrites() {
-    return [
-      {
-        source: '/search/:category',
-        destination: '/search?category=:category',
-      },
-    ];
-  },
 };
 
 module.exports = nextConfig;

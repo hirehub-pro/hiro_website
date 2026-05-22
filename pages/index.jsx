@@ -7,6 +7,55 @@ import HomeShowcaseSections from '../components/home/HomeShowcaseSections';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 
+const SEO_TITLE = 'Hiro - מצאו בעלי מקצוע לידכם | חשמלאי, אינסטלטור, שיפוצים ועוד';
+const SEO_DESCRIPTION = 'Hiro עוזר לכם למצוא בעלי מקצוע אמינים לידכם במהירות. חפשו חשמלאי, אינסטלטור, שיפוצניק, מנקה, טכנאי, הובלות ועוד בעלי מקצוע מומלצים באזור שלכם.';
+const SEO_KEYWORDS = [
+  'בעלי מקצוע',
+  'בעלי מקצוע לידכם',
+  'מצאו בעלי מקצוע',
+  'חיפוש בעלי מקצוע',
+  'בעלי מקצוע מומלצים',
+  'חשמלאי',
+  'אינסטלטור',
+  'שיפוצים',
+  'שיפוצניק',
+  'מנקה',
+  'טכנאי מזגנים',
+  'טכנאי',
+  'הנדימן',
+  'הובלות',
+  'צבעי',
+  'גנן',
+  'מנעולן',
+  'קבלן',
+  'נותני שירות',
+  'שירותים לבית',
+  'אנשי מקצוע בישראל',
+  'find professionals near me',
+  'local services',
+  'home services',
+].join(', ');
+const SITE_NAME = 'הירו';
+const SITE_ALTERNATE_NAME = 'Hiro';
+const HOMEPAGE_URL = 'https://hiro-services.com/';
+const structuredData = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'WebSite',
+      url: HOMEPAGE_URL,
+      name: SITE_NAME,
+      alternateName: SITE_ALTERNATE_NAME,
+    },
+    {
+      '@type': 'Organization',
+      url: HOMEPAGE_URL,
+      name: SITE_NAME,
+      alternateName: SITE_ALTERNATE_NAME,
+    },
+  ],
+};
+
 export default function HomePage() {
   const { user, profile } = useAuth();
   const { t } = useLanguage();
@@ -21,7 +70,22 @@ export default function HomePage() {
   return (
     <>
       <Head>
-        <title>{`Hiro – ${t.home.title}`}</title>
+        <title>{SEO_TITLE}</title>
+        <meta name="description" content={SEO_DESCRIPTION} />
+        <meta name="keywords" content={SEO_KEYWORDS} />
+        <meta property="og:site_name" content={SITE_NAME} />
+        <meta property="og:title" content={SEO_TITLE} />
+        <meta property="og:description" content={SEO_DESCRIPTION} />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content={HOMEPAGE_URL} />
+        <meta name="twitter:card" content="summary" />
+        <meta name="twitter:title" content={SEO_TITLE} />
+        <meta name="twitter:description" content={SEO_DESCRIPTION} />
+        <link rel="canonical" href={HOMEPAGE_URL} />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+        />
       </Head>
 
       <div className="relative overflow-hidden px-4 pb-10 pt-4 md:pb-14">

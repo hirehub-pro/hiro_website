@@ -1,16 +1,16 @@
 import Link from 'next/link';
 import { FiFacebook, FiX } from 'react-icons/fi';
 import { FaGooglePlay, FaApple } from 'react-icons/fa';
-
-const legalLinks = [
-  { href: '/contact', label: 'Contact' },
-  { href: 'https://hire-hub-fe6c4.web.app/terms-of-service', label: 'Terms of use' },
-  { href: 'https://hire-hub-fe6c4.web.app/privacy-policy', label: 'Privacy' },
-  { href: 'https://hire-hub-fe6c4.web.app/privacy-policy', label: 'Cookie preferences' },
-  { href: 'https://hire-hub-fe6c4.web.app/terms-of-service', label: 'Security' },
-];
+import { useLanguage } from '../../contexts/LanguageContext';
 
 export default function SiteFooter() {
+  const { t } = useLanguage();
+  const legalLinks = [
+    { href: '/contact', label: 'Contact' },
+    { href: 'https://hire-hub-fe6c4.web.app/terms-of-service', label: t.settings.termsOfService },
+    { href: 'https://hire-hub-fe6c4.web.app/privacy-policy', label: t.settings.privacyPolicy },
+  ];
+
   return (
     <footer className="relative mt-10 overflow-hidden bg-slate-900 text-white">
       <div className="absolute inset-0 bg-gradient-to-br from-[#0e2236] via-[#10283f] to-[#175181]" />

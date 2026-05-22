@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
+import { doc, getDoc } from 'firebase/firestore';
 import {
   FiCalendar,
   FiCheckCircle,
@@ -18,14 +19,18 @@ import {
 } from 'react-icons/fi';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { db } from '../../lib/firebase';
 import {
   getNextUserDocumentNumber,
   getSystemVatPercent,
+  getUserProfile,
+  getUserVerificationInfo,
   initializeUserDocumentCounter,
 } from '../../lib/firestore';
 import {
   dueDateKey,
   formatCurrency,
+  getInvoiceClientPrefillStorageKey,
   getInvoicePreviewStorageKey,
   todayKey,
 } from '../../lib/invoices';
@@ -77,6 +82,10 @@ function documentTypeUsesCounter(value) {
   return value !== 'quote' && value !== 'work_order';
 }
 
+function isTaxInvoiceDocumentType(value) {
+  return value === 'tax_invoice' || value === 'tax_invoice_receipt';
+}
+
 function documentTypeConfig(value) {
   switch (value) {
     case 'quote':
@@ -102,6 +111,9 @@ export default function WorkerInvoicesPage() {
   const { t, locale } = useLanguage();
   const copy = t.invoices;
   const draftStorageKey = `hiro_invoice_draft_${user?.uid || 'guest'}`;
+  const profileDealerType = String(profile?.dealerType || '').trim().toLowerCase();
+  const [dealerType, setDealerType] = useState(profileDealerType);
+  const [dealerTypeLoaded, setDealerTypeLoaded] = useState(profileDealerType === 'exempt');
 
   const currencyOptions = useMemo(() => ['ILS', 'USD', 'EUR'], []);
   const unitOptions = useMemo(() => ([
@@ -117,6 +129,8 @@ export default function WorkerInvoicesPage() {
     copy.bit,
     copy.check,
   ]), [copy.bankTransfer, copy.bit, copy.card, copy.cash, copy.check]);
+  const effectiveDealerType = dealerType || profileDealerType;
+  const isExemptDealer = effectiveDealerType === 'exempt';
   const documentTypeOptions = useMemo(() => ([
     { value: 'quote', label: copy.quoteDoc },
     { value: 'work_order', label: copy.workOrderDoc },
@@ -124,8 +138,11 @@ export default function WorkerInvoicesPage() {
     { value: 'tax_invoice', label: copy.taxInvoiceDoc },
     { value: 'tax_invoice_receipt', label: copy.taxInvoiceReceiptDoc },
     { value: 'credit_note', label: copy.creditNoteDoc },
-
-  ]), [copy.creditNoteDoc, copy.quoteDoc, copy.receiptDoc, copy.taxInvoiceDoc, copy.taxInvoiceReceiptDoc, copy.workOrderDoc]);
+  ].filter((option) => {
+    if (!dealerTypeLoaded && isTaxInvoiceDocumentType(option.value)) return false;
+    if (isExemptDealer && isTaxInvoiceDocumentType(option.value)) return false;
+    return true;
+  })), [copy.creditNoteDoc, copy.quoteDoc, copy.receiptDoc, copy.taxInvoiceDoc, copy.taxInvoiceReceiptDoc, copy.workOrderDoc, dealerTypeLoaded, isExemptDealer]);
   const defaultLineItems = useMemo(
     () => [buildLineItem(0, copy.defaultLineDescription, 'ILS', copy.unitEach)],
     [copy.defaultLineDescription, copy.unitEach]
@@ -156,6 +173,8 @@ export default function WorkerInvoicesPage() {
   const [expandedPaymentId, setExpandedPaymentId] = useState(defaultPayments[0]?.id || null);
   const restoredDraftForUserRef = useRef('');
   const promptedCounterTypesRef = useRef({});
+  const appliedClientPrefillRef = useRef('');
+  const [verificationChecked, setVerificationChecked] = useState(false);
   const { showDueDate, showPaymentDetails, showPaymentType } = useMemo(
     () => documentTypeConfig(documentType),
     [documentType]
@@ -175,6 +194,36 @@ export default function WorkerInvoicesPage() {
       router.replace('/');
     }
   }, [isWorker, loading, router, user]);
+
+  useEffect(() => {
+    if (loading || !user?.uid || !isWorker) return;
+
+    let cancelled = false;
+
+    async function ensureVerificationInfo() {
+      try {
+        const verificationInfo = await getUserVerificationInfo(user.uid);
+        if (cancelled) return;
+
+        if (!verificationInfo) {
+          router.replace(`/worker/verification?next=${encodeURIComponent('/worker/invoices')}`);
+          return;
+        }
+
+        setVerificationChecked(true);
+      } catch (error) {
+        if (!cancelled) {
+          router.replace(`/worker/verification?next=${encodeURIComponent('/worker/invoices')}`);
+        }
+      }
+    }
+
+    ensureVerificationInfo();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isWorker, loading, router, user?.uid]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !user) return;
@@ -213,6 +262,112 @@ export default function WorkerInvoicesPage() {
       // Keep default draft state when parsing fails.
     }
   }, [defaultLineItems, defaultPayments, draftStorageKey, user]);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    let cancelled = false;
+
+    async function loadDealerType() {
+      if (!cancelled) {
+        setDealerType(profileDealerType);
+        setDealerTypeLoaded(false);
+      }
+
+      try {
+        const userSnap = await getDoc(doc(db, 'users', user.uid));
+        const verificationSnap = await getDoc(doc(db, 'users', user.uid, 'verification_info', 'latest'));
+        if (!cancelled) {
+          const userDocDealerType = String(userSnap.data()?.dealerType || userSnap.data()?.dealertype || '').trim().toLowerCase();
+          const verificationDealerType = String(verificationSnap.data()?.dealerType || verificationSnap.data()?.dealertype || '').trim().toLowerCase();
+          setDealerType(verificationDealerType || userDocDealerType || profileDealerType);
+          setDealerTypeLoaded(true);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setDealerType(profileDealerType);
+          setDealerTypeLoaded(true);
+        }
+      }
+    }
+
+    loadDealerType();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [profileDealerType, user?.uid]);
+
+  useEffect(() => {
+    if (!dealerTypeLoaded) return;
+    if (!isExemptDealer || !isTaxInvoiceDocumentType(documentType)) return;
+    setDocumentType('receipt');
+  }, [dealerTypeLoaded, documentType, isExemptDealer]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !user) return;
+
+    const storageKey = getInvoiceClientPrefillStorageKey(user.uid);
+    const storedPrefill = window.localStorage.getItem(storageKey);
+    if (!storedPrefill) return;
+
+    let parsedPrefill = null;
+    try {
+      parsedPrefill = JSON.parse(storedPrefill);
+    } catch (error) {
+      window.localStorage.removeItem(storageKey);
+      return;
+    }
+
+    const rawClientUid = typeof parsedPrefill?.clientUid === 'string' ? parsedPrefill.clientUid : '';
+    const rawClientName = typeof parsedPrefill?.clientName === 'string' ? parsedPrefill.clientName : '';
+    const rawClientEmail = typeof parsedPrefill?.clientEmail === 'string' ? parsedPrefill.clientEmail : '';
+    const rawClientPhone = typeof parsedPrefill?.clientPhone === 'string' ? parsedPrefill.clientPhone : '';
+    const rawClientCity = typeof parsedPrefill?.clientCity === 'string' ? parsedPrefill.clientCity : '';
+    const prefillKey = [rawClientUid, rawClientName, rawClientEmail, rawClientPhone, rawClientCity].join('|');
+
+    if (!prefillKey.trim() || appliedClientPrefillRef.current === prefillKey) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function applyClientPrefill() {
+      let clientProfile = null;
+      let clientBusinessId = '';
+
+      if (rawClientUid) {
+        try {
+          clientProfile = await getUserProfile(rawClientUid);
+        } catch (error) {
+          clientProfile = null;
+        }
+
+        try {
+          const verificationSnap = await getDoc(doc(db, 'users', rawClientUid, 'verification_info', 'latest'));
+          clientBusinessId = verificationSnap.exists() ? String(verificationSnap.data()?.businessId || '').trim() : '';
+        } catch (error) {
+          clientBusinessId = '';
+        }
+      }
+
+      if (cancelled) return;
+
+      setClientName(clientProfile?.name || rawClientName || '');
+      setClientId(clientBusinessId || '');
+      setClientEmail(clientProfile?.email || rawClientEmail || '');
+      setClientPhone(clientProfile?.phone || clientProfile?.optionalPhone || rawClientPhone || '');
+      setClientCity(clientProfile?.town || clientProfile?.city || rawClientCity || '');
+      appliedClientPrefillRef.current = prefillKey;
+      window.localStorage.removeItem(storageKey);
+    }
+
+    applyClientPrefill();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   useEffect(() => {
     let cancelled = false;
@@ -319,7 +474,7 @@ export default function WorkerInvoicesPage() {
   const readyServiceLines = lineItems.filter((item) => item.description && Number(item.quantity) > 0 && Number(item.unitPrice) > 0).length;
   const readyPayments = payments.filter((item) => item.type && Number(item.amount) > 0).length;
 
-  if (loading) {
+  if (loading || (user && isWorker && !verificationChecked)) {
     return (
       <div className="mx-auto flex min-h-[70vh] max-w-4xl items-center justify-center px-4">
         <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
@@ -452,6 +607,15 @@ export default function WorkerInvoicesPage() {
 
   function openPdfPreview() {
     if (typeof window === 'undefined') return;
+    if (!dealerTypeLoaded) {
+      toast.error('Checking your business tax status. Please try again in a moment.');
+      return;
+    }
+    if (isExemptDealer && isTaxInvoiceDocumentType(documentType)) {
+      toast.error('Exempt businesses cannot generate tax invoice documents.');
+      setDocumentType('receipt');
+      return;
+    }
 
     const previewStorageKey = getInvoicePreviewStorageKey(user?.uid);
     window.localStorage.setItem(previewStorageKey, JSON.stringify(buildInvoicePayload()));
@@ -540,9 +704,20 @@ export default function WorkerInvoicesPage() {
                   ) : null}
                   <label className="block">
                     <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.documentType}</span>
-                    <select value={documentType} onChange={(event) => setDocumentType(event.target.value)} className="input-field">
+                    <select
+                      value={documentType}
+                      onChange={(event) => setDocumentType(event.target.value)}
+                      disabled={!dealerTypeLoaded}
+                      className="input-field disabled:cursor-not-allowed disabled:opacity-60"
+                    >
                       {documentTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </select>
+                    {!dealerTypeLoaded ? (
+                      <p className="mt-2 text-xs font-medium text-gray-500">Checking your business tax status...</p>
+                    ) : null}
+                    {dealerTypeLoaded && isExemptDealer ? (
+                      <p className="mt-2 text-xs font-medium text-amber-700">Exempt businesses cannot use tax invoice document types.</p>
+                    ) : null}
                   </label>
                   <label className="block md:col-span-2">
                     <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.documentDescription}</span>
@@ -847,7 +1022,12 @@ export default function WorkerInvoicesPage() {
                       <FiSave className="h-4.5 w-4.5" />
                       {copy.saveDraft}
                     </button>
-                    <button type="button" onClick={openPdfPreview} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-emerald-700">
+                    <button
+                      type="button"
+                      onClick={openPdfPreview}
+                      disabled={!dealerTypeLoaded}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
                       <FiPrinter className="h-4.5 w-4.5" />
                       {copy.generatePdf}
                     </button>

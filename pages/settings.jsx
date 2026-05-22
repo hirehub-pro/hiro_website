@@ -18,6 +18,7 @@ import {
   FiLock,
   FiLogOut,
   FiMessageSquare,
+  FiShield,
   FiUser,
 } from 'react-icons/fi';
 import { registerForPushNotifications } from '../lib/notifications';
@@ -73,6 +74,12 @@ export default function SettingsPage() {
       icon: FiUser,
       href: `/profile/${user?.uid || ''}`,
     },
+    ...(profile?.role === 'worker' ? [{
+      key: 'businessVerification',
+      label: copy.businessVerification,
+      icon: FiShield,
+      href: '/worker/verification',
+    }] : []),
     {
       key: 'privacy',
       label: copy.privacyPolicy,
@@ -85,7 +92,7 @@ export default function SettingsPage() {
       icon: FiFileText,
       onClick: () => setActiveInfoPanel('terms'),
     },
-  ]), [copy.privacyPolicy, copy.termsOfService, copy.viewProfile, user?.uid]);
+  ]), [copy.businessVerification, copy.privacyPolicy, copy.termsOfService, copy.viewProfile, profile?.role, user?.uid]);
 
   const supportRows = useMemo(() => ([
     {

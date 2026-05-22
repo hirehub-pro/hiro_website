@@ -521,11 +521,11 @@ export default function CommunityPage() {
 
       {showPublish && (
         <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 backdrop-blur-sm"
+          className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-0 backdrop-blur-sm sm:items-center sm:p-4"
           onClick={function () { setShowPublish(false); }}
         >
           <div
-            className="w-full sm:max-w-lg bg-white rounded-t-[28px] sm:rounded-[28px] shadow-2xl p-5 sm:p-6 max-h-[90vh] overflow-y-auto"
+            className="max-h-[90vh] w-full overflow-y-auto rounded-t-[28px] bg-white px-5 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-5 shadow-2xl sm:max-w-lg sm:rounded-[28px] sm:p-6"
             onClick={function (e) { e.stopPropagation(); }}
           >
             <div className="flex items-center justify-between mb-5">
@@ -598,13 +598,15 @@ export default function CommunityPage() {
               )}
               <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
 
-              <button
-                type="submit"
-                disabled={publishing}
-                className="w-full bg-gradient-to-r from-primary to-indigo-600 text-white py-3.5 rounded-2xl font-bold text-sm hover:opacity-90 active:scale-95 transition-all disabled:opacity-60 shadow-glow"
-              >
-                {publishing ? 'Publishing...' : t.community.publish}
-              </button>
+              <div className="sticky bottom-0 -mx-5 mt-2 bg-white/95 px-5 pb-[calc(env(safe-area-inset-bottom)+0.25rem)] pt-3 backdrop-blur sm:static sm:mx-0 sm:bg-transparent sm:px-0 sm:pb-0 sm:pt-0">
+                <button
+                  type="submit"
+                  disabled={publishing}
+                  className="w-full rounded-2xl bg-gradient-to-r from-primary to-indigo-600 py-3.5 text-sm font-bold text-white shadow-glow transition-all hover:opacity-90 active:scale-95 disabled:opacity-60"
+                >
+                  {publishing ? 'Publishing...' : t.community.publish}
+                </button>
+              </div>
             </form>
           </div>
         </div>
