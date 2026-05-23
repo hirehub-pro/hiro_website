@@ -5,6 +5,8 @@ import { useRouter } from 'next/router';
 import { FiArrowLeft, FiDownload, FiPrinter, FiSend, FiShare2 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useLanguage } from '../../../contexts/LanguageContext';
 import { storage } from '../../../lib/firebase';
@@ -32,49 +34,27 @@ function DetailCard({ title, lines, tint = 'white', align = 'right' }) {
   );
 }
 
-function cloneNodeWithInlineStyles(node) {
-  if (typeof window === 'undefined') return node.cloneNode(true);
-  if (node.nodeType === Node.TEXT_NODE) {
-    return node.cloneNode(true);
-  }
-
-  const clone = node.cloneNode(false);
-
-  if (node instanceof Element && clone instanceof Element) {
-    const computedStyle = window.getComputedStyle(node);
-    const styleText = Array.from(computedStyle)
-      .map((property) => `${property}:${computedStyle.getPropertyValue(property)};`)
-      .join('');
-    clone.setAttribute('style', styleText);
-
-    if (node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement || node instanceof HTMLSelectElement) {
-      clone.setAttribute('value', node.value);
-    }
-  }
-
-  Array.from(node.childNodes).forEach((childNode) => {
-    clone.appendChild(cloneNodeWithInlineStyles(childNode));
+async function buildInvoicePdfBlob(element) {
+  const canvas = await html2canvas(element, {
+    backgroundColor: '#ffffff',
+    scale: Math.min(1.5, Math.max(1.15, window.devicePixelRatio || 1)),
+    useCORS: true,
+    logging: false,
   });
 
-  return clone;
-}
+  const pdfWidth = Math.max(595.28, Math.round(canvas.width * 0.75));
+  const pdfHeight = Math.max(841.89, Math.round(canvas.height * 0.75));
+  const pdf = new jsPDF({
+    compress: true,
+    format: [pdfWidth, pdfHeight],
+    orientation: pdfWidth >= pdfHeight ? 'landscape' : 'portrait',
+    unit: 'pt',
+  });
 
-function buildInvoiceHtmlDocument(element, dir = 'ltr') {
-  const clonedElement = cloneNodeWithInlineStyles(element);
+  const pageImageData = canvas.toDataURL('image/jpeg', 0.88);
+  pdf.addImage(pageImageData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
 
-  return `<!doctype html>
-<html dir="${dir}">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Invoice</title>
-  </head>
-  <body style="margin:0;min-height:100vh;padding:32px 24px;background:#d9dde3;font-family:Arial,sans-serif;box-sizing:border-box;">
-    <div style="display:flex;justify-content:center;align-items:flex-start;">
-      ${clonedElement.outerHTML}
-    </div>
-  </body>
-</html>`;
+  return pdf.output('blob');
 }
 
 export default function InvoicePreviewPage() {
@@ -153,13 +133,13 @@ export default function InvoicePreviewPage() {
       }
 
       const createdAtMs = Date.now();
-      const fileName = `invoice_${user.uid}_${createdAtMs}.html`;
+      const fileName = `invoice_${user.uid}_${createdAtMs}.pdf`;
       const storagePath = `invoices/${user.uid}/${fileName}`;
-      const htmlDocument = buildInvoiceHtmlDocument(invoiceContentRef.current, dir);
+      const pdfBlob = await buildInvoicePdfBlob(invoiceContentRef.current);
       const uploadedSnapshot = await uploadBytes(
         storageRef(storage, storagePath),
-        new Blob([htmlDocument], { type: 'text/html;charset=utf-8' }),
-        { contentType: 'text/html;charset=utf-8' }
+        pdfBlob,
+        { contentType: 'application/pdf' }
       );
       const url = await getDownloadURL(uploadedSnapshot.ref);
 

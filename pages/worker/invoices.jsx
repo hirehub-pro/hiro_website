@@ -35,7 +35,7 @@ import {
   todayKey,
 } from '../../lib/invoices';
 
-function buildLineItem(index, description, currency, unit) {
+function buildLineItem(index, description, currency) {
   return {
     id: `${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
     sku: '',
@@ -43,7 +43,6 @@ function buildLineItem(index, description, currency, unit) {
     quantity: 1,
     unitPrice: 0,
     currency,
-    unit,
   };
 }
 
@@ -117,12 +116,6 @@ export default function WorkerInvoicesPage() {
   const [dealerTypeLoaded, setDealerTypeLoaded] = useState(profileDealerType === 'exempt');
 
   const currencyOptions = useMemo(() => ['ILS', 'USD', 'EUR'], []);
-  const unitOptions = useMemo(() => ([
-    { value: copy.unitEach, label: copy.unitEach },
-    { value: copy.unitHour, label: copy.unitHour },
-    { value: copy.unitDay, label: copy.unitDay },
-    { value: copy.unitProject, label: copy.unitProject },
-  ]), [copy.unitDay, copy.unitEach, copy.unitHour, copy.unitProject]);
   const paymentTypeOptions = useMemo(() => ([
     copy.bankTransfer,
     copy.cash,
@@ -145,8 +138,8 @@ export default function WorkerInvoicesPage() {
     return true;
   })), [copy.creditNoteDoc, copy.quoteDoc, copy.receiptDoc, copy.taxInvoiceDoc, copy.taxInvoiceReceiptDoc, copy.workOrderDoc, dealerTypeLoaded, isExemptDealer]);
   const defaultLineItems = useMemo(
-    () => [buildLineItem(0, copy.defaultLineDescription, 'ILS', copy.unitEach)],
-    [copy.defaultLineDescription, copy.unitEach]
+    () => [buildLineItem(0, copy.defaultLineDescription, 'ILS')],
+    [copy.defaultLineDescription]
   );
   const defaultPayments = useMemo(
     () => [buildPayment(0, copy.bankTransfer, 'ILS')],
@@ -540,7 +533,7 @@ export default function WorkerInvoicesPage() {
   function updateLineItem(id, field, value) {
     setLineItems((current) => current.map((item) => (
       item.id === id
-        ? { ...item, [field]: field === 'description' || field === 'sku' || field === 'currency' || field === 'unit' ? value : Number(value) }
+        ? { ...item, [field]: field === 'description' || field === 'sku' || field === 'currency' ? value : Number(value) }
         : item
     )));
   }
@@ -554,7 +547,7 @@ export default function WorkerInvoicesPage() {
   }
 
   function addLineItem() {
-    const nextItem = buildLineItem(lineItems.length, '', 'ILS', copy.unitEach);
+    const nextItem = buildLineItem(lineItems.length, '', 'ILS');
     setLineItems((current) => [...current, nextItem]);
     setExpandedLineItemId(nextItem.id);
   }
@@ -644,6 +637,49 @@ export default function WorkerInvoicesPage() {
     };
   }
 
+  function validateInvoiceBeforePreview() {
+    if (!clientName.trim()) {
+      toast.error(copy.clientNameRequired);
+      return false;
+    }
+
+    const invalidLineIndex = lineItems.findIndex((item) => {
+      const description = String(item?.description || '').trim();
+      const quantity = Number(item?.quantity);
+      const unitPrice = Number(item?.unitPrice);
+
+      return !description || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice <= 0;
+    });
+
+    if (invalidLineIndex !== -1) {
+      setExpandedLineItemId(lineItems[invalidLineIndex]?.id || null);
+      toast.error(copy.serviceLineRequired);
+      return false;
+    }
+
+    if (showPaymentDetails) {
+      const invalidPaymentIndex = payments.findIndex((payment) => {
+        const amount = Number(payment?.amount);
+        return !Number.isFinite(amount) || amount <= 0;
+      });
+
+      if (invalidPaymentIndex !== -1) {
+        setExpandedPaymentId(payments[invalidPaymentIndex]?.id || null);
+        toast.error(copy.paymentAmountRequired);
+        return false;
+      }
+
+      const roundedTotal = Math.round(total * 100);
+      const roundedPaidTotal = Math.round(paidTotal * 100);
+      if (roundedTotal !== roundedPaidTotal) {
+        toast.error(copy.paymentTotalMustMatch);
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   function openPdfPreview() {
     if (typeof window === 'undefined') return;
     if (!dealerTypeLoaded) {
@@ -653,6 +689,9 @@ export default function WorkerInvoicesPage() {
     if (isExemptDealer && isTaxInvoiceDocumentType(documentType)) {
       toast.error('Exempt businesses cannot generate tax invoice documents.');
       setDocumentType('receipt');
+      return;
+    }
+    if (!validateInvoiceBeforePreview()) {
       return;
     }
 
@@ -694,7 +733,9 @@ export default function WorkerInvoicesPage() {
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="block">
-                    <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.clientName}</span>
+                    <span className="mb-2 block text-sm font-semibold text-gray-700">
+                      {copy.clientName} <span className="text-red-500">*</span>
+                    </span>
                     <div className="relative">
                       <FiUser className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 rtl:left-auto rtl:right-4" />
                       <input value={clientName} onChange={(event) => setClientName(event.target.value)} className="input-field pl-12 rtl:pl-4 rtl:pr-12" />
@@ -743,14 +784,17 @@ export default function WorkerInvoicesPage() {
                   ) : null}
                   <label className="block">
                     <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.documentType}</span>
-                    <select
-                      value={documentType}
-                      onChange={(event) => setDocumentType(event.target.value)}
-                      disabled={!dealerTypeLoaded}
-                      className="input-field disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {documentTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </select>
+                    <div className="relative">
+                      <select
+                        value={documentType}
+                        onChange={(event) => setDocumentType(event.target.value)}
+                        disabled={!dealerTypeLoaded}
+                        className="input-field appearance-none pr-10 disabled:cursor-not-allowed disabled:opacity-60 rtl:pr-4 rtl:pl-10"
+                      >
+                        {documentTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                      <FiChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 rtl:right-auto rtl:left-3" />
+                    </div>
                     {!dealerTypeLoaded ? (
                       <p className="mt-2 text-xs font-medium text-gray-500">Checking your business tax status...</p>
                     ) : null}
@@ -824,41 +868,43 @@ export default function WorkerInvoicesPage() {
 
                         {isExpanded ? (
                         <>
-                        <div className="grid gap-4 lg:grid-cols-2">
-                          <label className="block lg:col-span-2">
-                            <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.description}</span>
+                        <div className="grid gap-4">
+                          <label className="block">
+                            <span className="mb-2 block text-sm font-semibold text-gray-700">
+                              {copy.description} <span className="text-red-500">*</span>
+                            </span>
                             <div className="relative">
                               <FiSearch className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 rtl:left-auto rtl:right-4" />
                               <input value={item.description} onChange={(event) => updateLineItem(item.id, 'description', event.target.value)} className="input-field pl-12 rtl:pl-4 rtl:pr-12" />
                             </div>
                           </label>
+                        </div>
 
+                        <div className="mt-4 grid gap-4 md:grid-cols-[minmax(150px,0.95fr)_minmax(100px,0.58fr)_minmax(150px,0.95fr)_minmax(78px,0.42fr)_auto]">
                           <label className="block">
                             <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.sku}</span>
                             <input value={item.sku} onChange={(event) => updateLineItem(item.id, 'sku', event.target.value)} className="input-field" />
                           </label>
                           <label className="block">
-                            <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.unit}</span>
-                            <select value={item.unit} onChange={(event) => updateLineItem(item.id, 'unit', event.target.value)} className="input-field">
-                              {unitOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                            </select>
-                          </label>
-                        </div>
-
-                        <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                          <label className="block">
-                            <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.quantity}</span>
+                            <span className="mb-2 block text-sm font-semibold text-gray-700">
+                              {copy.quantity} <span className="text-red-500">*</span>
+                            </span>
                             <input type="number" min="0" step="1" value={item.quantity} onChange={(event) => updateLineItem(item.id, 'quantity', event.target.value)} className="input-field" />
                           </label>
                           <label className="block">
-                            <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.unitPrice}</span>
+                            <span className="mb-2 block text-sm font-semibold text-gray-700">
+                              {copy.unitPrice} <span className="text-red-500">*</span>
+                            </span>
                             <input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(event) => updateLineItem(item.id, 'unitPrice', event.target.value)} className="input-field" />
                           </label>
                           <label className="block">
                             <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.currency}</span>
-                            <select value={item.currency} onChange={(event) => updateLineItem(item.id, 'currency', event.target.value)} className="input-field">
-                              {currencyOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                            </select>
+                            <div className="relative">
+                              <select value={item.currency} onChange={(event) => updateLineItem(item.id, 'currency', event.target.value)} className="input-field min-w-0 appearance-none px-3 pr-9 text-sm">
+                                {currencyOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                              </select>
+                              <FiChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 rtl:right-auto rtl:left-3" />
+                            </div>
                           </label>
                           <div className="flex items-end">
                             <button
@@ -960,9 +1006,12 @@ export default function WorkerInvoicesPage() {
                           {showPaymentType ? (
                             <label className="block">
                               <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.paymentType}</span>
-                              <select value={payment.type} onChange={(event) => updatePayment(payment.id, 'type', event.target.value)} className="input-field">
-                                {paymentTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                              </select>
+                              <div className="relative">
+                                <select value={payment.type} onChange={(event) => updatePayment(payment.id, 'type', event.target.value)} className="input-field appearance-none pr-10 rtl:pr-4 rtl:pl-10">
+                                  {paymentTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                                </select>
+                                <FiChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 rtl:right-auto rtl:left-3" />
+                              </div>
                             </label>
                           ) : null}
                           <label className="block">
@@ -970,14 +1019,19 @@ export default function WorkerInvoicesPage() {
                             <input type="date" value={payment.date} onChange={(event) => updatePayment(payment.id, 'date', event.target.value)} className="input-field" />
                           </label>
                           <label className="block">
-                            <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.paymentAmount}</span>
+                            <span className="mb-2 block text-sm font-semibold text-gray-700">
+                              {copy.paymentAmount} <span className="text-red-500">*</span>
+                            </span>
                             <input type="number" min="0" step="0.01" value={payment.amount} onChange={(event) => updatePayment(payment.id, 'amount', event.target.value)} className="input-field" />
                           </label>
                           <label className="block">
                             <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.currency}</span>
-                            <select value={payment.currency} onChange={(event) => updatePayment(payment.id, 'currency', event.target.value)} className="input-field">
-                              {currencyOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                            </select>
+                            <div className="relative">
+                              <select value={payment.currency} onChange={(event) => updatePayment(payment.id, 'currency', event.target.value)} className="input-field appearance-none pr-10 rtl:pr-4 rtl:pl-10">
+                                {currencyOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                              </select>
+                              <FiChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 rtl:right-auto rtl:left-3" />
+                            </div>
                           </label>
                         </div>
 
