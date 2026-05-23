@@ -110,6 +110,7 @@ export default function WorkerInvoicesPage() {
   const { user, profile, isWorker, loading } = useAuth();
   const { t, locale } = useLanguage();
   const copy = t.invoices;
+  const verificationCopy = t.businessVerification;
   const draftStorageKey = `hiro_invoice_draft_${user?.uid || 'guest'}`;
   const profileDealerType = String(profile?.dealerType || '').trim().toLowerCase();
   const [dealerType, setDealerType] = useState(profileDealerType);
@@ -165,8 +166,6 @@ export default function WorkerInvoicesPage() {
   const [vatRate, setVatRate] = useState(18);
   const [paymentTerms, setPaymentTerms] = useState('');
   const [notes, setNotes] = useState('');
-  const [footerNotes, setFooterNotes] = useState('');
-  const [bottomNotes, setBottomNotes] = useState('');
   const [lineItems, setLineItems] = useState(defaultLineItems);
   const [payments, setPayments] = useState(defaultPayments);
   const [expandedLineItemId, setExpandedLineItemId] = useState(defaultLineItems[0]?.id || null);
@@ -175,10 +174,12 @@ export default function WorkerInvoicesPage() {
   const promptedCounterTypesRef = useRef({});
   const appliedClientPrefillRef = useRef('');
   const [verificationChecked, setVerificationChecked] = useState(false);
+  const [verificationStatus, setVerificationStatus] = useState('');
   const { showDueDate, showPaymentDetails, showPaymentType } = useMemo(
     () => documentTypeConfig(documentType),
     [documentType]
   );
+  const canUseInvoiceBuilder = verificationStatus === 'approved';
 
   function getDocumentTypeLabel(value) {
     return documentTypeOptions.find((option) => option.value === value)?.label || copy.documentType;
@@ -205,15 +206,16 @@ export default function WorkerInvoicesPage() {
         const verificationInfo = await getUserVerificationInfo(user.uid);
         if (cancelled) return;
 
-        if (!verificationInfo) {
-          router.replace(`/worker/verification?next=${encodeURIComponent('/worker/invoices')}`);
-          return;
-        }
+        const verificationStatus = String(
+          verificationInfo?.status || profile?.businessVerificationStatus || ''
+        ).trim().toLowerCase();
 
+        setVerificationStatus(verificationInfo ? (verificationStatus || 'pending') : 'not_submitted');
         setVerificationChecked(true);
       } catch (error) {
         if (!cancelled) {
-          router.replace(`/worker/verification?next=${encodeURIComponent('/worker/invoices')}`);
+          setVerificationStatus('not_submitted');
+          setVerificationChecked(true);
         }
       }
     }
@@ -223,7 +225,7 @@ export default function WorkerInvoicesPage() {
     return () => {
       cancelled = true;
     };
-  }, [isWorker, loading, router, user?.uid]);
+  }, [isWorker, loading, profile?.businessVerificationStatus, user?.uid]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !user) return;
@@ -246,8 +248,6 @@ export default function WorkerInvoicesPage() {
       setDocumentDescription(parsed.documentDescription || '');
       setPaymentTerms(parsed.paymentTerms || '');
       setNotes(parsed.notes || '');
-      setFooterNotes(parsed.footerNotes || '');
-      setBottomNotes(parsed.bottomNotes || '');
       const nextLineItems = Array.isArray(parsed.lineItems) && parsed.lineItems.length > 0
         ? parsed.lineItems
         : defaultLineItems;
@@ -391,7 +391,7 @@ export default function WorkerInvoicesPage() {
   }, []);
 
   useEffect(() => {
-    if (!user?.uid) return undefined;
+    if (!user?.uid || !canUseInvoiceBuilder) return undefined;
 
     let cancelled = false;
 
@@ -456,7 +456,7 @@ export default function WorkerInvoicesPage() {
     return () => {
       cancelled = true;
     };
-  }, [documentType, user?.uid]);
+  }, [canUseInvoiceBuilder, documentType, user?.uid]);
 
   const subtotal = useMemo(
     () => lineItems.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0), 0),
@@ -491,6 +491,49 @@ export default function WorkerInvoicesPage() {
           <p className="text-sm font-semibold text-gray-700">{copy.workerOnly}</p>
         </div>
       </div>
+    );
+  }
+
+  if (!canUseInvoiceBuilder) {
+    const isPending = verificationStatus === 'pending';
+    const statusLabel = isPending ? verificationCopy.pendingStatus : copy.verificationNotSubmittedStatus;
+    const statusBody = isPending ? copy.verificationPendingBody : copy.verificationNotSubmittedBody;
+
+    return (
+      <>
+        <Head>
+          <title>{`Hiro | ${copy.title}`}</title>
+        </Head>
+
+        <main className="relative overflow-hidden px-4 py-6 md:py-8">
+          <div className="absolute inset-0 bg-mesh opacity-60" />
+          <div className="absolute left-0 top-10 h-64 w-64 rounded-full bg-amber-200/30 blur-3xl" />
+          <div className="absolute right-0 top-0 h-72 w-72 rounded-full bg-sky-200/25 blur-3xl" />
+
+          <div className="relative mx-auto max-w-3xl">
+            <Panel className="shadow-soft">
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-primary/65">{copy.shortTitle}</p>
+              <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-gray-950 sm:text-4xl">{copy.verificationStatusTitle}</h1>
+              <p className="mt-3 text-sm leading-7 text-gray-500">{statusBody}</p>
+
+              <div className="mt-6 rounded-[24px] border border-amber-200 bg-amber-50 px-5 py-4">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-700/75">{copy.verificationStatusLabel}</p>
+                <p className="mt-2 text-lg font-bold text-amber-950">{statusLabel}</p>
+              </div>
+
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => router.push(`/worker/verification?next=${encodeURIComponent('/worker/invoices')}`)}
+                  className="btn-primary"
+                >
+                  {copy.verificationBlockedCta}
+                </button>
+              </div>
+            </Panel>
+          </div>
+        </main>
+      </>
     );
   }
 
@@ -561,8 +604,6 @@ export default function WorkerInvoicesPage() {
       vatRate,
       paymentTerms,
       notes,
-      footerNotes,
-      bottomNotes,
       lineItems,
       payments,
     };
@@ -586,8 +627,6 @@ export default function WorkerInvoicesPage() {
       vatRate: Number(vatRate) || 0,
       paymentTerms,
       notes,
-      footerNotes,
-      bottomNotes,
       subtotal,
       vatAmount,
       total,
@@ -999,17 +1038,6 @@ export default function WorkerInvoicesPage() {
                   </label>
                 </div>
               </Panel>
-
-              <div className="grid gap-6 lg:grid-cols-2">
-                <Panel>
-                  <SectionTitle title={copy.bottomNotes} />
-                  <textarea rows={7} value={bottomNotes} onChange={(event) => setBottomNotes(event.target.value)} placeholder={copy.bottomNotesPlaceholder} className="input-field resize-none" />
-                </Panel>
-                <Panel>
-                  <SectionTitle title={copy.footerNotes} />
-                  <textarea rows={7} value={footerNotes} onChange={(event) => setFooterNotes(event.target.value)} placeholder={copy.footerNotesPlaceholder} className="input-field resize-none" />
-                </Panel>
-              </div>
 
               <Panel className="shadow-soft">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

@@ -34,36 +34,17 @@ function buildPreviewPayloadFromSavedInvoice(item) {
   const issueDate = createdAt
     ? `${createdAt.getFullYear()}-${String(createdAt.getMonth() + 1).padStart(2, '0')}-${String(createdAt.getDate()).padStart(2, '0')}`
     : '';
-
-  return {
-    id: item?.id || '',
-    invoiceNumber: item?.invoiceNumber || '',
-    issueDate,
-    dueDate: issueDate,
-    clientName: item?.clientName || '',
-    clientId: '',
-    clientEmail: '',
-    clientPhone: '',
-    clientCity: '',
-    documentType: item?.docType || 'receipt',
-    documentDescription: item?.name || '',
-    vatRate: 0,
-    paymentTerms: '',
-    notes: '',
-    footerNotes: '',
-    bottomNotes: '',
-    subtotal: Number(item?.amount) || 0,
-    vatAmount: 0,
-    total: Number(item?.amount) || 0,
-    paidTotal: Number(item?.amount) || 0,
-    amountDue: 0,
-    createdBy: {
-      name: '',
-      phone: '',
-      email: '',
-      city: '',
-    },
-    lineItems: [
+  const storedItems = Array.isArray(item?.items) && item.items.length > 0
+    ? item.items.map((savedItem, index) => ({
+      id: `${item?.id || 'saved-line'}_${index}`,
+      sku: '',
+      description: savedItem?.description || '',
+      quantity: Number(savedItem?.quantity) || 0,
+      unitPrice: Number(savedItem?.price) || 0,
+      currency: 'ILS',
+      unit: '',
+    }))
+    : [
       {
         id: item?.id || 'saved-line-0',
         sku: '',
@@ -73,19 +54,61 @@ function buildPreviewPayloadFromSavedInvoice(item) {
         currency: 'ILS',
         unit: '',
       },
-    ],
-    payments: [
+    ];
+  const storedPayments = Array.isArray(item?.paymentMethods) && item.paymentMethods.length > 0
+    ? item.paymentMethods.map((paymentMethod, index) => ({
+      id: `${item?.id || 'saved'}_payment_${index}`,
+      type: paymentMethod?.method || item?.paymentMethod || item?.docType || 'receipt',
+      date: issueDate,
+      amount: Number(paymentMethod?.amount) || 0,
+      currency: 'ILS',
+      bankName: '',
+      branch: '',
+      accountNumber: '',
+    }))
+    : [
       {
         id: `${item?.id || 'saved'}_payment`,
-        type: item?.docType || 'receipt',
+        type: item?.paymentMethod || item?.docType || 'receipt',
         date: issueDate,
-        amount: Number(item?.amount) || 0,
+        amount: Number(item?.paymentAmountTotal ?? item?.paidAmount ?? item?.amount) || 0,
         currency: 'ILS',
         bankName: '',
         branch: '',
         accountNumber: '',
       },
-    ],
+    ];
+
+  return {
+    id: item?.id || '',
+    invoiceNumber: item?.invoiceNumber || '',
+    issueDate,
+    dueDate: issueDate,
+    clientName: item?.clientName || '',
+    clientId: item?.clientTaxId || '',
+    clientEmail: '',
+    clientPhone: item?.clientPhone || '',
+    clientCity: item?.clientAddress || '',
+    documentType: item?.type || item?.docType || 'receipt',
+    documentDescription: item?.name || '',
+    vatRate: 0,
+    paymentTerms: '',
+    notes: item?.notes || '',
+    footerNotes: '',
+    bottomNotes: '',
+    subtotal: Math.max((Number(item?.amount) || 0) - (Number(item?.vatAmount) || 0), 0),
+    vatAmount: Number(item?.vatAmount) || 0,
+    total: Number(item?.amount) || 0,
+    paidTotal: Number(item?.paidAmount ?? item?.paymentAmountTotal) || 0,
+    amountDue: Math.max((Number(item?.amount) || 0) - (Number(item?.paidAmount ?? item?.paymentAmountTotal) || 0), 0),
+    createdBy: {
+      name: '',
+      phone: '',
+      email: '',
+      city: '',
+    },
+    lineItems: storedItems,
+    payments: storedPayments,
     savedFileName: item?.fileName || '',
     savedInvoiceUrl: item?.url || '',
     savedStoragePath: item?.storagePath || '',

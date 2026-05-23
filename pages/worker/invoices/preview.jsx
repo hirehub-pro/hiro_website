@@ -1,11 +1,13 @@
 import Head from 'next/head';
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import { FiArrowLeft, FiDownload, FiPrinter, FiSend, FiShare2 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
+import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useLanguage } from '../../../contexts/LanguageContext';
+import { storage } from '../../../lib/firebase';
 import { saveUserInvoice } from '../../../lib/firestore';
 import { formatCurrency, getInvoicePreviewStorageKey } from '../../../lib/invoices';
 
@@ -15,12 +17,12 @@ function DetailCard({ title, lines, tint = 'white', align = 'right' }) {
     : 'bg-[#f6f6f7]';
 
   return (
-    <div className={`rounded-[18px] ${tone} px-5 py-4`}>
-      <p className={`text-sm text-[#3f73ba] ${align === 'right' ? 'text-right' : 'text-left'}`}>{title}</p>
+    <div className={`rounded-[18px] ${tone} px-4 py-4 sm:px-5`}>
+      <p className={`text-xs sm:text-sm text-[#3f73ba] ${align === 'right' ? 'text-right' : 'text-left'}`}>{title}</p>
       <div className={`mt-2 space-y-1 text-[#2f3441] ${align === 'right' ? 'text-right' : 'text-left'}`}>
         {lines.map((line, index) => (
           line ? (
-            <p key={`${title}_${index}`} className={index === 0 ? 'text-[18px] font-medium leading-6' : 'text-sm leading-5'}>
+            <p key={`${title}_${index}`} className={index === 0 ? 'text-base font-medium leading-5 sm:text-[18px] sm:leading-6' : 'text-xs leading-5 sm:text-sm'}>
               {line}
             </p>
           ) : null
@@ -28,6 +30,51 @@ function DetailCard({ title, lines, tint = 'white', align = 'right' }) {
       </div>
     </div>
   );
+}
+
+function cloneNodeWithInlineStyles(node) {
+  if (typeof window === 'undefined') return node.cloneNode(true);
+  if (node.nodeType === Node.TEXT_NODE) {
+    return node.cloneNode(true);
+  }
+
+  const clone = node.cloneNode(false);
+
+  if (node instanceof Element && clone instanceof Element) {
+    const computedStyle = window.getComputedStyle(node);
+    const styleText = Array.from(computedStyle)
+      .map((property) => `${property}:${computedStyle.getPropertyValue(property)};`)
+      .join('');
+    clone.setAttribute('style', styleText);
+
+    if (node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement || node instanceof HTMLSelectElement) {
+      clone.setAttribute('value', node.value);
+    }
+  }
+
+  Array.from(node.childNodes).forEach((childNode) => {
+    clone.appendChild(cloneNodeWithInlineStyles(childNode));
+  });
+
+  return clone;
+}
+
+function buildInvoiceHtmlDocument(element, dir = 'ltr') {
+  const clonedElement = cloneNodeWithInlineStyles(element);
+
+  return `<!doctype html>
+<html dir="${dir}">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Invoice</title>
+  </head>
+  <body style="margin:0;min-height:100vh;padding:32px 24px;background:#d9dde3;font-family:Arial,sans-serif;box-sizing:border-box;">
+    <div style="display:flex;justify-content:center;align-items:flex-start;">
+      ${clonedElement.outerHTML}
+    </div>
+  </body>
+</html>`;
 }
 
 export default function InvoicePreviewPage() {
@@ -40,9 +87,10 @@ export default function InvoicePreviewPage() {
   const [invoice, setInvoice] = useState(null);
   const [saving, setSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const invoiceContentRef = useRef(null);
   const savedInvoiceUrl = invoice?.savedInvoiceUrl || '';
   const savedInvoiceFileName = invoice?.savedFileName || `${invoice?.invoiceNumber || 'invoice'}.pdf`;
-  const shouldUseStoredPdf = openedFromSaved && savedInvoiceUrl;
+  const shouldUseStoredPdf = Boolean(savedInvoiceUrl);
   const docType = invoice?.documentType || invoice?.docType || 'receipt';
   const docTypeLabel = (
     docType === 'tax_invoice'
@@ -100,10 +148,34 @@ export default function InvoicePreviewPage() {
 
     setSaving(true);
     try {
+      if (!invoiceContentRef.current) {
+        throw new Error('Missing invoice preview content');
+      }
+
+      const createdAtMs = Date.now();
+      const fileName = `invoice_${user.uid}_${createdAtMs}.html`;
+      const storagePath = `invoices/${user.uid}/${fileName}`;
+      const htmlDocument = buildInvoiceHtmlDocument(invoiceContentRef.current, dir);
+      const uploadedSnapshot = await uploadBytes(
+        storageRef(storage, storagePath),
+        new Blob([htmlDocument], { type: 'text/html;charset=utf-8' }),
+        { contentType: 'text/html;charset=utf-8' }
+      );
+      const url = await getDownloadURL(uploadedSnapshot.ref);
+
       await saveUserInvoice(user.uid, {
         ...invoice,
         docType,
+        savedFileName: fileName,
+        savedInvoiceUrl: url,
+        savedStoragePath: storagePath,
       });
+      setInvoice((current) => (current ? {
+        ...current,
+        savedFileName: fileName,
+        savedInvoiceUrl: url,
+        savedStoragePath: storagePath,
+      } : current));
       setIsSaved(true);
       toast.success(copy.savedInvoiceStored);
     } catch (error) {
@@ -254,14 +326,14 @@ export default function InvoicePreviewPage() {
           </div>
         </header>
 
-        <div className="px-4 py-10 print:px-0 print:py-0 sm:px-8 sm:py-16">
-          <section className="mx-auto max-w-[980px] rounded-[2px] bg-white shadow-[0_14px_40px_rgba(15,23,42,0.35)] print:max-w-none print:shadow-none">
+        <div className="px-3 py-6 print:px-0 print:py-0 sm:px-8 sm:py-16">
+          <section ref={invoiceContentRef} className="mx-auto max-w-[980px] rounded-[2px] bg-white shadow-[0_14px_40px_rgba(15,23,42,0.35)] print:max-w-none print:shadow-none">
             {shouldUseStoredPdf ? (
-              <div className="px-6 py-8 sm:px-14 sm:py-14">
-                <div className="rounded-[22px] bg-[#dcebfa] px-6 py-5 sm:px-7 sm:py-6">
-                  <h2 className="text-4xl font-light text-[#2e63b2]">{docTypeLabel}</h2>
-                  <p className="mt-1 text-2xl font-light text-[#485a71]">{copy.originalCopy}</p>
-                  <div className="mt-4 text-[15px] leading-6 text-[#55677d]">
+              <div className="px-4 py-5 sm:px-14 sm:py-14">
+                <div className="rounded-[22px] bg-[#dcebfa] px-5 py-5 sm:px-7 sm:py-6">
+                  <h2 className="text-2xl font-light text-[#2e63b2] sm:text-4xl">{docTypeLabel}</h2>
+                  <p className="mt-1 text-xl font-light text-[#485a71] sm:text-2xl">{copy.originalCopy}</p>
+                  <div className="mt-4 text-sm leading-6 text-[#55677d] sm:text-[15px]">
                     <p>{`${copy.documentNo}: ${invoice.invoiceNumber || '-'}`}</p>
                     <p>{`${copy.issueDate}: ${invoice.issueDate || '-'}`}</p>
                   </div>
@@ -276,17 +348,17 @@ export default function InvoicePreviewPage() {
                 </div>
               </div>
             ) : (
-            <div className="px-6 py-8 sm:px-14 sm:py-14">
-              <div className="rounded-[22px] bg-[#dcebfa] px-6 py-5 sm:px-7 sm:py-6">
-                <h2 className="text-4xl font-light text-[#2e63b2]">{docTypeLabel}</h2>
-                <p className="mt-1 text-2xl font-light text-[#485a71]">{copy.originalCopy}</p>
-                <div className="mt-4 text-[15px] leading-6 text-[#55677d]">
+            <div className="px-4 py-5 sm:px-14 sm:py-14">
+              <div className="rounded-[22px] bg-[#dcebfa] px-5 py-5 sm:px-7 sm:py-6">
+                <h2 className="text-2xl font-light text-[#2e63b2] sm:text-4xl">{docTypeLabel}</h2>
+                <p className="mt-1 text-xl font-light text-[#485a71] sm:text-2xl">{copy.originalCopy}</p>
+                <div className="mt-4 text-sm leading-6 text-[#55677d] sm:text-[15px]">
                   <p>{`${copy.documentNo}: ${invoice.invoiceNumber}`}</p>
                   <p>{`${copy.issueDate}: ${invoice.issueDate}`}</p>
                 </div>
               </div>
 
-              <div className="mt-7 grid gap-4 sm:grid-cols-2">
+              <div className="mt-7 grid grid-cols-2 gap-3 sm:gap-4">
                 <DetailCard
                   title={copy.clientDetails}
                   lines={[
@@ -308,10 +380,10 @@ export default function InvoicePreviewPage() {
               </div>
 
               <div className="mt-8 overflow-hidden rounded-[2px] border border-[#d7dee8]">
-                <div className="grid grid-cols-[1.65fr_0.42fr_0.65fr_0.72fr] bg-[#2c92e5] text-center text-xs text-white sm:text-[18px]">
-                  <div className="border-white/20 px-3 py-3 sm:border-r">{copy.description}</div>
-                  <div className="border-white/20 px-3 py-3 sm:border-r">{copy.quantity}</div>
-                  <div className="border-white/20 px-3 py-3 sm:border-r">{copy.unitPrice}</div>
+                <div className="grid grid-cols-[1.65fr_0.42fr_0.65fr_0.72fr] bg-[#2c92e5] text-center text-[11px] text-white sm:text-[18px]">
+                  <div className="border-white/20 px-2 py-3 sm:border-r sm:px-3">{copy.description}</div>
+                  <div className="border-white/20 px-2 py-3 sm:border-r sm:px-3">{copy.quantity}</div>
+                  <div className="border-white/20 px-2 py-3 sm:border-r sm:px-3">{copy.unitPrice}</div>
                   <div className="px-3 py-3">{copy.total}</div>
                 </div>
 
@@ -321,10 +393,10 @@ export default function InvoicePreviewPage() {
 
                     return (
                       <div key={item.id || `${item.description}_${index}`} className="grid grid-cols-[1.65fr_0.42fr_0.65fr_0.72fr] items-center text-right text-[#40434d]">
-                        <div className="border-[#d7dee8] px-3 py-3 text-sm sm:border-r sm:text-[18px]">{item.description || `${copy.emptyDescription} ${index + 1}`}</div>
-                        <div className="border-[#d7dee8] px-3 py-3 text-sm sm:border-r sm:text-[18px]">{item.quantity}</div>
-                        <div className="border-[#d7dee8] px-3 py-3 text-sm sm:border-r sm:text-[18px]">{formatCurrency(item.unitPrice, locale)}</div>
-                        <div className="px-3 py-3 text-sm sm:text-[18px]">{formatCurrency(lineTotal, locale)}</div>
+                        <div className="border-[#d7dee8] px-2 py-3 text-xs sm:border-r sm:px-3 sm:text-[18px]">{item.description || `${copy.emptyDescription} ${index + 1}`}</div>
+                        <div className="border-[#d7dee8] px-2 py-3 text-xs sm:border-r sm:px-3 sm:text-[18px]">{item.quantity}</div>
+                        <div className="border-[#d7dee8] px-2 py-3 text-xs sm:border-r sm:px-3 sm:text-[18px]">{formatCurrency(item.unitPrice, locale)}</div>
+                        <div className="px-2 py-3 text-xs sm:px-3 sm:text-[18px]">{formatCurrency(lineTotal, locale)}</div>
                       </div>
                     );
                   })}
@@ -332,22 +404,22 @@ export default function InvoicePreviewPage() {
               </div>
 
               <div className="mt-7 flex justify-end">
-                <div className="flex min-w-[240px] items-center justify-between gap-5 rounded-[18px] border border-[#abd1f2] bg-[#dcebfa] px-6 py-4 text-[#2e63b2] sm:min-w-[390px]">
-                  <span className="text-2xl font-normal">{formatCurrency(total, locale)}</span>
-                  <span className="text-2xl font-normal">{copy.total}</span>
+                <div className="flex min-w-[210px] items-center justify-between gap-4 rounded-[18px] border border-[#abd1f2] bg-[#dcebfa] px-5 py-3 text-[#2e63b2] sm:min-w-[390px] sm:px-6 sm:py-4">
+                  <span className="text-xl font-normal sm:text-2xl">{formatCurrency(total, locale)}</span>
+                  <span className="text-xl font-normal sm:text-2xl">{copy.total}</span>
                 </div>
               </div>
 
               <div className="mt-9">
-                <p className="text-right text-[15px] text-[#3f73ba]">{copy.paymentType}</p>
-                <div className="mt-2 rounded-[10px] border border-[#d9dfe8] bg-white px-4 py-3 text-right text-[#40434d]">
+                <p className="text-right text-sm text-[#3f73ba] sm:text-[15px]">{copy.paymentType}</p>
+                <div className="mt-2 rounded-[10px] border border-[#d9dfe8] bg-white px-4 py-3 text-right text-sm text-[#40434d] sm:text-base">
                   {payments.length > 0
                     ? payments.map((payment, index) => `${payment.type} | ${copy.paymentAmount}: ${formatCurrency(payment.amount, locale)}`).join(' , ')
                     : copy.noPayments}
                 </div>
               </div>
 
-              <div className="mt-32 border-t border-[#8ea1b6] pt-6 text-center text-[#6d7d8f] sm:mt-72">
+              <div className="mt-12 border-t border-[#8ea1b6] pt-6 text-center text-[#6d7d8f] sm:mt-72">
                 <p className="text-sm">{invoice.footerNotes || copy.generatedViaHiro}</p>
                 <p className="mt-4 text-[20px] font-light text-[#52b6ef]">{invoice.bottomNotes || copy.thankYouMessage}</p>
               </div>
@@ -356,7 +428,7 @@ export default function InvoicePreviewPage() {
                 <p className="text-[16px]">{copy.signature}: ________________________</p>
               </div>
 
-              <div className="mt-10 grid gap-3 text-sm text-[#6d7d8f] sm:grid-cols-2">
+              <div className="mt-10 grid grid-cols-2 gap-3 text-xs text-[#6d7d8f] sm:text-sm">
                 <div className="rounded-[14px] border border-[#e4e7ec] bg-[#fafbfc] px-4 py-3">
                   <p className="font-semibold text-[#3f73ba]">{copy.summary}</p>
                   <p className="mt-2">{`${copy.subtotal}: ${formatCurrency(subtotal, locale)}`}</p>

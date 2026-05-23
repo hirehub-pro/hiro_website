@@ -17,6 +17,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import {
   getUserVerificationInfo,
+  isBusinessIdInUseByAnotherUser,
   saveUserVerificationInfo,
 } from '../../lib/firestore';
 
@@ -48,7 +49,7 @@ function Card({ children, className = '' }) {
   );
 }
 
-function DealerOption({ active, icon: Icon, title, description, selectedLabel, onClick }) {
+function DealerOption({ active, icon: Icon, title, selectedLabel, onClick }) {
   return (
     <button
       type="button"
@@ -67,7 +68,6 @@ function DealerOption({ active, icon: Icon, title, description, selectedLabel, o
         <Icon className="h-7 w-7" />
       </div>
       <h3 className={clsx('text-2xl font-extrabold tracking-tight', active ? 'text-primary-dark' : 'text-slate-900')}>{title}</h3>
-      <p className="mt-3 text-sm leading-6 text-slate-500">{description}</p>
       {active ? <div className="absolute right-5 top-5 rounded-full bg-primary px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-white">{selectedLabel}</div> : null}
     </button>
   );
@@ -160,22 +160,19 @@ export default function WorkerVerificationPage() {
     {
       value: 'exempt',
       title: copy.exemptTitle,
-      description: copy.exemptDescription,
       icon: FiShield,
     },
     {
       value: 'licensed',
       title: copy.licensedTitle,
-      description: copy.licensedDescription,
       icon: FiCreditCard,
     },
     {
       value: 'company',
       title: copy.companyTitle,
-      description: copy.companyDescription,
       icon: FiBriefcase,
     },
-  ]), [copy.companyDescription, copy.companyTitle, copy.exemptDescription, copy.exemptTitle, copy.licensedDescription, copy.licensedTitle]);
+  ]), [copy.companyTitle, copy.exemptTitle, copy.licensedTitle]);
 
   const allConfirmationsAccepted = legalAccepted && accuracyAccepted && responsibilityAccepted;
 
@@ -205,6 +202,12 @@ export default function WorkerVerificationPage() {
     setSaving(true);
 
     try {
+      const businessIdAlreadyInUse = await isBusinessIdInUseByAnotherUser(user.uid, businessId);
+      if (businessIdAlreadyInUse) {
+        toast.error(copy.businessIdInUse);
+        return;
+      }
+
       await saveUserVerificationInfo(user.uid, {
         address,
         businessId,
@@ -232,7 +235,17 @@ export default function WorkerVerificationPage() {
 
       router.push(`/profile/${user.uid}`);
     } catch (error) {
-      toast.error(error?.message || copy.saveError);
+      console.error('Failed to save business verification', error);
+
+      if (error?.message === 'Business ID already in use') {
+        toast.error(copy.businessIdInUse);
+      } else if (error?.code === 'permission-denied') {
+        toast.error(copy.savePermissionError);
+      } else if (error?.code === 'failed-precondition') {
+        toast.error(copy.saveIndexError);
+      } else {
+        toast.error(copy.saveError);
+      }
     } finally {
       setSaving(false);
     }
@@ -328,7 +341,7 @@ export default function WorkerVerificationPage() {
             </Card>
 
             <Card>
-              <SectionTitle step="2" title={copy.sectionDealerTitle} subtitle={copy.sectionDealerSubtitle} />
+              <SectionTitle step="2" title={copy.sectionDealerTitle} />
 
               <div className="grid gap-4 md:grid-cols-3">
                 {dealerOptions.map((option) => (
@@ -337,7 +350,6 @@ export default function WorkerVerificationPage() {
                     active={dealerType === option.value}
                     icon={option.icon}
                     title={option.title}
-                    description={option.description}
                     selectedLabel={copy.selected}
                     onClick={() => setDealerType(option.value)}
                   />

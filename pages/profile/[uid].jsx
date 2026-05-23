@@ -538,12 +538,6 @@ export default function ProfilePage() {
                 {t.invoices.shortTitle}
               </Link>
               <Link
-                href="/worker/verification"
-                className="shrink-0 rounded-2xl bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700 transition-colors hover:bg-amber-100"
-              >
-                {t.settings.businessVerification}
-              </Link>
-              <Link
                 href="/worker/invoices/saved"
                 className="shrink-0 rounded-2xl bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-700 transition-colors hover:bg-sky-100"
               >
