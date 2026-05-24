@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Head from 'next/head';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -109,7 +109,10 @@ function timeAgo(timestamp) {
 
 function getMediaKind(item) {
   if (!item) return 'image';
-  return item.type === 'video' ? 'video' : 'image';
+  if (item.type === 'video') return 'video';
+  const rawUrl = String(item.url || '').trim().toLowerCase();
+  if (/\.(mp4|mov|webm|m4v)(\?|#|$)/.test(rawUrl)) return 'video';
+  return 'image';
 }
 
 export default function BlogPostPage() {
@@ -125,6 +128,9 @@ export default function BlogPostPage() {
   const [commentText, setCommentText] = useState('');
   const [bidPriceInput, setBidPriceInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [activeMediaIndex, setActiveMediaIndex] = useState(0);
+  const [lightboxIndex, setLightboxIndex] = useState(null);
+  const mediaCarouselRef = useRef(null);
 
   useEffect(function () {
     if (!postId) return;
@@ -208,6 +214,41 @@ export default function BlogPostPage() {
     if (post.imageUrl) return [{ url: post.imageUrl, type: 'image' }];
     return [];
   }, [post]);
+
+  useEffect(function () {
+    setActiveMediaIndex(0);
+    if (mediaCarouselRef.current) {
+      mediaCarouselRef.current.scrollTo({ left: 0, behavior: 'auto' });
+    }
+  }, [postId, mediaTypes.length]);
+
+  function scrollToMedia(index) {
+    const container = mediaCarouselRef.current;
+    if (!container || mediaTypes.length === 0) return;
+    const safeIndex = Math.max(0, Math.min(index, mediaTypes.length - 1));
+    container.scrollTo({
+      left: container.clientWidth * safeIndex,
+      behavior: 'smooth',
+    });
+    setActiveMediaIndex(safeIndex);
+  }
+
+  function handleMediaScroll() {
+    const container = mediaCarouselRef.current;
+    if (!container || container.clientWidth === 0) return;
+    const nextIndex = Math.round(container.scrollLeft / container.clientWidth);
+    if (nextIndex !== activeMediaIndex) {
+      setActiveMediaIndex(nextIndex);
+    }
+  }
+
+  function openLightbox(index) {
+    setLightboxIndex(index);
+  }
+
+  function closeLightbox() {
+    setLightboxIndex(null);
+  }
 
   async function handleLike() {
     if (!user || !post) {
@@ -349,30 +390,83 @@ export default function BlogPostPage() {
                   <h1 className="mt-6 text-3xl font-black leading-tight tracking-tight text-slate-950 md:text-4xl">{post.title}</h1>
 
                   {mediaTypes.length > 0 && (
-                    <div className={clsx(
-                      'mt-6 grid gap-3',
-                      mediaTypes.length === 1 ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'
-                    )}>
-                      {mediaTypes.map(function (item, index) {
-                        return (
-                          <div
-                            key={item.url + '_' + index}
-                            className="relative h-56 w-full overflow-hidden rounded-[24px] bg-white shadow-sm md:h-72"
-                          >
-                            {getMediaKind(item) === 'video' ? (
+                    <div className="mt-6">
+                      <div className="relative">
+                        <div
+                          ref={mediaCarouselRef}
+                          onScroll={handleMediaScroll}
+                          className="flex snap-x snap-mandatory overflow-x-auto scroll-smooth scrollbar-hide rounded-[24px]"
+                        >
+                          {mediaTypes.map(function (item, index) {
+                            return (
+                              <div
+                                key={item.url + '_' + index}
+                                className="relative h-56 w-full shrink-0 snap-center overflow-hidden bg-white shadow-sm md:h-72"
+                              >
+                                {getMediaKind(item) === 'video' ? (
                               <video
                                 src={item.url}
                                 controls
-                                className="h-full w-full object-cover"
+                                playsInline
+                                preload="metadata"
+                                className="h-full w-full bg-black object-contain"
                               >
                                 Your browser does not support video playback.
                               </video>
-                            ) : (
-                              <Image src={item.url} alt={post.title} fill className="object-cover" />
-                            )}
-                          </div>
-                        );
-                      })}
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={function () { openLightbox(index); }}
+                                    className="relative block h-full w-full"
+                                  >
+                                    <Image src={item.url} alt={post.title} fill className="object-cover" />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {mediaTypes.length > 1 && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={function () { scrollToMedia(activeMediaIndex - 1); }}
+                              disabled={activeMediaIndex === 0}
+                              className="absolute left-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-sm font-bold text-white transition hover:bg-black/70 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              {'<'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={function () { scrollToMedia(activeMediaIndex + 1); }}
+                              disabled={activeMediaIndex === mediaTypes.length - 1}
+                              className="absolute right-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-sm font-bold text-white transition hover:bg-black/70 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              {'>'}
+                            </button>
+                          </>
+                        )}
+                      </div>
+
+                      {mediaTypes.length > 1 && (
+                        <div className="mt-3 flex items-center justify-center gap-2">
+                          {mediaTypes.map(function (item, index) {
+                            return (
+                              <button
+                                key={item.url + '_dot_' + index}
+                                type="button"
+                                onClick={function () { scrollToMedia(index); }}
+                                className={clsx(
+                                  'h-2.5 rounded-full transition-all',
+                                  index === activeMediaIndex ? 'w-6 bg-primary' : 'w-2.5 bg-slate-300'
+                                )}
+                                aria-label={`Go to media ${index + 1}`}
+                              />
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -605,6 +699,32 @@ export default function BlogPostPage() {
                   </div>
                 </form>
               </section>
+
+              {lightboxIndex !== null && mediaTypes[lightboxIndex] && getMediaKind(mediaTypes[lightboxIndex]) === 'image' && (
+                <div
+                  className="fixed inset-0 z-[80] flex items-center justify-center bg-black/90 p-4"
+                  onClick={closeLightbox}
+                >
+                  <button
+                    type="button"
+                    onClick={closeLightbox}
+                    className="absolute right-4 top-4 z-[81] flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-xl font-bold text-white transition hover:bg-white/20"
+                  >
+                    ×
+                  </button>
+                  <div
+                    className="relative h-[85vh] w-full max-w-5xl"
+                    onClick={function (e) { e.stopPropagation(); }}
+                  >
+                    <Image
+                      src={mediaTypes[lightboxIndex].url}
+                      alt={post?.title || 'Post image'}
+                      fill
+                      className="object-contain"
+                    />
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>

@@ -109,7 +109,10 @@ function getMediaKindFromFile(file) {
 
 function getMediaKindFromItem(item) {
   if (!item) return 'image';
-  return item.type === 'video' ? 'video' : 'image';
+  if (item.type === 'video') return 'video';
+  const rawUrl = String(item.url || '').trim().toLowerCase();
+  if (/\.(mp4|mov|webm|m4v)(\?|#|$)/.test(rawUrl)) return 'video';
+  return 'image';
 }
 
 function getProfessionLabel(item, locale) {
@@ -641,8 +644,10 @@ export default function CommunityPage() {
                         <video
                           src={primaryMedia.url}
                           controls
+                          playsInline
+                          preload="metadata"
                           onClick={function (e) { e.stopPropagation(); }}
-                          className="h-full w-full object-cover"
+                          className="h-full w-full bg-black object-cover"
                         />
                       ) : (
                         <Image
@@ -905,7 +910,7 @@ export default function CommunityPage() {
                     return (
                       <div key={item.id} className="relative h-32 overflow-hidden rounded-2xl bg-slate-100">
                         {item.kind === 'video' ? (
-                          <video src={item.previewUrl} controls className="h-full w-full object-cover" />
+                          <video src={item.previewUrl} controls playsInline preload="metadata" className="h-full w-full bg-black object-cover" />
                         ) : (
                           <Image src={item.previewUrl} alt={'preview ' + (index + 1)} fill className="object-cover" />
                         )}
