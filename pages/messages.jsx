@@ -363,6 +363,16 @@ export default function MessagesPage() {
     };
   }, [profile?.name, router, router.query.support, t.common.error, t.messages.support, user]);
 
+  useEffect(() => {
+    const requestedDraft = typeof router.query.draft === 'string' ? router.query.draft : '';
+    const requestedRoomId = typeof router.query.roomId === 'string' ? router.query.roomId : '';
+
+    if (!requestedDraft || !requestedRoomId) return;
+    if (activeRoomId !== requestedRoomId) return;
+
+    setDraft((currentDraft) => currentDraft || requestedDraft);
+  }, [activeRoomId, router.query.draft, router.query.roomId]);
+
   async function handleSendMessage(e) {
     e.preventDefault();
 

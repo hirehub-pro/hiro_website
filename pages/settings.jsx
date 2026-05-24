@@ -5,12 +5,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import {
   FiAlertTriangle,
   FiBell,
+  FiCalendar,
   FiChevronDown,
   FiChevronLeft,
   FiChevronRight,
+  FiClock,
   FiFileText,
   FiGlobe,
   FiHelpCircle,
@@ -21,6 +24,7 @@ import {
   FiShield,
   FiUser,
 } from 'react-icons/fi';
+import { db } from '../lib/firebase';
 import { registerForPushNotifications } from '../lib/notifications';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -40,6 +44,13 @@ export default function SettingsPage() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [activeInfoPanel, setActiveInfoPanel] = useState('');
   const [notificationsBusy, setNotificationsBusy] = useState(false);
+  const [scheduleSettings, setScheduleSettings] = useState({
+    enabled: true,
+    from: '08:00',
+    to: '16:00',
+    weekdays: [1, 2, 3, 4, 5],
+  });
+  const [scheduleBusy, setScheduleBusy] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -60,6 +71,31 @@ export default function SettingsPage() {
 
     setNotificationsEnabled(savedPreference === 'true' && browserGranted);
   }, []);
+
+  useEffect(() => {
+    const loadScheduleSettings = async () => {
+      if (!user || profile?.role !== 'worker') return;
+
+      try {
+        const scheduleRef = doc(db, 'users', user.uid, 'Schedule', 'info');
+        const scheduleSnap = await getDoc(scheduleRef);
+        const data = scheduleSnap.exists() ? scheduleSnap.data() : {};
+
+        setScheduleSettings({
+          enabled: Boolean(data?.hideSchedule),
+          from: data?.defaultWorkingHours?.from || '08:00',
+          to: data?.defaultWorkingHours?.to || '16:00',
+          weekdays: Array.isArray(data?.disabledDays)
+            ? [1, 2, 3, 4, 5, 6, 7].filter((day) => !data.disabledDays.includes(day))
+            : [1, 2, 3, 4, 5],
+        });
+      } catch (error) {
+        console.error('Failed to load schedule settings:', error);
+      }
+    };
+
+    loadScheduleSettings();
+  }, [profile?.role, user]);
 
   const roleLabel = useMemo(() => {
     if (profile?.role === 'worker') return copy.roleWorker;
@@ -180,6 +216,59 @@ export default function SettingsPage() {
     } catch (error) {
       toast.error(copy.signOutError);
     }
+  }
+
+  async function saveScheduleSettings(nextSettings) {
+    if (!user || profile?.role !== 'worker') return;
+
+    try {
+      setScheduleBusy(true);
+      await setDoc(doc(db, 'users', user.uid, 'Schedule', 'info'), {
+        hideSchedule: nextSettings.enabled,
+        defaultWorkingHours: {
+          from: nextSettings.from,
+          to: nextSettings.to,
+        },
+        disabledDays: [1, 2, 3, 4, 5, 6, 7].filter((day) => !nextSettings.weekdays.includes(day)),
+      }, { merge: true });
+      setScheduleSettings(nextSettings);
+    } catch (error) {
+      toast.error(copy.scheduleSaveError);
+    } finally {
+      setScheduleBusy(false);
+    }
+  }
+
+  function handleScheduleToggle() {
+    const nextSettings = {
+      ...scheduleSettings,
+      enabled: !scheduleSettings.enabled,
+    };
+    saveScheduleSettings(nextSettings);
+  }
+
+  function handleScheduleTimeChange(key, value) {
+    const nextSettings = {
+      ...scheduleSettings,
+      [key]: value,
+    };
+    setScheduleSettings(nextSettings);
+    saveScheduleSettings(nextSettings);
+  }
+
+  function handleWeekdayToggle(dayNumber) {
+    const hasDay = scheduleSettings.weekdays.includes(dayNumber);
+    const nextWeekdays = hasDay
+      ? scheduleSettings.weekdays.filter((day) => day !== dayNumber)
+      : [...scheduleSettings.weekdays, dayNumber].sort((a, b) => a - b);
+
+    const nextSettings = {
+      ...scheduleSettings,
+      weekdays: nextWeekdays,
+    };
+
+    setScheduleSettings(nextSettings);
+    saveScheduleSettings(nextSettings);
   }
 
   function renderSettingsRow(item) {
@@ -316,6 +405,111 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
+
+            {profile?.role === 'worker' && (
+              <div>
+                <p className="mb-3 px-2 text-sm font-black uppercase tracking-[0.18em] text-gray-400">{copy.scheduleSection}</p>
+                <div className="rounded-[34px] bg-white px-4 py-4 shadow-card sm:px-5 sm:py-5">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <button
+                      type="button"
+                      onClick={handleScheduleToggle}
+                      disabled={scheduleBusy}
+                      className={clsx(
+                        'relative h-11 w-24 shrink-0 rounded-full transition-colors duration-200 sm:h-12 sm:w-28',
+                        scheduleSettings.enabled ? 'bg-[#7eb2e8]' : 'bg-slate-200',
+                        scheduleBusy && 'opacity-70'
+                      )}
+                      aria-pressed={scheduleSettings.enabled}
+                    >
+                      <span
+                        className={clsx(
+                          'absolute top-1 h-9 w-9 rounded-full bg-[#2777d3] transition-all duration-200 sm:top-1.5',
+                          isRtl
+                            ? scheduleSettings.enabled ? 'left-1.5 sm:left-2' : 'left-[3.7rem] sm:left-[4.3rem]'
+                            : scheduleSettings.enabled ? 'left-[3.7rem] sm:left-[4.3rem]' : 'left-1.5 sm:left-2'
+                        )}
+                      />
+                    </button>
+
+                    <div className="flex min-w-0 flex-1 items-start justify-end gap-3 text-right sm:items-center sm:gap-4">
+                      <div>
+                        <p className="text-lg font-extrabold tracking-tight text-gray-950 sm:text-xl lg:text-2xl">{copy.scheduleTitle}</p>
+                        <p className="mt-1 max-w-xl text-xs text-gray-500 sm:text-sm">{copy.scheduleSubtitle}</p>
+                      </div>
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary-50 text-primary sm:h-12 sm:w-12">
+                        <FiCalendar className="h-5 w-5 sm:h-6 sm:w-6" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="my-5 h-px bg-slate-200" />
+
+                  <div className="grid gap-3 lg:grid-cols-[minmax(320px,0.9fr)_minmax(380px,1fr)] lg:items-start">
+                    <div className="rounded-[26px] border border-slate-100 bg-slate-50/70 p-4 sm:p-5">
+                      <div className="flex items-center justify-end gap-3">
+                        <div className="flex min-w-0 flex-1 items-center justify-end gap-3 text-right">
+                          <div>
+                            <p className="text-lg font-extrabold tracking-tight text-gray-950 sm:text-xl">{copy.scheduleHoursTitle}</p>
+                            <p className="mt-1 text-xs text-gray-500 sm:text-sm">
+                              {copy.scheduleFrom} {scheduleSettings.from} {copy.scheduleUntil} {scheduleSettings.to}
+                            </p>
+                          </div>
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary-50 text-primary sm:h-11 sm:w-11">
+                            <FiClock className="h-5 w-5" />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-2 gap-2.5 sm:gap-3">
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 sm:text-sm sm:normal-case sm:tracking-normal">{copy.scheduleFromLabel}</span>
+                          <input
+                            type="time"
+                            value={scheduleSettings.from}
+                            onChange={(event) => handleScheduleTimeChange('from', event.target.value)}
+                            className="input-field text-sm sm:text-base"
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 sm:text-sm sm:normal-case sm:tracking-normal">{copy.scheduleUntilLabel}</span>
+                          <input
+                            type="time"
+                            value={scheduleSettings.to}
+                            onChange={(event) => handleScheduleTimeChange('to', event.target.value)}
+                            className="input-field text-sm sm:text-base"
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[26px] border border-slate-100 bg-white p-4 sm:p-5">
+                      <p className="mb-3 text-right text-base font-extrabold tracking-tight text-gray-950 sm:mb-4 sm:text-lg">{copy.scheduleWeekdaysTitle}</p>
+                      <div className="grid grid-cols-4 justify-items-end gap-2 sm:grid-cols-7 sm:gap-2.5">
+                        {[7, 6, 5, 4, 3, 2, 1].map((dayNumber) => {
+                          const active = scheduleSettings.weekdays.includes(dayNumber);
+                          return (
+                            <button
+                              key={dayNumber}
+                              type="button"
+                              onClick={() => handleWeekdayToggle(dayNumber)}
+                              className={clsx(
+                                'flex h-12 w-12 items-center justify-center rounded-full border-[2.5px] text-lg font-extrabold transition-colors sm:h-[3.15rem] sm:w-[3.15rem] sm:text-[1.05rem] lg:h-12 lg:w-12 lg:text-lg xl:h-[3.15rem] xl:w-[3.15rem]',
+                                active
+                                  ? 'border-primary bg-primary-50 text-primary'
+                                  : 'border-red-400 bg-red-50 text-red-500'
+                              )}
+                            >
+                              {dayNumber}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div>
               <p className="mb-3 px-2 text-sm font-black uppercase tracking-[0.18em] text-gray-400">{copy.languageSection}</p>
