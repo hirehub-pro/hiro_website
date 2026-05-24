@@ -9,9 +9,11 @@ import {
   HiChevronLeft,
   HiDocumentText,
   HiMicrophone,
+  HiPause,
   HiPaperAirplane,
   HiPaperClip,
   HiPhotograph,
+  HiPlay,
   HiSearch,
   HiUserCircle,
   HiVideoCamera,
@@ -71,9 +73,17 @@ function getRoomName(room, currentUid) {
 
 function getAttachmentKind(message) {
   const rawType = String(message?.type || '').trim().toLowerCase();
+  const rawContentType = String(message?.contentType || '').trim().toLowerCase();
   const rawUrl = String(message?.url || '').trim().toLowerCase();
   const rawFileName = String(message?.fileName || '').trim().toLowerCase();
   const combined = `${rawType} ${rawUrl} ${rawFileName}`;
+
+  if (/(pdf|doc|docx|xls|xlsx|ppt|pptx|txt|zip)/.test(rawFileName) || /(application\/pdf|application\/msword|officedocument|text\/plain|application\/zip)/.test(rawContentType)) {
+    return 'file';
+  }
+  if (/(mp3|wav|ogg|m4a|aac)$/i.test(rawFileName) || /^audio\//.test(rawContentType)) return 'audio';
+  if (/(mp4|mov|webm|m4v)$/i.test(rawFileName) || /^video\//.test(rawContentType)) return 'video';
+  if (/(jpg|jpeg|png|gif|webp|heic)$/i.test(rawFileName) || /^image\//.test(rawContentType)) return 'image';
 
   if (/(image|photo|picture|jpg|jpeg|png|gif|webp|heic)/.test(combined)) return 'image';
   if (/(video|mp4|mov|webm|m4v)/.test(combined)) return 'video';
@@ -97,6 +107,130 @@ function getAttachmentPreview(kind, fileName) {
   if (kind === 'audio') return 'Voice message';
   if (kind === 'file') return fileName || 'File';
   return fileName || 'Attachment';
+}
+
+function formatAudioTime(seconds) {
+  const safeSeconds = Number.isFinite(seconds) ? Math.max(0, Math.floor(seconds)) : 0;
+  const mins = Math.floor(safeSeconds / 60);
+  const secs = safeSeconds % 60;
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+}
+
+function VoiceMessageCard({ url, label, mine }) {
+  const audioRef = useRef(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return undefined;
+
+    const handleLoadedMetadata = () => setDuration(audio.duration || 0);
+    const handleTimeUpdate = () => setCurrentTime(audio.currentTime || 0);
+    const handleEnded = () => {
+      setIsPlaying(false);
+      setCurrentTime(0);
+    };
+    const handlePause = () => setIsPlaying(false);
+    const handlePlay = () => setIsPlaying(true);
+
+    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
+    audio.addEventListener('timeupdate', handleTimeUpdate);
+    audio.addEventListener('ended', handleEnded);
+    audio.addEventListener('pause', handlePause);
+    audio.addEventListener('play', handlePlay);
+
+    return () => {
+      audio.pause();
+      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      audio.removeEventListener('timeupdate', handleTimeUpdate);
+      audio.removeEventListener('ended', handleEnded);
+      audio.removeEventListener('pause', handlePause);
+      audio.removeEventListener('play', handlePlay);
+    };
+  }, [url]);
+
+  const progress = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+  const progressLabel = duration > 0 ? formatAudioTime(duration - currentTime) : '0:00';
+
+  function togglePlayback() {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (audio.paused) {
+      audio.play().catch(() => {});
+      return;
+    }
+
+    audio.pause();
+  }
+
+  function seekAudio(event) {
+    const audio = audioRef.current;
+    if (!audio || !duration) return;
+
+    const nextTime = Number(event.target.value);
+    audio.currentTime = nextTime;
+    setCurrentTime(nextTime);
+  }
+
+  return (
+    <div className={`overflow-hidden rounded-[22px] border ${
+      mine
+        ? 'border-white/15 bg-white/10'
+        : 'border-slate-200 bg-slate-50'
+    }`}>
+      <div className={`flex items-center gap-3 px-3 py-3 ${
+        mine ? 'bg-white/5' : 'bg-white'
+      }`}>
+        <button
+          type="button"
+          onClick={togglePlayback}
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-colors ${
+            mine
+              ? 'bg-white/15 text-white hover:bg-white/20'
+              : 'bg-primary text-white hover:bg-primary/90'
+          }`}
+          aria-label={isPlaying ? 'Pause voice message' : 'Play voice message'}
+        >
+          {isPlaying ? <HiPause className="h-5 w-5" /> : <HiPlay className="ml-0.5 h-5 w-5" />}
+        </button>
+
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold">{label}</p>
+          <div className="mt-2 flex items-center gap-2">
+            <HiMicrophone className={`h-4 w-4 shrink-0 ${mine ? 'text-white/70' : 'text-primary'}`} />
+            <div className={`h-1.5 flex-1 overflow-hidden rounded-full ${mine ? 'bg-white/15' : 'bg-slate-200'}`}>
+              <div
+                className={`h-full rounded-full transition-[width] duration-150 ${mine ? 'bg-white' : 'bg-primary'}`}
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <span className={`shrink-0 text-xs tabular-nums ${mine ? 'text-white/75' : 'text-slate-500'}`}>
+              {progressLabel}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="px-3 pb-3">
+        <input
+          type="range"
+          min="0"
+          max={duration || 0}
+          step="0.1"
+          value={Math.min(currentTime, duration || 0)}
+          onChange={seekAudio}
+          className="h-2 w-full cursor-pointer accent-primary"
+        />
+      </div>
+
+      <audio ref={audioRef} preload="metadata">
+        <source src={url} />
+      </audio>
+    </div>
+  );
 }
 
 export default function MessagesPage() {
@@ -491,6 +625,7 @@ export default function MessagesPage() {
       const url = await getDownloadURL(uploaded.ref);
 
       const messageRef = await addDoc(collection(db, 'chat_rooms', activeRoom.id, 'messages'), {
+        contentType: file.type || '',
         fileName: safeFileName,
         message: '',
         receiverId,
@@ -761,16 +896,11 @@ export default function MessagesPage() {
                                 ) : null}
 
                                 {attachmentKind === 'audio' && attachmentUrl ? (
-                                  <div className={`rounded-2xl ${mine ? 'bg-white/10' : 'bg-slate-100'} p-3`}>
-                                    <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
-                                      <HiMicrophone className="h-4 w-4" />
-                                      <span>{attachmentLabel}</span>
-                                    </div>
-                                    <audio controls className="w-full">
-                                      <source src={attachmentUrl} />
-                                      Your browser does not support audio playback.
-                                    </audio>
-                                  </div>
+                                  <VoiceMessageCard
+                                    url={attachmentUrl}
+                                    label={attachmentLabel}
+                                    mine={mine}
+                                  />
                                 ) : null}
 
                                 {attachmentKind === 'file' && attachmentUrl ? (
