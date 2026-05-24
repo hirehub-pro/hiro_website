@@ -36,7 +36,7 @@ const SEO_KEYWORDS = [
   'home services',
 ].join(', ');
 const SITE_NAME = 'הירו';
-const SITE_ALTERNATE_NAME = 'Hiro';
+const SITE_ALTERNATE_NAME = 'הירו';
 const HOMEPAGE_URL = 'https://hiro-services.com/';
 const structuredData = {
   '@context': 'https://schema.org',
