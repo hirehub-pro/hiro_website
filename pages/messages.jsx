@@ -15,6 +15,7 @@ import {
   HiPhotograph,
   HiPlay,
   HiSearch,
+  HiStop,
   HiUserCircle,
   HiVideoCamera,
 } from 'react-icons/hi';
@@ -253,11 +254,16 @@ export default function MessagesPage() {
   const [supportRoomLoading, setSupportRoomLoading] = useState(false);
   const [pendingSupportRoom, setPendingSupportRoom] = useState(null);
   const [mobileThreadOpen, setMobileThreadOpen] = useState(false);
+  const [recordingVoice, setRecordingVoice] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const messagesEndRef = useRef(null);
   const imageInputRef = useRef(null);
   const videoInputRef = useRef(null);
   const audioInputRef = useRef(null);
   const fileInputRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const recordingChunksRef = useRef([]);
+  const recordingStreamRef = useRef(null);
   const composerFeatures = useMemo(() => ([
     { label: 'Images', icon: HiPhotograph, inputRef: imageInputRef },
     { label: 'Videos', icon: HiVideoCamera, inputRef: videoInputRef },
@@ -408,6 +414,21 @@ export default function MessagesPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages]);
+
+  useEffect(() => {
+    if (!recordingVoice) return undefined;
+
+    const timer = window.setInterval(() => {
+      setRecordingSeconds((current) => current + 1);
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [recordingVoice]);
+
+  useEffect(() => () => {
+    mediaRecorderRef.current?.stop?.();
+    recordingStreamRef.current?.getTracks?.().forEach((track) => track.stop());
+  }, []);
 
   useEffect(() => {
     if (!user) return undefined;
@@ -605,7 +626,10 @@ export default function MessagesPage() {
     event.target.value = '';
 
     if (!file || !user || !activeRoom) return;
+    await uploadAttachmentFile(file, kind);
+  }
 
+  async function uploadAttachmentFile(file, kind) {
     const receiverId = getOtherUserId(activeRoom, user.uid);
     const safeFileName = file.name || `${kind}-${Date.now()}`;
     const previewText = getAttachmentPreview(kind, safeFileName);
@@ -652,6 +676,62 @@ export default function MessagesPage() {
       toast.error(error.message || t.common.error);
     } finally {
       setUploadingAttachment(false);
+    }
+  }
+
+  async function handleRecordVoiceToggle() {
+    if (recordingVoice) {
+      mediaRecorderRef.current?.stop();
+      return;
+    }
+
+    if (!activeRoom || !user || uploadingAttachment || sending) return;
+    if (typeof window === 'undefined' || typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      toast.error('Voice recording is not supported on this device.');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+
+      recordingStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      recordingChunksRef.current = [];
+      setRecordingSeconds(0);
+
+      recorder.addEventListener('dataavailable', (event) => {
+        if (event.data && event.data.size > 0) {
+          recordingChunksRef.current.push(event.data);
+        }
+      });
+
+      recorder.addEventListener('stop', async () => {
+        const mimeType = recorder.mimeType || 'audio/webm';
+        const extension = mimeType.includes('mp4') || mimeType.includes('mpeg') ? 'm4a' : 'webm';
+        const audioBlob = new Blob(recordingChunksRef.current, { type: mimeType });
+
+        recordingStreamRef.current?.getTracks?.().forEach((track) => track.stop());
+        recordingStreamRef.current = null;
+        mediaRecorderRef.current = null;
+        recordingChunksRef.current = [];
+        setRecordingVoice(false);
+
+        if (!audioBlob.size) return;
+
+        const recordedFile = new File(
+          [audioBlob],
+          `voice-message-${Date.now()}.${extension}`,
+          { type: mimeType }
+        );
+
+        await uploadAttachmentFile(recordedFile, 'audio');
+      });
+
+      recorder.start();
+      setRecordingVoice(true);
+    } catch (error) {
+      toast.error(error?.message || 'Could not start voice recording.');
     }
   }
 
@@ -962,9 +1042,31 @@ export default function MessagesPage() {
                           {label}
                         </button>
                       ))}
+                      <button
+                        type="button"
+                        onClick={handleRecordVoiceToggle}
+                        disabled={uploadingAttachment || sending || !activeRoom}
+                        className={`inline-flex shrink-0 items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                          recordingVoice
+                            ? 'bg-red-50 text-red-600 hover:bg-red-100'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        {recordingVoice ? <HiStop className="h-4 w-4" /> : <HiMicrophone className="h-4 w-4" />}
+                        {recordingVoice ? `Stop recording ${formatAudioTime(recordingSeconds)}` : 'Record voice'}
+                      </button>
                     </div>
+                    {recordingVoice ? (
+                      <div className="mb-3 flex items-center gap-2 rounded-2xl border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-600">
+                        <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
+                        Recording voice message...
+                        <span className="font-semibold tabular-nums">{formatAudioTime(recordingSeconds)}</span>
+                      </div>
+                    ) : null}
                     <p className="mb-3 text-xs text-gray-500">
-                      {uploadingAttachment
+                      {recordingVoice
+                        ? 'Press stop to send your voice message.'
+                        : uploadingAttachment
                         ? 'Uploading attachment...'
                         : 'You can send images, videos, voice messages, and files in this chat.'}
                     </p>
@@ -1005,7 +1107,7 @@ export default function MessagesPage() {
                       />
                       <button
                         type="submit"
-                        disabled={sending || uploadingAttachment || !draft.trim()}
+                        disabled={sending || uploadingAttachment || recordingVoice || !draft.trim()}
                         className="btn-primary flex h-[52px] shrink-0 items-center gap-2 px-4"
                       >
                         <HiPaperAirplane className="h-5 w-5" />

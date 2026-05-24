@@ -385,7 +385,7 @@ export default function ProfilePage() {
     { key: 'projects', label: t.profile.projects },
     { key: 'reviews',  label: t.profile.reviews },
     { key: 'about',    label: t.profile.about },
-    ...(profile?.role === 'worker' ? [{ key: 'schedule', label: 'Schedule' }] : []),
+    ...(profile?.role === 'worker' ? [{ key: 'schedule', label: t.profile.scheduleSection }] : []),
   ];
 
   const isOwnProfile = user?.uid === profile?.uid;

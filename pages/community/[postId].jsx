@@ -3,7 +3,7 @@ import Head from 'next/head';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { FiArrowLeft, FiCalendar, FiDollarSign, FiExternalLink, FiEye, FiFileText, FiMapPin, FiMoreVertical, FiSend, FiStar } from 'react-icons/fi';
+import { FiArrowLeft, FiCalendar, FiClock, FiDollarSign, FiExternalLink, FiEye, FiFileText, FiMapPin, FiMoreVertical, FiSend, FiStar } from 'react-icons/fi';
 import { HiChat, HiHeart } from 'react-icons/hi';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -75,6 +75,11 @@ function formatDateRange(from, to) {
   return start || end || '';
 }
 
+function formatHourRange(from, to) {
+  if (from && to) return `${from} - ${to}`;
+  return from || to || '';
+}
+
 function haversineKm(lat1, lng1, lat2, lng2) {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -100,6 +105,11 @@ function timeAgo(timestamp) {
   if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
   if (diff < 604800) return Math.floor(diff / 86400) + 'd ago';
   return date.toLocaleDateString();
+}
+
+function getMediaKind(item) {
+  if (!item) return 'image';
+  return item.type === 'video' ? 'video' : 'image';
 }
 
 export default function BlogPostPage() {
@@ -191,6 +201,13 @@ export default function BlogPostPage() {
 
     return formatDistanceValue(haversineKm(profile.lat, profile.lng, post.locationLat, post.locationLng));
   }, [post, profile]);
+
+  const mediaTypes = useMemo(function () {
+    if (!post) return [];
+    if (Array.isArray(post.mediaTypes) && post.mediaTypes.length > 0) return post.mediaTypes;
+    if (post.imageUrl) return [{ url: post.imageUrl, type: 'image' }];
+    return [];
+  }, [post]);
 
   async function handleLike() {
     if (!user || !post) {
@@ -331,9 +348,31 @@ export default function BlogPostPage() {
 
                   <h1 className="mt-6 text-3xl font-black leading-tight tracking-tight text-slate-950 md:text-4xl">{post.title}</h1>
 
-                  {post.imageUrl && (
-                    <div className="relative mt-6 h-56 w-full overflow-hidden rounded-[24px] bg-white shadow-sm md:h-72">
-                      <Image src={post.imageUrl} alt={post.title} fill className="object-cover" />
+                  {mediaTypes.length > 0 && (
+                    <div className={clsx(
+                      'mt-6 grid gap-3',
+                      mediaTypes.length === 1 ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'
+                    )}>
+                      {mediaTypes.map(function (item, index) {
+                        return (
+                          <div
+                            key={item.url + '_' + index}
+                            className="relative h-56 w-full overflow-hidden rounded-[24px] bg-white shadow-sm md:h-72"
+                          >
+                            {getMediaKind(item) === 'video' ? (
+                              <video
+                                src={item.url}
+                                controls
+                                className="h-full w-full object-cover"
+                              >
+                                Your browser does not support video playback.
+                              </video>
+                            ) : (
+                              <Image src={item.url} alt={post.title} fill className="object-cover" />
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
 
@@ -384,6 +423,25 @@ export default function BlogPostPage() {
                           </div>
                           <div className="inline-flex h-9 w-9 items-center justify-center rounded-2xl text-slate-400">
                             <FiExternalLink className="h-5 w-5" />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {(post.requestHourFrom || post.requestHourTo) && (
+                      <div className="rounded-[24px] border border-[#d7e4f3] bg-white px-5 py-4 shadow-sm">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-4">
+                            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#e7f0fb] text-primary">
+                              <FiClock className="h-6 w-6" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-extrabold text-slate-500 md:text-base">Preferred time</p>
+                              <p className="mt-1 text-lg font-black text-slate-900 md:text-xl">{formatHourRange(post.requestHourFrom, post.requestHourTo)}</p>
+                            </div>
+                          </div>
+                          <div className="inline-flex h-9 w-9 items-center justify-center rounded-2xl text-slate-400">
+                            <FiClock className="h-5 w-5" />
                           </div>
                         </div>
                       </div>

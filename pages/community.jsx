@@ -7,21 +7,29 @@ import {
   HiViewGrid, HiHeart, HiDotsHorizontal,
   HiPencilAlt, HiX, HiPhotograph,
 } from 'react-icons/hi';
-import { FiCalendar, FiCheck, FiFilter, FiMapPin, FiRefreshCw, FiSearch, FiUser } from 'react-icons/fi';
+import { FiCalendar, FiCheck, FiClock, FiFilter, FiMapPin, FiRefreshCw, FiSearch, FiUser } from 'react-icons/fi';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { getBlogPosts, createBlogPost, toggleBlogPostLike } from '../lib/firestore';
-import { storage } from '../lib/firebase';
+import { db, storage } from '../lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 
-const FILTER_TYPES = ['all', 'request', 'tip', 'question'];
+const FILTER_TYPES = ['all', 'recommended', 'request', 'tip', 'question', 'other'];
 
 const CATEGORY_NORMALIZE = {
+  recommended: 'recommended', recommendation: 'recommended',
+  '\u05de\u05d5\u05de\u05dc\u05e5': 'recommended',
+  '\u0645\u0648\u0635\u0649 \u0628\u0647': 'recommended',
   tip: 'tip', '\u05d8\u05d9\u05e4': 'tip',
   request: 'request', '\u05d1\u05e7\u05e9\u05d4': 'request',
   question: 'question', '\u05e9\u05d0\u05dc\u05d4': 'question',
+  other: 'other', '\u05d0\u05d7\u05e8': 'other',
+  '\u05d0\u05d7\u05e8\u05d9\u05dd': 'other',
+  '\u0623\u062e\u0631': 'other',
+  '\u0623\u062e\u0631\u0649': 'other',
   'job request': 'request', '\u05d3\u05e8\u05d5\u05e9 \u05d1\u05e2\u05dc \u05de\u05e7\u05e6\u05d5\u05e2': 'request',
 };
 
@@ -51,6 +59,13 @@ const FILTER_META = {
     text: 'text-primary',
     border: 'border-primary',
   },
+  recommended: {
+    icon: HiHeart,
+    color: 'from-pink-400 to-rose-500',
+    bg: 'bg-rose-50',
+    text: 'text-rose-600',
+    border: 'border-rose-300',
+  },
   request: {
     icon: HiPlusCircle,
     color: 'from-rose-400 to-pink-500',
@@ -72,10 +87,48 @@ const FILTER_META = {
     text: 'text-violet-600',
     border: 'border-violet-300',
   },
+  other: {
+    icon: HiDotsHorizontal,
+    color: 'from-slate-400 to-slate-600',
+    bg: 'bg-slate-100',
+    text: 'text-slate-600',
+    border: 'border-slate-300',
+  },
 };
 
+function getNormalizedCategory(category) {
+  return CATEGORY_NORMALIZE[category] || category || 'other';
+}
+
+function getMediaKindFromFile(file) {
+  if (!file) return null;
+  if (String(file.type || '').startsWith('video/')) return 'video';
+  if (String(file.type || '').startsWith('image/')) return 'image';
+  return null;
+}
+
+function getMediaKindFromItem(item) {
+  if (!item) return 'image';
+  return item.type === 'video' ? 'video' : 'image';
+}
+
+function getProfessionLabel(item, locale) {
+  return item?.[locale] || item?.en || item?.he || item?.ar || item?.logo || '';
+}
+
+function normalizeDateValue(value) {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value.toDate === 'function') {
+    const nextDate = value.toDate();
+    return Number.isNaN(nextDate.getTime()) ? null : nextDate;
+  }
+  const nextDate = new Date(value);
+  return Number.isNaN(nextDate.getTime()) ? null : nextDate;
+}
+
 export default function CommunityPage() {
-  const { t, dir } = useLanguage();
+  const { t, dir, locale } = useLanguage();
   const { user, profile: myProfile } = useAuth();
   const router = useRouter();
 
@@ -84,20 +137,33 @@ export default function CommunityPage() {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showPublish, setShowPublish] = useState(false);
+  const [professionOptions, setProfessionOptions] = useState([]);
+  const [professionsLoading, setProfessionsLoading] = useState(false);
 
   const [newTitle, setNewTitle] = useState('');
   const [newContent, setNewContent] = useState('');
   const [newCategory, setNewCategory] = useState('tip');
-  const [newImage, setNewImage] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
+  const [newProfession, setNewProfession] = useState('');
+  const [newRequestDateFrom, setNewRequestDateFrom] = useState('');
+  const [newRequestDateTo, setNewRequestDateTo] = useState('');
+  const [newRequestHourFrom, setNewRequestHourFrom] = useState('');
+  const [newRequestHourTo, setNewRequestHourTo] = useState('');
+  const [requestLocationLabel, setRequestLocationLabel] = useState('');
+  const [requestLocationLat, setRequestLocationLat] = useState(null);
+  const [requestLocationLng, setRequestLocationLng] = useState(null);
+  const [requestLocationLoading, setRequestLocationLoading] = useState(false);
+  const [newMediaFiles, setNewMediaFiles] = useState([]);
+  const [mediaPreviews, setMediaPreviews] = useState([]);
   const [publishing, setPublishing] = useState(false);
   const fileInputRef = useRef(null);
 
   const filterLabels = {
     all: t.community.all,
+    recommended: t.community.recommended,
     request: t.community.request,
     tip: t.community.tip,
     question: t.community.question,
+    other: t.community.other,
   };
 
   async function loadPosts() {
@@ -116,16 +182,72 @@ export default function CommunityPage() {
     loadPosts();
   }, []);
 
-  function normalizeDateValue(value) {
-    if (!value) return null;
-    if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
-    if (typeof value.toDate === 'function') {
-      const nextDate = value.toDate();
-      return Number.isNaN(nextDate.getTime()) ? null : nextDate;
+  useEffect(function () {
+    let isMounted = true;
+
+    async function loadProfessions() {
+      setProfessionsLoading(true);
+      try {
+        const snap = await getDoc(doc(db, 'metadata', 'professions'));
+        if (!isMounted) return;
+        const items = (snap.data()?.items || [])
+          .map(function (item, index) {
+            return {
+              id: String(item.id ?? index),
+              label: getProfessionLabel(item, locale),
+              value: item.en || item.logo || getProfessionLabel(item, locale),
+            };
+          })
+          .filter(function (item) { return item.label && item.value; })
+          .sort(function (a, b) { return Number(a.id) - Number(b.id); });
+        setProfessionOptions(items);
+      } catch (err) {
+        if (isMounted) {
+          setProfessionOptions([]);
+          toast.error('Failed to load professions');
+        }
+      } finally {
+        if (isMounted) setProfessionsLoading(false);
+      }
     }
-    const nextDate = new Date(value);
-    return Number.isNaN(nextDate.getTime()) ? null : nextDate;
-  }
+
+    loadProfessions();
+    return function () {
+      isMounted = false;
+    };
+  }, [locale]);
+
+  useEffect(function () {
+    if (!showPublish || newCategory !== 'request') return;
+
+    const fallbackLabel = myProfile?.town || myProfile?.city || t.community.requestLocationFallback;
+    const fallbackLat = typeof myProfile?.activeSearchLat === 'number' ? myProfile.activeSearchLat : myProfile?.lat;
+    const fallbackLng = typeof myProfile?.activeSearchLng === 'number' ? myProfile.activeSearchLng : myProfile?.lng;
+
+    setRequestLocationLabel(fallbackLabel);
+    setRequestLocationLat(typeof fallbackLat === 'number' ? fallbackLat : null);
+    setRequestLocationLng(typeof fallbackLng === 'number' ? fallbackLng : null);
+
+    if (typeof window === 'undefined' || !navigator.geolocation) return;
+
+    setRequestLocationLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      function (position) {
+        setRequestLocationLat(position.coords.latitude);
+        setRequestLocationLng(position.coords.longitude);
+        setRequestLocationLabel(myProfile?.town || myProfile?.city || t.community.requestLocationCurrent);
+        setRequestLocationLoading(false);
+      },
+      function () {
+        setRequestLocationLoading(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 8000,
+        maximumAge: 300000,
+      }
+    );
+  }, [showPublish, newCategory, myProfile?.activeSearchLat, myProfile?.activeSearchLng, myProfile?.lat, myProfile?.lng, myProfile?.town, myProfile?.city, t.community.requestLocationCurrent, t.community.requestLocationFallback]);
 
   function formatShortDate(value) {
     const date = normalizeDateValue(value);
@@ -144,6 +266,11 @@ export default function CommunityPage() {
       month: 'short',
       year: 'numeric',
     });
+  }
+
+  function formatHourRange(from, to) {
+    if (from && to) return `${from} - ${to}`;
+    return from || to || '';
   }
 
   function haversineKm(lat1, lng1, lat2, lng2) {
@@ -181,13 +308,21 @@ export default function CommunityPage() {
   }
 
   const filteredPosts = posts.filter(function (p) {
-    const categoryMatch = filter === 'all' || (CATEGORY_NORMALIZE[p.category] || p.category) === filter;
+    const normalizedCategory = getNormalizedCategory(p.category);
+    const isCoreCategory = ['recommended', 'request', 'tip', 'question'].includes(normalizedCategory);
+    const categoryMatch =
+      filter === 'all' ||
+      (filter === 'other' ? !isCoreCategory || normalizedCategory === 'other' : normalizedCategory === filter);
     const haystack = [p.title, p.content, p.location, p.authorName, p.professionLabel, p.profession]
       .filter(Boolean)
       .join(' ')
       .toLowerCase();
     const searchMatch = !searchTerm.trim() || haystack.includes(searchTerm.trim().toLowerCase());
     return categoryMatch && searchMatch;
+  }).sort(function (a, b) {
+    const aTime = normalizeDateValue(a.timestamp);
+    const bTime = normalizeDateValue(b.timestamp);
+    return (bTime ? bTime.getTime() : 0) - (aTime ? aTime.getTime() : 0);
   });
 
   function openPost(postId) {
@@ -220,11 +355,65 @@ export default function CommunityPage() {
     }
   }
 
+  useEffect(function () {
+    return function () {
+      mediaPreviews.forEach(function (item) {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      });
+    };
+  }, [mediaPreviews]);
+
   function handleImageChange(e) {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    setNewImage(file);
-    setImagePreview(URL.createObjectURL(file));
+    const files = Array.from((e.target.files && e.target.files) || []);
+    if (files.length === 0) return;
+
+    if (newMediaFiles.length + files.length > 5) {
+      toast.error('You can upload up to 5 images or videos.');
+      e.target.value = '';
+      return;
+    }
+
+    const invalidFile = files.find(function (file) {
+      return !getMediaKindFromFile(file);
+    });
+
+    if (invalidFile) {
+      toast.error('Only image and video files are allowed.');
+      e.target.value = '';
+      return;
+    }
+
+    setNewMediaFiles(function (prev) {
+      return [...prev, ...files];
+    });
+    setMediaPreviews(function (prev) {
+      return [
+        ...prev,
+        ...files.map(function (file, index) {
+          return {
+            id: file.name + '_' + file.size + '_' + (prev.length + index),
+            kind: getMediaKindFromFile(file),
+            previewUrl: URL.createObjectURL(file),
+          };
+        }),
+      ];
+    });
+    e.target.value = '';
+  }
+
+  function removeMediaAtIndex(indexToRemove) {
+    setNewMediaFiles(function (prev) {
+      return prev.filter(function (_file, index) { return index !== indexToRemove; });
+    });
+    setMediaPreviews(function (prev) {
+      const next = prev.filter(function (item, index) {
+        if (index === indexToRemove && item.previewUrl) {
+          URL.revokeObjectURL(item.previewUrl);
+        }
+        return index !== indexToRemove;
+      });
+      return next;
+    });
   }
 
   async function handlePublish(e) {
@@ -233,31 +422,69 @@ export default function CommunityPage() {
       toast.error('Please fill in title and content');
       return;
     }
+    if (newCategory === 'request' && !newProfession) {
+      toast.error(t.community.requestProfessionRequired);
+      return;
+    }
     setPublishing(true);
     try {
-      let imageUrl = '';
-      let imageUrls = [];
-      if (newImage) {
-        const path = 'blog_images/' + user.uid + '_' + Date.now() + '_' + newImage.name;
-        const snap = await uploadBytes(storageRef(storage, path), newImage);
-        imageUrl = await getDownloadURL(snap.ref);
-        imageUrls = [imageUrl];
+      let mediaTypes = [];
+      if (newMediaFiles.length > 0) {
+        mediaTypes = await Promise.all(newMediaFiles.map(async function (file, index) {
+          const extension = file.name.includes('.') ? file.name.split('.').pop() : '';
+          const path = 'blog_media/' + user.uid + '_' + Date.now() + '_' + index + (extension ? '.' + extension : '');
+          const snap = await uploadBytes(storageRef(storage, path), file);
+          const url = await getDownloadURL(snap.ref);
+          return {
+            url,
+            type: getMediaKindFromFile(file) || 'image',
+          };
+        }));
       }
+      const imageUrls = mediaTypes
+        .filter(function (item) { return item.type === 'image'; })
+        .map(function (item) { return item.url; });
+      const imageUrl = imageUrls[0] || '';
+      const selectedProfession = professionOptions.find(function (item) {
+        return item.value === newProfession;
+      });
       await createBlogPost({
         authorUid: user.uid,
         authorName: (myProfile && myProfile.name) || user.displayName || 'Anonymous',
         title: newTitle.trim(),
         content: newContent.trim(),
         category: newCategory,
+        profession: newCategory === 'request' ? newProfession : '',
+        professionLabel: newCategory === 'request' ? (selectedProfession?.label || newProfession) : '',
         imageUrl: imageUrl,
         imageUrls: imageUrls,
+        mediaTypes: mediaTypes,
+        location: newCategory === 'request' ? requestLocationLabel : '',
+        locationLat: newCategory === 'request' ? requestLocationLat : null,
+        locationLng: newCategory === 'request' ? requestLocationLng : null,
+        requestDateFrom: newCategory === 'request' ? newRequestDateFrom : '',
+        requestDateTo: newCategory === 'request' ? newRequestDateTo : '',
+        requestHourFrom: newCategory === 'request' ? newRequestHourFrom : '',
+        requestHourTo: newCategory === 'request' ? newRequestHourTo : '',
+        isJobRequest: newCategory === 'request',
       });
       toast.success('Post published!');
       setNewTitle('');
       setNewContent('');
       setNewCategory('tip');
-      setNewImage(null);
-      setImagePreview(null);
+      setNewProfession('');
+      setNewRequestDateFrom('');
+      setNewRequestDateTo('');
+      setNewRequestHourFrom('');
+      setNewRequestHourTo('');
+      setRequestLocationLabel('');
+      setRequestLocationLat(null);
+      setRequestLocationLng(null);
+      setNewMediaFiles([]);
+      mediaPreviews.forEach(function (item) {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      });
+      setMediaPreviews([]);
       setShowPublish(false);
       loadPosts();
     } catch (err) {
@@ -386,7 +613,7 @@ export default function CommunityPage() {
         {!loading && filteredPosts.length > 0 && (
           <div className="mx-auto flex max-w-3xl flex-col gap-5">
             {filteredPosts.map(function (post) {
-              const catKey = CATEGORY_NORMALIZE[post.category] || 'tip';
+              const catKey = getNormalizedCategory(post.category);
               const nameParts = (post.authorName || 'U').split(' ');
               const initials = nameParts.map(function (w) { return w[0]; }).join('').slice(0, 2).toUpperCase();
               const gradient = getAvatarGradient(post.authorUid || post.authorName || '');
@@ -396,6 +623,11 @@ export default function CommunityPage() {
               const locationLabel = [distanceLabel, post.location].filter(Boolean).join(' • ');
               const professionLabel = post.professionLabel || post.profession || '';
               const dateLabel = formatPostDate(post.timestamp);
+              const requestHourLabel = formatHourRange(post.requestHourFrom, post.requestHourTo);
+              const mediaTypes = Array.isArray(post.mediaTypes) && post.mediaTypes.length > 0
+                ? post.mediaTypes
+                : (post.imageUrl ? [{ url: post.imageUrl, type: 'image' }] : []);
+              const primaryMedia = mediaTypes[0] || null;
 
               return (
                 <article
@@ -403,14 +635,28 @@ export default function CommunityPage() {
                   className="group flex cursor-pointer flex-col overflow-hidden rounded-[28px] border border-[#d7e4f3] bg-white shadow-[0_18px_45px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-1 hover:border-[#b8d5f4] hover:shadow-[0_24px_60px_rgba(15,23,42,0.1)]"
                   onClick={function () { openPost(post.id); }}
                 >
-                  {post.imageUrl && (
+                  {primaryMedia && (
                     <div className="relative aspect-[16/10] w-full overflow-hidden border-b border-[#e5eef8] bg-[#f3f8fd]">
-                      <Image
-                        src={post.imageUrl}
-                        alt={post.title}
-                        fill
-                        className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-                      />
+                      {getMediaKindFromItem(primaryMedia) === 'video' ? (
+                        <video
+                          src={primaryMedia.url}
+                          controls
+                          onClick={function (e) { e.stopPropagation(); }}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <Image
+                          src={primaryMedia.url}
+                          alt={post.title}
+                          fill
+                          className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                        />
+                      )}
+                      {mediaTypes.length > 1 ? (
+                        <div className="absolute right-3 top-3 rounded-full bg-black/65 px-3 py-1 text-xs font-bold text-white">
+                          +{mediaTypes.length - 1}
+                        </div>
+                      ) : null}
                     </div>
                   )}
 
@@ -419,7 +665,7 @@ export default function CommunityPage() {
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="inline-flex items-center rounded-full bg-[#dcebfb] px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-primary">
-                            {catKey === 'request' ? 'Job Request' : filterLabels[catKey]}
+                            {catKey === 'request' ? 'Job Request' : (filterLabels[catKey] || t.community.other)}
                           </span>
                           {professionLabel ? (
                             <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
@@ -459,6 +705,12 @@ export default function CommunityPage() {
                         <span className="inline-flex items-center gap-2 rounded-full bg-[#eef5fc] px-3 py-2 text-primary">
                           <FiMapPin className="h-4 w-4" />
                           {locationLabel}
+                        </span>
+                      ) : null}
+                      {post.isJobRequest && requestHourLabel ? (
+                        <span className="inline-flex items-center gap-2 rounded-full bg-[#f3f7fc] px-3 py-2">
+                          <FiClock className="h-4 w-4 text-slate-400" />
+                          {requestHourLabel}
                         </span>
                       ) : null}
                     </div>
@@ -508,15 +760,6 @@ export default function CommunityPage() {
         <div className="h-24 md:h-8" />
       </div>
 
-      {user && !showPublish && (
-        <button
-          onClick={function () { setShowPublish(true); }}
-          className="fixed bottom-20 ltr:right-4 rtl:left-4 md:bottom-8 md:ltr:right-8 md:rtl:left-8 z-40 flex items-center gap-2 rounded-[22px] bg-primary px-5 py-3.5 text-base font-black text-white shadow-[0_16px_30px_rgba(37,99,235,0.35)] transition-transform duration-200 hover:scale-105 active:scale-95"
-        >
-          <HiPlusCircle className="h-5 w-5" />
-          {t.community.publish}
-        </button>
-      )}
       </div>
 
       {showPublish && (
@@ -537,7 +780,7 @@ export default function CommunityPage() {
 
             <form onSubmit={handlePublish} className="space-y-4">
               <div className="flex gap-2">
-                {['tip', 'request', 'question'].map(function (cat) {
+                {['recommended', 'tip', 'request', 'question', 'other'].map(function (cat) {
                   const m = FILTER_META[cat];
                   const I = m.icon;
                   return (
@@ -575,28 +818,125 @@ export default function CommunityPage() {
                 className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-white transition-colors resize-none"
               />
 
-              {imagePreview ? (
-                <div className="relative rounded-2xl overflow-hidden h-40">
-                  <Image src={imagePreview} alt="preview" fill className="object-cover" />
-                  <button
-                    type="button"
-                    onClick={function () { setNewImage(null); setImagePreview(null); }}
-                    className="absolute top-2 right-2 p-1.5 bg-black/50 rounded-full text-white hover:bg-black/70 transition-colors"
-                  >
-                    <HiX className="h-4 w-4" />
-                  </button>
+              {newCategory === 'request' ? (
+                <div className="space-y-4 rounded-2xl border border-[#d7e4f3] bg-[#f8fbff] p-4">
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">{t.community.requestProfessionLabel}</label>
+                    <select
+                      value={newProfession}
+                      onChange={function (e) { setNewProfession(e.target.value); }}
+                      className="w-full rounded-2xl border border-gray-100 bg-white px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      required
+                    >
+                      <option value="">
+                        {professionsLoading ? t.community.requestProfessionLoading : t.community.requestProfessionPlaceholder}
+                      </option>
+                      {professionOptions.map(function (item) {
+                        return (
+                          <option key={item.id} value={item.value}>
+                            {item.label}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold text-slate-700">{t.community.requestDateFromLabel}</label>
+                      <input
+                        type="date"
+                        value={newRequestDateFrom}
+                        onChange={function (e) { setNewRequestDateFrom(e.target.value); }}
+                        className="w-full rounded-2xl border border-gray-100 bg-white px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold text-slate-700">{t.community.requestDateToLabel}</label>
+                      <input
+                        type="date"
+                        value={newRequestDateTo}
+                        onChange={function (e) { setNewRequestDateTo(e.target.value); }}
+                        className="w-full rounded-2xl border border-gray-100 bg-white px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-400">{t.community.requestDateHint}</p>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold text-slate-700">{t.community.requestHourFromLabel}</label>
+                      <input
+                        type="time"
+                        value={newRequestHourFrom}
+                        onChange={function (e) { setNewRequestHourFrom(e.target.value); }}
+                        className="w-full rounded-2xl border border-gray-100 bg-white px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold text-slate-700">{t.community.requestHourToLabel}</label>
+                      <input
+                        type="time"
+                        value={newRequestHourTo}
+                        onChange={function (e) { setNewRequestHourTo(e.target.value); }}
+                        className="w-full rounded-2xl border border-gray-100 bg-white px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-400">{t.community.requestHourHint}</p>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">{t.community.requestLocationLabel}</label>
+                    <div className="flex items-center gap-2 rounded-2xl border border-gray-100 bg-white px-4 py-3 text-sm text-slate-700">
+                      <FiMapPin className="h-4 w-4 text-primary" />
+                      <span className="flex-1">
+                        {requestLocationLoading ? t.community.requestLocationLoading : (requestLocationLabel || t.community.requestLocationFallback)}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-              ) : (
+              ) : null}
+
+              {mediaPreviews.length > 0 ? (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {mediaPreviews.map(function (item, index) {
+                    return (
+                      <div key={item.id} className="relative h-32 overflow-hidden rounded-2xl bg-slate-100">
+                        {item.kind === 'video' ? (
+                          <video src={item.previewUrl} controls className="h-full w-full object-cover" />
+                        ) : (
+                          <Image src={item.previewUrl} alt={'preview ' + (index + 1)} fill className="object-cover" />
+                        )}
+                        <button
+                          type="button"
+                          onClick={function () { removeMediaAtIndex(index); }}
+                          className="absolute right-2 top-2 rounded-full bg-black/50 p-1.5 text-white hover:bg-black/70 transition-colors"
+                        >
+                          <HiX className="h-4 w-4" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              {newMediaFiles.length < 5 ? (
                 <button
                   type="button"
                   onClick={function () { fileInputRef.current && fileInputRef.current.click(); }}
                   className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-gray-200 rounded-2xl text-sm text-gray-400 hover:border-primary/30 hover:text-primary/60 transition-colors"
                 >
                   <HiPhotograph className="h-5 w-5" />
-                  Add photo (optional)
+                  Add up to 5 images or videos
                 </button>
+              ) : (
+                <p className="text-center text-sm font-semibold text-slate-400">
+                  Maximum 5 images or videos selected.
+                </p>
               )}
-              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+              <input ref={fileInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleImageChange} />
 
               <div className="sticky bottom-0 -mx-5 mt-2 bg-white/95 px-5 pb-[calc(env(safe-area-inset-bottom)+0.25rem)] pt-3 backdrop-blur sm:static sm:mx-0 sm:bg-transparent sm:px-0 sm:pb-0 sm:pt-0">
                 <button

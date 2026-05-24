@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 function normalizeDateKey(input) {
   if (!input || typeof input !== 'string') return null;
@@ -120,6 +121,7 @@ function removeVacationDay(vacations, dayKey) {
 export default function ProfileScheduleView({ uid, profile }) {
   const router = useRouter();
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [workerSchedule, setWorkerSchedule] = useState(null);
   const [loadingSchedule, setLoadingSchedule] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
@@ -418,14 +420,14 @@ export default function ProfileScheduleView({ uid, profile }) {
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-gray-900 flex items-center gap-2">
             <span className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center text-base">📅</span>
-            Schedule
+            {t.profile.scheduleSection}
           </h3>
           <div className="text-xs text-gray-500">
             {workerSchedule?.timezone || 'Local time'}
           </div>
         </div>
 
-        {loadingSchedule && <p className="text-sm text-gray-500">Loading schedule...</p>}
+        {loadingSchedule && <p className="text-sm text-gray-500">{t.profile.loadingSchedule}</p>}
         {!loadingSchedule && (
           <>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
