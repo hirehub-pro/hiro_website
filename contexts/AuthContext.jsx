@@ -216,7 +216,15 @@ export function AuthProvider({ children }) {
   }, []);
 
   // Email / Password sign-up
-  async function signUpWithEmail(email, password, { name, role, professions = [], city = '', phoneNumber = '' }) {
+  async function signUpWithEmail(email, password, {
+    name,
+    role,
+    professions = [],
+    city = '',
+    phoneNumber = '',
+    lat = null,
+    lng = null,
+  }) {
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
     const alreadyExists = await isPhoneInUse(normalizedPhone);
     if (alreadyExists) {
@@ -241,8 +249,8 @@ export function AuthProvider({ children }) {
       description: '',
       phone: normalizedPhone,
       optionalPhone: '',
-      lat: null,
-      lng: null,
+      lat: Number.isFinite(lat) ? lat : null,
+      lng: Number.isFinite(lng) ? lng : null,
       platform: detectPlatform(),
       fcmToken: '',
       lastTokenUpdate: serverTimestamp(),
@@ -259,6 +267,8 @@ export function AuthProvider({ children }) {
     email = '',
     role,
     city,
+    lat = null,
+    lng = null,
     phoneNumber,
     professions = [],
     workRadius = 0,
@@ -290,8 +300,8 @@ export function AuthProvider({ children }) {
       town: city || '',
       phone: normalizedPhone,
       optionalPhone: optionalPhone ? normalizePhoneNumber(optionalPhone) : '',
-      lat: null,
-      lng: null,
+      lat: Number.isFinite(lat) ? lat : null,
+      lng: Number.isFinite(lng) ? lng : null,
       profileImageUrl: '',
       description: description || '',
       platform: detectPlatform(),

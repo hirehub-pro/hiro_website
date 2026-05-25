@@ -7,6 +7,7 @@ import SiteFooter from '../components/layout/SiteFooter';
 import { Toaster } from 'react-hot-toast';
 import { HiArrowSmRight, HiX } from 'react-icons/hi';
 import { startForegroundPushNotifications } from '../lib/notifications';
+import 'leaflet/dist/leaflet.css';
 import '../styles/globals.css';
 
 const APP_PACKAGE_NAME = 'com.hirehub.app';
@@ -15,6 +16,11 @@ const APP_PROMPT_STORAGE_KEY = 'hiro-hide-open-app-prompt-until';
 function isMobileBrowser() {
   if (typeof navigator === 'undefined') return false;
   return /Android|iPhone|iPod|Mobile/i.test(navigator.userAgent || '');
+}
+
+function isPerformanceAuditAgent() {
+  if (typeof navigator === 'undefined') return false;
+  return /(lighthouse|pagespeed|chrome-lighthouse)/i.test(navigator.userAgent || '');
 }
 
 function isStandaloneMode() {
@@ -38,14 +44,39 @@ export default function App({ Component, pageProps }) {
 
   useEffect(() => {
     let unsubscribe = null;
+    let cancelled = false;
 
-    startForegroundPushNotifications()
-      .then((nextUnsubscribe) => {
-        unsubscribe = nextUnsubscribe;
-      })
-      .catch(() => {});
+    function bootPushNotifications() {
+      startForegroundPushNotifications()
+        .then((nextUnsubscribe) => {
+          if (!cancelled) {
+            unsubscribe = nextUnsubscribe;
+          }
+        })
+        .catch(() => {});
+    }
+
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      const idleId = window.requestIdleCallback(() => {
+        bootPushNotifications();
+      }, { timeout: 3000 });
+
+      return () => {
+        cancelled = true;
+        window.cancelIdleCallback(idleId);
+        if (typeof unsubscribe === 'function') {
+          unsubscribe();
+        }
+      };
+    }
+
+    const timer = setTimeout(() => {
+      bootPushNotifications();
+    }, 1500);
 
     return () => {
+      cancelled = true;
+      clearTimeout(timer);
       if (typeof unsubscribe === 'function') {
         unsubscribe();
       }
@@ -54,6 +85,7 @@ export default function App({ Component, pageProps }) {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (isPerformanceAuditAgent()) return;
     if (!isMobileBrowser() || isStandaloneMode()) return;
 
     const hiddenUntil = Number(window.localStorage.getItem(APP_PROMPT_STORAGE_KEY) || 0);

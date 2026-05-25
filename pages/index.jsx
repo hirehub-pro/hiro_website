@@ -7,7 +7,7 @@ import HomeShowcaseSections from '../components/home/HomeShowcaseSections';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 
-const SEO_TITLE = 'Hiro - מצאו בעלי מקצוע לידכם | חשמלאי, אינסטלטור, שיפוצים ועוד';
+const SEO_TITLE = 'Hiro | מצאו בעלי מקצוע לידכם';
 const SEO_DESCRIPTION = 'Hiro עוזר לכם למצוא בעלי מקצוע אמינים לידכם במהירות. חפשו חשמלאי, אינסטלטור, שיפוצניק, מנקה, טכנאי, הובלות ועוד בעלי מקצוע מומלצים באזור שלכם.';
 const SEO_KEYWORDS = [
   'בעלי מקצוע',
@@ -35,9 +35,10 @@ const SEO_KEYWORDS = [
   'local services',
   'home services',
 ].join(', ');
-const SITE_NAME = 'הירו';
+const SITE_NAME = 'Hiro';
 const SITE_ALTERNATE_NAME = 'הירו';
 const HOMEPAGE_URL = 'https://hiro-services.com/';
+const LOGO_URL = 'https://hiro-services.com/web-app-manifest-512x512.png';
 const structuredData = {
   '@context': 'https://schema.org',
   '@graph': [
@@ -52,6 +53,11 @@ const structuredData = {
       url: HOMEPAGE_URL,
       name: SITE_NAME,
       alternateName: SITE_ALTERNATE_NAME,
+      logo: {
+        '@type': 'ImageObject',
+        url: LOGO_URL,
+      },
+      image: LOGO_URL,
     },
   ],
 };
@@ -78,9 +84,11 @@ export default function HomePage() {
         <meta property="og:description" content={SEO_DESCRIPTION} />
         <meta property="og:type" content="website" />
         <meta property="og:url" content={HOMEPAGE_URL} />
+        <meta property="og:image" content={LOGO_URL} />
         <meta name="twitter:card" content="summary" />
         <meta name="twitter:title" content={SEO_TITLE} />
         <meta name="twitter:description" content={SEO_DESCRIPTION} />
+        <meta name="twitter:image" content={LOGO_URL} />
         <link rel="canonical" href={HOMEPAGE_URL} />
         <script
           type="application/ld+json"

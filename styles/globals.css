@@ -154,3 +154,26 @@ a, button { -webkit-tap-highlight-color: transparent; }
   transform: translateY(0);
   transition: opacity 0.35s ease, transform 0.35s ease;
 }
+
+.hiro-map-pin {
+  background: transparent;
+  border: 0;
+}
+
+.hiro-map-pin__inner {
+  display: flex;
+  height: 42px;
+  width: 34px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px 999px 999px 0;
+  background: linear-gradient(180deg, #fb7185 0%, #e11d48 100%);
+  box-shadow: 0 14px 28px rgba(225, 29, 72, 0.28);
+  transform: rotate(-45deg);
+}
+
+.hiro-map-pin__inner svg {
+  height: 18px;
+  width: 18px;
+  transform: rotate(45deg);
+}

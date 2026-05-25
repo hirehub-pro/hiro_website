@@ -55,6 +55,8 @@ export default function CategoryGrid({ showAll = false }) {
 
   useEffect(() => {
     let isMounted = true;
+    let idleId = null;
+    let timerId = null;
 
     async function loadPopularCategories() {
       try {
@@ -104,10 +106,24 @@ export default function CategoryGrid({ showAll = false }) {
       }
     }
 
-    loadPopularCategories();
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      idleId = window.requestIdleCallback(() => {
+        loadPopularCategories();
+      }, { timeout: 2500 });
+    } else {
+      timerId = window.setTimeout(() => {
+        loadPopularCategories();
+      }, 1200);
+    }
 
     return () => {
       isMounted = false;
+      if (typeof window !== 'undefined' && idleId !== null && 'cancelIdleCallback' in window) {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timerId !== null) {
+        clearTimeout(timerId);
+      }
     };
   }, [showAll]);
 

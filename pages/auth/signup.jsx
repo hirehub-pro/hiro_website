@@ -2,13 +2,18 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import toast from 'react-hot-toast';
-import { HiOutlineUser, HiBriefcase, HiOfficeBuilding, HiSparkles, HiDeviceMobile, HiKey, HiChevronDown, HiChevronUp, HiCheck, HiX, HiCreditCard } from 'react-icons/hi';
+import { HiOutlineUser, HiBriefcase, HiOfficeBuilding, HiSparkles, HiDeviceMobile, HiKey, HiChevronDown, HiChevronUp, HiCheck, HiX, HiCreditCard, HiLocationMarker } from 'react-icons/hi';
 import clsx from 'clsx';
 import { doc, getDoc } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { db } from '../../lib/firebase';
+
+const CityMapPickerModal = dynamic(() => import('../../components/auth/CityMapPickerModal'), {
+  ssr: false,
+});
 
 SignUpPage.getLayout = (page) => page;
 
@@ -27,6 +32,8 @@ export default function SignUpPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [city, setCity] = useState('');
+  const [selectedLat, setSelectedLat] = useState(null);
+  const [selectedLng, setSelectedLng] = useState(null);
   const [role, setRole] = useState('customer');
   const [agreePolicy, setAgreePolicy] = useState(false);
 
@@ -50,6 +57,7 @@ export default function SignUpPage() {
   const [cardExpiry, setCardExpiry] = useState('');
   const [cardCvv, setCardCvv] = useState('');
   const [agreeSubscription, setAgreeSubscription] = useState(false);
+  const [cityPickerOpen, setCityPickerOpen] = useState(false);
   const professionMenuRef = useRef(null);
   const appStoreUrl = 'https://apps.apple.com/us/app/hiro-%D7%94%D7%99%D7%A8%D7%95/id6763238120';
   const googlePlayUrl = 'https://play.google.com/store/apps/details?id=com.hirehub.app';
@@ -163,7 +171,10 @@ export default function SignUpPage() {
     e.preventDefault();
 
     if (!name.trim()) return toast.error('Please enter your full name');
-    if (!city.trim()) return toast.error('Please enter your city');
+    if (!city.trim()) return toast.error('Please choose your city from the map');
+    if (!Number.isFinite(selectedLat) || !Number.isFinite(selectedLng)) {
+      return toast.error('Please confirm a city on the map');
+    }
     if (!agreePolicy) return toast.error('You must agree to Terms and Privacy Policy');
 
     setStep(role === 'worker' ? 'professional' : 'verify');
@@ -229,6 +240,8 @@ export default function SignUpPage() {
         email,
         role,
         city,
+        lat: selectedLat,
+        lng: selectedLng,
         phoneNumber,
         professions,
         workRadius,
@@ -252,6 +265,13 @@ export default function SignUpPage() {
     setSentToPhone('');
   }
 
+  function handleCityConfirm(location) {
+    setCity(location.city);
+    setSelectedLat(location.lat);
+    setSelectedLng(location.lng);
+    setCityPickerOpen(false);
+  }
+
   async function handleCompleteSubscription(e) {
     e.preventDefault();
 
@@ -268,6 +288,8 @@ export default function SignUpPage() {
         email,
         role,
         city,
+        lat: selectedLat,
+        lng: selectedLng,
         phoneNumber,
         professions,
         workRadius,
@@ -367,7 +389,19 @@ export default function SignUpPage() {
 
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">{t.auth.city}</label>
-                  <input type="text" required value={city} onChange={(e) => setCity(e.target.value)} className="input-field" />
+                  <button
+                    type="button"
+                    onClick={() => setCityPickerOpen(true)}
+                    className="input-field flex items-center justify-between text-left"
+                  >
+                    <span className={clsx('truncate', city ? 'text-gray-800' : 'text-gray-400')}>
+                      {city || 'Tap to choose your city on the map'}
+                    </span>
+                    <HiLocationMarker className="h-5 w-5 text-primary" />
+                  </button>
+                  <p className="mt-2 text-xs text-gray-500">
+                    We will save the city and map coordinates to your profile.
+                  </p>
                 </div>
 
                 <div>
@@ -677,6 +711,15 @@ export default function SignUpPage() {
           </p>
         </div>
       </div>
+
+      <CityMapPickerModal
+        isOpen={cityPickerOpen}
+        initialCity={city}
+        initialLat={selectedLat}
+        initialLng={selectedLng}
+        onClose={() => setCityPickerOpen(false)}
+        onConfirm={handleCityConfirm}
+      />
     </>
   );
 }

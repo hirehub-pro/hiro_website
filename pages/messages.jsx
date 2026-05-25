@@ -117,6 +117,75 @@ function formatAudioTime(seconds) {
   return `${mins}:${String(secs).padStart(2, '0')}`;
 }
 
+function requestUserMedia(constraints) {
+  if (typeof navigator === 'undefined') {
+    return Promise.reject(new Error('Media devices are unavailable.'));
+  }
+
+  if (navigator.mediaDevices?.getUserMedia) {
+    return navigator.mediaDevices.getUserMedia(constraints);
+  }
+
+  const legacyGetUserMedia = (
+    navigator.getUserMedia ||
+    navigator.webkitGetUserMedia ||
+    navigator.mozGetUserMedia ||
+    navigator.msGetUserMedia
+  );
+
+  if (!legacyGetUserMedia) {
+    return Promise.reject(new Error('Media devices are unavailable.'));
+  }
+
+  return new Promise((resolve, reject) => {
+    legacyGetUserMedia.call(navigator, constraints, resolve, reject);
+  });
+}
+
+function getVoiceRecordingDebugMessage(error) {
+  const message = String(error?.message || '').toLowerCase();
+  const name = String(error?.name || '').toLowerCase();
+  const isSecureContextMissing = typeof window !== 'undefined' && !window.isSecureContext;
+
+  if (message.includes('media devices are unavailable')) {
+    if (isSecureContextMissing) {
+      return 'Voice debug: no live mic API because this page is not in a secure context.';
+    }
+    return 'Voice debug: no live mic API is exposed in this browser/webview.';
+  }
+
+  if (
+    name.includes('notallowed') ||
+    name.includes('permissiondenied') ||
+    message.includes('permission denied') ||
+    message.includes('permission dismissed')
+  ) {
+    return 'Voice debug: microphone permission was denied or dismissed.';
+  }
+
+  if (
+    name.includes('notfound') ||
+    name.includes('devicesnotfound') ||
+    message.includes('requested device not found')
+  ) {
+    return 'Voice debug: no microphone device was found.';
+  }
+
+  if (
+    name.includes('notreadable') ||
+    name.includes('trackstart') ||
+    message.includes('could not start audio source')
+  ) {
+    return 'Voice debug: microphone exists but could not be started by the browser.';
+  }
+
+  if (typeof MediaRecorder === 'undefined') {
+    return 'Voice debug: microphone access may exist, but MediaRecorder is not supported here.';
+  }
+
+  return `Voice debug: ${error?.name || 'UnknownError'}${error?.message ? ` - ${error.message}` : ''}`;
+}
+
 function VoiceMessageCard({ url, label, mine }) {
   const audioRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -254,6 +323,11 @@ export default function MessagesPage() {
   const [supportRoomLoading, setSupportRoomLoading] = useState(false);
   const [pendingSupportRoom, setPendingSupportRoom] = useState(null);
   const [mobileThreadOpen, setMobileThreadOpen] = useState(false);
+  const [attachmentPickerKind, setAttachmentPickerKind] = useState('');
+  const [cameraCaptureKind, setCameraCaptureKind] = useState('');
+  const [cameraStarting, setCameraStarting] = useState(false);
+  const [cameraRecording, setCameraRecording] = useState(false);
+  const [cameraRecordingSeconds, setCameraRecordingSeconds] = useState(0);
   const [recordingVoice, setRecordingVoice] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const messagesEndRef = useRef(null);
@@ -261,14 +335,20 @@ export default function MessagesPage() {
   const videoInputRef = useRef(null);
   const audioInputRef = useRef(null);
   const fileInputRef = useRef(null);
+  const cameraPreviewRef = useRef(null);
+  const cameraCanvasRef = useRef(null);
+  const cameraStreamRef = useRef(null);
+  const cameraRecorderRef = useRef(null);
+  const cameraChunksRef = useRef([]);
+  const cameraDiscardRecordingRef = useRef(false);
   const mediaRecorderRef = useRef(null);
   const recordingChunksRef = useRef([]);
   const recordingStreamRef = useRef(null);
   const composerFeatures = useMemo(() => ([
-    { label: 'Images', icon: HiPhotograph, inputRef: imageInputRef },
-    { label: 'Videos', icon: HiVideoCamera, inputRef: videoInputRef },
-    { label: 'Voice messages', icon: HiMicrophone, inputRef: audioInputRef },
-    { label: 'Files', icon: HiPaperClip, inputRef: fileInputRef },
+    { label: 'Images', icon: HiPhotograph, kind: 'image' },
+    { label: 'Videos', icon: HiVideoCamera, kind: 'video' },
+    { label: 'Voice messages', icon: HiMicrophone, kind: 'audio', inputRef: audioInputRef },
+    { label: 'Files', icon: HiPaperClip, kind: 'file', inputRef: fileInputRef },
   ]), []);
 
   const roomItems = useMemo(() => {
@@ -289,6 +369,10 @@ export default function MessagesPage() {
     () => getOtherUserId(activeRoom, user?.uid),
     [activeRoom, user?.uid]
   );
+  const activeProfileHref = useMemo(() => {
+    if (!activeClientUid || activeRoom?.isSupportRoom) return '';
+    return `/profile/${activeClientUid}`;
+  }, [activeClientUid, activeRoom?.isSupportRoom]);
 
   const filteredRooms = useMemo(() => {
     const searchValue = search.trim().toLowerCase();
@@ -425,10 +509,34 @@ export default function MessagesPage() {
     return () => window.clearInterval(timer);
   }, [recordingVoice]);
 
+  useEffect(() => {
+    if (!cameraRecording) return undefined;
+
+    const timer = window.setInterval(() => {
+      setCameraRecordingSeconds((current) => current + 1);
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [cameraRecording]);
+
   useEffect(() => () => {
-    mediaRecorderRef.current?.stop?.();
+    if (mediaRecorderRef.current?.state && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
     recordingStreamRef.current?.getTracks?.().forEach((track) => track.stop());
+
+    if (cameraRecorderRef.current?.state && cameraRecorderRef.current.state !== 'inactive') {
+      cameraRecorderRef.current.stop();
+    }
+    cameraStreamRef.current?.getTracks?.().forEach((track) => track.stop());
   }, []);
+
+  useEffect(() => {
+    if (!cameraCaptureKind || !cameraPreviewRef.current || !cameraStreamRef.current) return;
+
+    cameraPreviewRef.current.srcObject = cameraStreamRef.current;
+    cameraPreviewRef.current.play().catch(() => {});
+  }, [cameraCaptureKind, cameraStarting]);
 
   useEffect(() => {
     if (!user) return undefined;
@@ -624,9 +732,185 @@ export default function MessagesPage() {
   async function handleAttachmentSelected(kind, event) {
     const file = event.target.files?.[0];
     event.target.value = '';
+    setAttachmentPickerKind('');
 
     if (!file || !user || !activeRoom) return;
     await uploadAttachmentFile(file, kind);
+  }
+
+  function handleComposerFeatureClick(feature) {
+    if (uploadingAttachment || sending || !activeRoom) return;
+
+    if (feature.kind === 'image' || feature.kind === 'video') {
+      setAttachmentPickerKind(feature.kind);
+      return;
+    }
+
+    feature.inputRef?.current?.click();
+  }
+
+  function handleAttachmentPickerChoice(source) {
+    const selectedKind = attachmentPickerKind;
+    setAttachmentPickerKind('');
+
+    if (selectedKind === 'image') {
+      if (source === 'camera') {
+        openCameraCapture('image');
+        return;
+      }
+      imageInputRef.current?.click();
+      return;
+    }
+
+    if (selectedKind === 'video') {
+      if (source === 'camera') {
+        openCameraCapture('video');
+        return;
+      }
+      videoInputRef.current?.click();
+      return;
+    }
+  }
+
+  function closeCameraCapture() {
+    cameraRecorderRef.current = null;
+    cameraChunksRef.current = [];
+    cameraDiscardRecordingRef.current = false;
+    setCameraCaptureKind('');
+    setCameraStarting(false);
+    setCameraRecording(false);
+    setCameraRecordingSeconds(0);
+
+    if (cameraPreviewRef.current) {
+      cameraPreviewRef.current.pause();
+      cameraPreviewRef.current.srcObject = null;
+    }
+
+    cameraStreamRef.current?.getTracks?.().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+  }
+
+  async function openCameraCapture(kind) {
+    if (!activeRoom || !user || uploadingAttachment || sending) return;
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+      toast.error('Camera is not supported on this device.');
+      return;
+    }
+
+    closeCameraCapture();
+    setCameraCaptureKind(kind);
+    setCameraStarting(true);
+
+    try {
+      const stream = await requestUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: kind === 'video',
+      });
+
+      cameraStreamRef.current = stream;
+      setCameraStarting(false);
+
+      window.requestAnimationFrame(() => {
+        if (!cameraPreviewRef.current) return;
+        cameraPreviewRef.current.srcObject = stream;
+        cameraPreviewRef.current.play().catch(() => {});
+      });
+    } catch (error) {
+      closeCameraCapture();
+      toast.error(error?.message || 'Could not open the camera.');
+    }
+  }
+
+  async function handleCapturePhoto() {
+    const preview = cameraPreviewRef.current;
+    const canvas = cameraCanvasRef.current;
+
+    if (!preview || !canvas || !cameraStreamRef.current) return;
+
+    const width = preview.videoWidth || 1280;
+    const height = preview.videoHeight || 720;
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext('2d');
+    if (!context) {
+      toast.error('Could not capture the photo.');
+      return;
+    }
+
+    context.drawImage(preview, 0, 0, width, height);
+
+    canvas.toBlob(async (blob) => {
+      if (!blob) {
+        toast.error('Could not capture the photo.');
+        return;
+      }
+
+      closeCameraCapture();
+      const photoFile = new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      await uploadAttachmentFile(photoFile, 'image');
+    }, 'image/jpeg', 0.92);
+  }
+
+  function handleStartVideoRecording() {
+    if (!cameraStreamRef.current) return;
+    if (typeof window === 'undefined' || typeof MediaRecorder === 'undefined') {
+      toast.error('Video recording is not supported on this device.');
+      return;
+    }
+
+    try {
+      const recorder = new MediaRecorder(cameraStreamRef.current);
+      cameraRecorderRef.current = recorder;
+      cameraChunksRef.current = [];
+      cameraDiscardRecordingRef.current = false;
+      setCameraRecordingSeconds(0);
+
+      recorder.addEventListener('dataavailable', (event) => {
+        if (event.data && event.data.size > 0) {
+          cameraChunksRef.current.push(event.data);
+        }
+      });
+
+      recorder.addEventListener('stop', async () => {
+        const discardRecording = cameraDiscardRecordingRef.current;
+        const mimeType = recorder.mimeType || 'video/webm';
+        const extension = mimeType.includes('mp4') ? 'mp4' : 'webm';
+        const videoBlob = new Blob(cameraChunksRef.current, { type: mimeType });
+
+        closeCameraCapture();
+
+        if (discardRecording || !videoBlob.size) return;
+
+        const videoFile = new File(
+          [videoBlob],
+          `video-${Date.now()}.${extension}`,
+          { type: mimeType }
+        );
+
+        await uploadAttachmentFile(videoFile, 'video');
+      });
+
+      recorder.start();
+      setCameraRecording(true);
+    } catch (error) {
+      toast.error(error?.message || 'Could not start video recording.');
+    }
+  }
+
+  function handleStopVideoRecording() {
+    if (!cameraRecorderRef.current || cameraRecorderRef.current.state === 'inactive') return;
+    cameraRecorderRef.current.stop();
+  }
+
+  function handleCancelCameraCapture() {
+    if (cameraRecorderRef.current && cameraRecorderRef.current.state !== 'inactive') {
+      cameraDiscardRecordingRef.current = true;
+      cameraRecorderRef.current.stop();
+      return;
+    }
+
+    closeCameraCapture();
   }
 
   async function uploadAttachmentFile(file, kind) {
@@ -686,13 +970,18 @@ export default function MessagesPage() {
     }
 
     if (!activeRoom || !user || uploadingAttachment || sending) return;
-    if (typeof window === 'undefined' || typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') {
       toast.error('Voice recording is not supported on this device.');
       return;
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await requestUserMedia({ audio: true });
+      if (typeof MediaRecorder === 'undefined') {
+        stream.getTracks?.().forEach((track) => track.stop());
+        toast.error('Voice debug: microphone access may exist, but MediaRecorder is not supported here.');
+        return;
+      }
       const recorder = new MediaRecorder(stream);
 
       recordingStreamRef.current = stream;
@@ -731,7 +1020,7 @@ export default function MessagesPage() {
       recorder.start();
       setRecordingVoice(true);
     } catch (error) {
-      toast.error(error?.message || 'Could not start voice recording.');
+      toast.error(getVoiceRecordingDebugMessage(error));
     }
   }
 
@@ -910,13 +1199,30 @@ export default function MessagesPage() {
                     >
                       <HiChevronLeft className={`h-5 w-5 ${dir === 'rtl' ? 'rotate-180' : ''}`} />
                     </button>
-                    <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary-50">
-                      <HiUserCircle className="h-8 w-8 text-primary" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate font-bold text-gray-900">{getRoomName(activeRoom, user.uid)}</p>
-                      <p className="text-xs text-gray-400">{activeRoom.lastMessage || 'Conversation'}</p>
-                    </div>
+                    {activeProfileHref ? (
+                      <Link
+                        href={activeProfileHref}
+                        className="flex min-w-0 items-center gap-3 rounded-2xl transition-colors hover:bg-slate-50"
+                      >
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary-50">
+                          <HiUserCircle className="h-8 w-8 text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate font-bold text-gray-900">{getRoomName(activeRoom, user.uid)}</p>
+                          <p className="text-xs text-gray-400">{activeRoom.lastMessage || 'Conversation'}</p>
+                        </div>
+                      </Link>
+                    ) : (
+                      <>
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary-50">
+                          <HiUserCircle className="h-8 w-8 text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate font-bold text-gray-900">{getRoomName(activeRoom, user.uid)}</p>
+                          <p className="text-xs text-gray-400">{activeRoom.lastMessage || 'Conversation'}</p>
+                        </div>
+                      </>
+                    )}
                     {isWorker && !activeRoom.isSupportRoom && activeClientUid ? (
                       <button
                         type="button"
@@ -1030,32 +1336,60 @@ export default function MessagesPage() {
 
                   <div className="border-t border-gray-100 bg-white p-3 md:p-4">
                     <div className="mb-3 flex gap-2 overflow-x-auto pb-1 md:flex-wrap md:overflow-visible">
-                      {composerFeatures.map(({ label, icon: Icon, inputRef }) => (
-                        <button
-                          key={label}
-                          type="button"
-                          onClick={() => inputRef.current?.click()}
-                          disabled={uploadingAttachment || sending || !activeRoom}
-                          className="inline-flex shrink-0 items-center gap-2 rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          <Icon className="h-4 w-4" />
-                          {label}
-                        </button>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={handleRecordVoiceToggle}
-                        disabled={uploadingAttachment || sending || !activeRoom}
-                        className={`inline-flex shrink-0 items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                          recordingVoice
-                            ? 'bg-red-50 text-red-600 hover:bg-red-100'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
-                      >
-                        {recordingVoice ? <HiStop className="h-4 w-4" /> : <HiMicrophone className="h-4 w-4" />}
-                        {recordingVoice ? `Stop recording ${formatAudioTime(recordingSeconds)}` : 'Record voice'}
-                      </button>
+                      {composerFeatures.map((feature) => {
+                        const { label, icon: Icon } = feature;
+                        return (
+                          <button
+                            key={label}
+                            type="button"
+                            onClick={() => handleComposerFeatureClick(feature)}
+                            disabled={uploadingAttachment || sending || !activeRoom}
+                            aria-label={label}
+                            title={label}
+                            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <Icon className="h-4 w-4" />
+                          </button>
+                        );
+                      })}
                     </div>
+                    {attachmentPickerKind ? (
+                      <div className="mb-3 rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">
+                              {attachmentPickerKind === 'image' ? 'Send an image' : 'Send a video'}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              Choose whether to capture a new one or pick from your device.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleAttachmentPickerChoice('camera')}
+                              className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-800"
+                            >
+                              {attachmentPickerKind === 'image' ? 'Take picture' : 'Record video'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAttachmentPickerChoice('storage')}
+                              className="rounded-full bg-white px-4 py-2 text-xs font-semibold text-slate-700 ring-1 ring-inset ring-slate-200 transition hover:bg-slate-100"
+                            >
+                              Choose from storage
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setAttachmentPickerKind('')}
+                              className="rounded-full px-3 py-2 text-xs font-semibold text-slate-500 transition hover:bg-slate-100"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
                     {recordingVoice ? (
                       <div className="mb-3 flex items-center gap-2 rounded-2xl border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-600">
                         <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
@@ -1106,12 +1440,27 @@ export default function MessagesPage() {
                         className="input-field min-h-[52px]"
                       />
                       <button
+                        type="button"
+                        onClick={handleRecordVoiceToggle}
+                        disabled={uploadingAttachment || sending || !activeRoom}
+                        aria-label={recordingVoice ? `Stop recording ${formatAudioTime(recordingSeconds)}` : 'Record voice'}
+                        title={recordingVoice ? `Stop recording ${formatAudioTime(recordingSeconds)}` : 'Record voice'}
+                        className={`inline-flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                          recordingVoice
+                            ? 'bg-red-50 text-red-600 hover:bg-red-100'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        {recordingVoice ? <HiStop className="h-4 w-4" /> : <HiMicrophone className="h-4 w-4" />}
+                      </button>
+                      <button
                         type="submit"
                         disabled={sending || uploadingAttachment || recordingVoice || !draft.trim()}
-                        className="btn-primary flex h-[52px] shrink-0 items-center gap-2 px-4"
+                        aria-label={sending ? 'Sending message' : 'Send message'}
+                        title={sending ? 'Sending message' : 'Send message'}
+                        className="btn-primary flex h-[52px] w-[52px] shrink-0 items-center justify-center p-0"
                       >
                         <HiPaperAirplane className="h-5 w-5" />
-                        <span className="hidden sm:inline">{sending ? 'Sending...' : 'Send'}</span>
                       </button>
                     </form>
                   </div>
@@ -1127,6 +1476,77 @@ export default function MessagesPage() {
           </div>
         )}
       </div>
+      {cameraCaptureKind ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
+          <div className="w-full max-w-md overflow-hidden rounded-[28px] bg-slate-950 text-white shadow-[0_30px_80px_rgba(15,23,42,0.45)]">
+            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+              <div>
+                <p className="text-sm font-semibold">
+                  {cameraCaptureKind === 'image' ? 'Take picture' : 'Record video'}
+                </p>
+                <p className="text-xs text-white/60">
+                  {cameraCaptureKind === 'image'
+                    ? 'Use your camera to capture a photo.'
+                    : cameraRecording
+                    ? `Recording ${formatAudioTime(cameraRecordingSeconds)}`
+                    : 'Use your camera to record a video.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCancelCameraCapture}
+                className="rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/15"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="p-4">
+              <div className="relative overflow-hidden rounded-[24px] bg-black">
+                <video
+                  ref={cameraPreviewRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  className="aspect-[3/4] w-full object-cover"
+                />
+                {cameraStarting ? (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/55 text-sm font-semibold text-white">
+                    Opening camera...
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="mt-4 flex items-center justify-center gap-3">
+                {cameraCaptureKind === 'image' ? (
+                  <button
+                    type="button"
+                    onClick={handleCapturePhoto}
+                    disabled={cameraStarting || uploadingAttachment}
+                    className="rounded-full bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Capture photo
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={cameraRecording ? handleStopVideoRecording : handleStartVideoRecording}
+                    disabled={cameraStarting || uploadingAttachment}
+                    className={`rounded-full px-5 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                      cameraRecording
+                        ? 'bg-red-500 text-white hover:bg-red-400'
+                        : 'bg-white text-slate-950 hover:bg-slate-200'
+                    }`}
+                  >
+                    {cameraRecording ? 'Stop and send' : 'Start recording'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+          <canvas ref={cameraCanvasRef} className="hidden" />
+        </div>
+      ) : null}
     </>
   );
 }
