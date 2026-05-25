@@ -39,17 +39,36 @@ function MapSelectionHandler({ onSelect }) {
 
 function getCityLabel(data) {
   const address = data?.address || {};
-  return (
-    address.city
-    || address.town
-    || address.village
-    || address.municipality
-    || address.county
-    || address.state_district
-    || address.state
-    || data?.name
-    || ''
-  );
+  const displayNameFirstPart = String(data?.display_name || '')
+    .split(',')
+    .map((value) => value.trim())
+    .find(Boolean);
+
+  const candidates = [
+    address.city_district,
+    address.locality,
+    address.city,
+    address.town,
+    address.village,
+    address.hamlet,
+    address.suburb,
+    address.neighbourhood,
+    address.residential,
+    address.borough,
+    displayNameFirstPart,
+    data?.name,
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+
+  const nonRegionalCandidate = candidates.find((value) => (
+    !value.includes('מועצה אזורית')
+    && !value.includes('מחוז')
+    && !value.includes('נפת')
+    && !value.includes('אזור')
+  ));
+
+  return nonRegionalCandidate || candidates[0] || '';
 }
 
 function hasHebrewText(value) {
@@ -110,7 +129,7 @@ export default function CityMapPickerModal({
 
       try {
         const response = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${selectedLocation.lat}&lon=${selectedLocation.lng}&zoom=10&addressdetails=1&accept-language=he`,
+          `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${selectedLocation.lat}&lon=${selectedLocation.lng}&zoom=18&addressdetails=1&accept-language=he`,
           {
             headers: {
               Accept: 'application/json',
@@ -202,7 +221,7 @@ export default function CityMapPickerModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-6">
+    <div className="fixed inset-0 z-[140] flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-6">
       <div className="flex h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[32px] bg-white shadow-2xl sm:h-auto sm:max-h-[90vh] sm:rounded-[32px]">
         <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
           <div>

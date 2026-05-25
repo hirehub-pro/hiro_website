@@ -1,15 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import Image from 'next/image';
+import dynamic from 'next/dynamic';
 import { HiStar } from 'react-icons/hi';
+import { FaFacebookF, FaInstagram, FaTiktok } from 'react-icons/fa';
+import { FiGlobe, FiLink as FiLinkIcon, FiMapPin } from 'react-icons/fi';
+import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { db, storage } from '../../lib/firebase';
 import {
   getUserProfile,
   getWorkerProjects,
   getWorkerReviews,
   addReview,
+  updateUserProfile,
 } from '../../lib/firestore';
 import ProfileHeader from '../../components/profile/ProfileHeader';
 import ProjectsGallery from '../../components/profile/ProjectsGallery';
@@ -19,6 +25,67 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
+
+const CityMapPickerModal = dynamic(() => import('../../components/auth/CityMapPickerModal'), {
+  ssr: false,
+});
+
+const SOCIAL_ICON_MAP = {
+  facebook: FaFacebookF,
+  instagram: FaInstagram,
+  tiktok: FaTiktok,
+  website: FiGlobe,
+  other: FiLinkIcon,
+};
+
+const SOCIAL_STYLE_MAP = {
+  facebook: 'bg-blue-50 text-blue-600 ring-blue-100 hover:bg-blue-100',
+  instagram: 'bg-pink-50 text-pink-600 ring-pink-100 hover:bg-pink-100',
+  tiktok: 'bg-slate-100 text-slate-900 ring-slate-200 hover:bg-slate-200',
+  website: 'bg-emerald-50 text-emerald-600 ring-emerald-100 hover:bg-emerald-100',
+  other: 'bg-violet-50 text-violet-600 ring-violet-100 hover:bg-violet-100',
+};
+
+function normalizeExternalUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) return raw;
+  return `https://${raw}`;
+}
+
+function getNormalizedSocialLinks(profile) {
+  return (Array.isArray(profile?.socialLinks) ? profile.socialLinks : [])
+    .map((item) => ({
+      type: String(item?.type || 'other').trim().toLowerCase(),
+      name: String(item?.name || '').trim(),
+      url: normalizeExternalUrl(item?.url),
+    }))
+    .filter((item) => item.url);
+}
+
+function createEmptySocialLink() {
+  return {
+    type: 'website',
+    name: '',
+    url: '',
+  };
+}
+
+function createContactDraft(profile) {
+  return {
+    phone: String(profile?.phone || '').trim(),
+    optionalPhone: String(profile?.optionalPhone || profile?.secondaryPhone || '').trim(),
+    email: String(profile?.email || '').trim(),
+    town: String(profile?.town || profile?.city || '').trim(),
+    lat: Number.isFinite(profile?.lat) ? Number(profile.lat) : null,
+    lng: Number.isFinite(profile?.lng) ? Number(profile.lng) : null,
+  };
+}
+
+function buildProfileAvatarUrl(profile) {
+  return profile?.profileImageUrl
+    || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.name || 'U')}&background=1976D2&color=fff&size=400`;
+}
 
 function normalizeDateKey(input) {
   if (!input || typeof input !== 'string') return null;
@@ -135,7 +202,7 @@ export default function ProfilePage() {
   const router            = useRouter();
   const { uid }           = router.query;
   const { user, profile: myProfile } = useAuth();
-  const { t }             = useLanguage();
+  const { t, locale }     = useLanguage();
 
   const [profile, setProfile]     = useState(null);
   const [projects, setProjects]   = useState([]);
@@ -154,6 +221,27 @@ export default function ProfilePage() {
   const [rating, setRating]   = useState(5);
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [socialEditorOpen, setSocialEditorOpen] = useState(false);
+  const [editingSocialLinks, setEditingSocialLinks] = useState([]);
+  const [savingSocialLinks, setSavingSocialLinks] = useState(false);
+  const [avatarActionSheetOpen, setAvatarActionSheetOpen] = useState(false);
+  const [avatarViewerOpen, setAvatarViewerOpen] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [contactEditorOpen, setContactEditorOpen] = useState(false);
+  const [contactCityPickerOpen, setContactCityPickerOpen] = useState(false);
+  const [savingContactInfo, setSavingContactInfo] = useState(false);
+  const [contactDraft, setContactDraft] = useState(createContactDraft(null));
+  const [bioEditorOpen, setBioEditorOpen] = useState(false);
+  const [bioDraft, setBioDraft] = useState('');
+  const [savingBio, setSavingBio] = useState(false);
+  const [professionEditorOpen, setProfessionEditorOpen] = useState(false);
+  const [professionOptions, setProfessionOptions] = useState([]);
+  const [professionsLoading, setProfessionsLoading] = useState(true);
+  const [editingProfessions, setEditingProfessions] = useState([]);
+  const [professionSearch, setProfessionSearch] = useState('');
+  const [savingProfessions, setSavingProfessions] = useState(false);
+  const avatarInputRef = useRef(null);
+  const socialLinks = getNormalizedSocialLinks(profile);
 
   useEffect(() => {
     if (!uid) return;
@@ -163,6 +251,48 @@ export default function ProfilePage() {
       .catch(console.error)
       .finally(() => setLoadingProfile(false));
   }, [uid]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadProfessions() {
+      setProfessionsLoading(true);
+      try {
+        const professionsSnap = await getDoc(doc(db, 'metadata', 'professions'));
+        if (!isMounted) return;
+
+        const items = (professionsSnap.data()?.items || [])
+          .map((item, index) => {
+            const label = item[locale] || item.en || item.he || item.ar || item.logo || `Profession ${index + 1}`;
+            const value = item.en || item.logo || label;
+
+            return {
+              id: String(item.id ?? index),
+              label,
+              value,
+            };
+          })
+          .sort((a, b) => Number(a.id) - Number(b.id));
+
+        setProfessionOptions(items);
+      } catch (error) {
+        if (isMounted) {
+          toast.error('Failed to load professions');
+          setProfessionOptions([]);
+        }
+      } finally {
+        if (isMounted) {
+          setProfessionsLoading(false);
+        }
+      }
+    }
+
+    loadProfessions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [locale]);
 
   useEffect(() => {
     if (!uid) return;
@@ -208,6 +338,40 @@ export default function ProfilePage() {
     setNoteText('');
   }, [selectedDate]);
 
+  useEffect(() => {
+    if (!socialEditorOpen) return;
+
+    setEditingSocialLinks(
+      (Array.isArray(profile?.socialLinks) ? profile.socialLinks : []).map((item) => ({
+        type: String(item?.type || 'website').trim().toLowerCase() || 'website',
+        name: String(item?.name || '').trim(),
+        url: String(item?.url || '').trim(),
+      }))
+    );
+  }, [profile?.socialLinks, socialEditorOpen]);
+
+  const professionLabelMap = useMemo(() => (
+    professionOptions.reduce((acc, item) => {
+      acc[item.value] = item.label;
+      return acc;
+    }, {})
+  ), [professionOptions]);
+
+  const displayProfessions = useMemo(() => (
+    (Array.isArray(profile?.professions) ? profile.professions : []).map((value) => (
+      professionLabelMap[value] || value
+    ))
+  ), [profile?.professions, professionLabelMap]);
+
+  const filteredProfessionOptions = useMemo(() => {
+    const searchValue = professionSearch.trim().toLowerCase();
+    if (!searchValue) return professionOptions;
+
+    return professionOptions.filter((item) => (
+      item.label.toLowerCase().includes(searchValue) || item.value.toLowerCase().includes(searchValue)
+    ));
+  }, [professionOptions, professionSearch]);
+
   async function handleReviewSubmit(e) {
     e.preventDefault();
     if (!user) return toast.error('Sign in to leave a review');
@@ -227,6 +391,235 @@ export default function ProfilePage() {
       toast.error(err.message);
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  function handleOpenSocialEditor() {
+    setEditingSocialLinks(
+      (Array.isArray(profile?.socialLinks) ? profile.socialLinks : []).map((item) => ({
+        type: String(item?.type || 'website').trim().toLowerCase() || 'website',
+        name: String(item?.name || '').trim(),
+        url: String(item?.url || '').trim(),
+      }))
+    );
+    setSocialEditorOpen(true);
+  }
+
+  function handleOpenContactEditor() {
+    setContactDraft(createContactDraft(profile));
+    setContactEditorOpen(true);
+  }
+
+  function handleOpenBioEditor() {
+    setBioDraft(String(profile?.description || ''));
+    setBioEditorOpen(true);
+  }
+
+  function handleOpenProfessionEditor() {
+    setEditingProfessions(Array.isArray(profile?.professions) ? profile.professions : []);
+    setProfessionSearch('');
+    setProfessionEditorOpen(true);
+  }
+
+  function handleContactDraftChange(field, value) {
+    setContactDraft((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  function handleContactCityConfirm(location) {
+    setContactDraft((current) => ({
+      ...current,
+      town: location.city,
+      lat: location.lat,
+      lng: location.lng,
+    }));
+    setContactCityPickerOpen(false);
+  }
+
+  function handleSocialLinkChange(index, field, value) {
+    setEditingSocialLinks((current) => current.map((item, itemIndex) => (
+      itemIndex === index ? { ...item, [field]: value } : item
+    )));
+  }
+
+  function toggleProfessionSelection(value) {
+    setEditingProfessions((current) => (
+      current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value]
+    ));
+  }
+
+  function handleAddSocialLink() {
+    setEditingSocialLinks((current) => [...current, createEmptySocialLink()]);
+  }
+
+  function handleDeleteSocialLink(index) {
+    setEditingSocialLinks((current) => current.filter((_, itemIndex) => itemIndex !== index));
+  }
+
+  async function handleSaveSocialLinks() {
+    if (!isOwnProfile || !profile?.uid) return;
+
+    const nextSocialLinks = editingSocialLinks
+      .map((item) => ({
+        type: String(item?.type || 'other').trim().toLowerCase() || 'other',
+        name: String(item?.name || '').trim(),
+        url: String(item?.url || '').trim(),
+      }))
+      .filter((item) => item.url);
+
+    if (nextSocialLinks.some((item) => !item.url)) {
+      toast.error('Each social link needs a URL');
+      return;
+    }
+
+    try {
+      setSavingSocialLinks(true);
+      await updateUserProfile(profile.uid, {
+        socialLinks: nextSocialLinks,
+      });
+      setProfile((current) => current ? ({
+        ...current,
+        socialLinks: nextSocialLinks,
+      }) : current);
+      setSocialEditorOpen(false);
+      toast.success('Social links updated');
+    } catch (error) {
+      console.error('Failed to save social links:', error);
+      toast.error('Failed to save social links');
+    } finally {
+      setSavingSocialLinks(false);
+    }
+  }
+
+  async function handleSaveContactInfo() {
+    if (!isOwnProfile || !profile?.uid) return;
+
+    const nextContactInfo = {
+      phone: String(contactDraft.phone || '').trim(),
+      optionalPhone: String(contactDraft.optionalPhone || '').trim(),
+      secondaryPhone: String(contactDraft.optionalPhone || '').trim(),
+      email: String(contactDraft.email || '').trim(),
+      town: String(contactDraft.town || '').trim(),
+      city: String(contactDraft.town || '').trim(),
+      lat: Number.isFinite(contactDraft.lat) ? Number(contactDraft.lat) : null,
+      lng: Number.isFinite(contactDraft.lng) ? Number(contactDraft.lng) : null,
+    };
+
+    try {
+      setSavingContactInfo(true);
+      await updateUserProfile(profile.uid, nextContactInfo);
+      setProfile((current) => current ? ({
+        ...current,
+        ...nextContactInfo,
+      }) : current);
+      setContactEditorOpen(false);
+      toast.success('Contact information updated');
+    } catch (error) {
+      console.error('Failed to save contact information:', error);
+      toast.error('Failed to save contact information');
+    } finally {
+      setSavingContactInfo(false);
+    }
+  }
+
+  async function handleSaveBio() {
+    if (!isOwnProfile || !profile?.uid) return;
+
+    const nextDescription = String(bioDraft || '').trim();
+
+    try {
+      setSavingBio(true);
+      await updateUserProfile(profile.uid, {
+        description: nextDescription,
+      });
+      setProfile((current) => current ? ({
+        ...current,
+        description: nextDescription,
+      }) : current);
+      setBioEditorOpen(false);
+      toast.success('Biography updated');
+    } catch (error) {
+      console.error('Failed to save biography:', error);
+      toast.error('Failed to save biography');
+    } finally {
+      setSavingBio(false);
+    }
+  }
+
+  async function handleSaveProfessions() {
+    if (!isOwnProfile || !profile?.uid) return;
+
+    try {
+      setSavingProfessions(true);
+      await updateUserProfile(profile.uid, {
+        professions: editingProfessions,
+      });
+      setProfile((current) => current ? ({
+        ...current,
+        professions: editingProfessions,
+      }) : current);
+      setProfessionEditorOpen(false);
+      toast.success('Professions updated');
+    } catch (error) {
+      console.error('Failed to save professions:', error);
+      toast.error('Failed to save professions');
+    } finally {
+      setSavingProfessions(false);
+    }
+  }
+
+  function handleAvatarClick() {
+    if (isOwnProfile) {
+      setAvatarActionSheetOpen(true);
+      return;
+    }
+
+    setAvatarViewerOpen(true);
+  }
+
+  function handleAvatarEditRequest() {
+    setAvatarActionSheetOpen(false);
+    avatarInputRef.current?.click();
+  }
+
+  async function handleAvatarFileChange(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+
+    if (!file || !profile?.uid || !isOwnProfile) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please choose an image file');
+      return;
+    }
+
+    try {
+      setUploadingAvatar(true);
+      const extension = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const storagePath = `profile_images/${profile.uid}/avatar-${Date.now()}.${extension}`;
+      const uploaded = await uploadBytes(storageRef(storage, storagePath), file, {
+        contentType: file.type || 'image/jpeg',
+      });
+      const nextProfileImageUrl = await getDownloadURL(uploaded.ref);
+
+      await updateUserProfile(profile.uid, {
+        profileImageUrl: nextProfileImageUrl,
+      });
+
+      setProfile((current) => current ? ({
+        ...current,
+        profileImageUrl: nextProfileImageUrl,
+      }) : current);
+      toast.success('Profile photo updated');
+      setAvatarViewerOpen(true);
+    } catch (error) {
+      console.error('Failed to update profile photo:', error);
+      toast.error('Failed to update profile photo');
+    } finally {
+      setUploadingAvatar(false);
     }
   }
 
@@ -391,6 +784,7 @@ export default function ProfilePage() {
   const isOwnProfile = user?.uid === profile?.uid;
   const shouldShowWorkerActions = profile?.role === 'worker' && !isOwnProfile;
   const canEditSchedule = user?.uid === uid && profile?.role === 'worker';
+  const avatarUrl = buildProfileAvatarUrl(profile);
 
   const availableDateSet = new Set(
     (workerSchedule?.availableDates || [])
@@ -494,8 +888,11 @@ export default function ProfilePage() {
 
       <ProfileHeader
         profile={profile}
+        displayProfessions={displayProfessions}
         showContactActions={shouldShowWorkerActions}
         onMessageClick={handleOpenMessage}
+        onAvatarClick={handleAvatarClick}
+        onProfessionsClick={isOwnProfile ? handleOpenProfessionEditor : null}
       />
 
       <div className="mt-4 border-t border-gray-100" />
@@ -606,22 +1003,111 @@ export default function ProfilePage() {
 
         {tab === 'about' && (
           <div className="space-y-5">
-            {profile.description && (
+            {(profile.description || isOwnProfile) && (
               <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
-                <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
-                  <span className="w-7 h-7 rounded-xl bg-indigo-50 flex items-center justify-center text-base">📝</span>
-                  {t.profile.bio}
-                </h3>
-                <p className="text-sm text-gray-600 leading-relaxed">{profile.description}</p>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                    <span className="w-7 h-7 rounded-xl bg-indigo-50 flex items-center justify-center text-base">📝</span>
+                    {t.profile.bio}
+                  </h3>
+                  {isOwnProfile && (
+                    <button
+                      type="button"
+                      onClick={handleOpenBioEditor}
+                      className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+                    >
+                      Edit
+                    </button>
+                  )}
+                </div>
+                {profile.description ? (
+                  <p className="text-sm text-gray-600 leading-relaxed">{profile.description}</p>
+                ) : (
+                  <p className="text-sm text-gray-500">Add a short biography so people can learn more about you.</p>
+                )}
+              </div>
+            )}
+
+            {socialLinks.length > 0 && (
+              <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                    <span className="w-7 h-7 rounded-xl bg-sky-50 flex items-center justify-center text-base">🔗</span>
+                    Social links
+                  </h3>
+                  {isOwnProfile && (
+                    <button
+                      type="button"
+                      onClick={handleOpenSocialEditor}
+                      className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+                    >
+                      Edit links
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  {socialLinks.map((item, index) => {
+                    const Icon = SOCIAL_ICON_MAP[item.type] || FiLinkIcon;
+                    const label = item.name || item.type || 'Link';
+                    const style = SOCIAL_STYLE_MAP[item.type] || SOCIAL_STYLE_MAP.other;
+
+                    return (
+                      <a
+                        key={`${item.type}-${item.url}-${index}`}
+                        href={item.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={label}
+                        title={label}
+                        className={clsx(
+                          'flex h-11 w-11 items-center justify-center rounded-full ring-1 transition-all duration-200 hover:-translate-y-0.5',
+                          style
+                        )}
+                      >
+                        <Icon className="h-4 w-4" />
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {socialLinks.length === 0 && isOwnProfile && (
+              <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                      <span className="w-7 h-7 rounded-xl bg-sky-50 flex items-center justify-center text-base">🔗</span>
+                      Social links
+                    </h3>
+                    <p className="mt-2 text-sm text-gray-500">Add your social media and website links to your profile.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleOpenSocialEditor}
+                    className="rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+                  >
+                    Add links
+                  </button>
+                </div>
               </div>
             )}
 
             <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
-              <div className="px-5 py-3 border-b border-gray-50">
+              <div className="flex items-center justify-between gap-3 border-b border-gray-50 px-5 py-3">
                 <h3 className="font-bold text-gray-900 flex items-center gap-2">
                   <span className="w-7 h-7 rounded-xl bg-indigo-50 flex items-center justify-center text-base">📋</span>
                   {t.profile.contactInfo}
                 </h3>
+                {isOwnProfile && (
+                  <button
+                    type="button"
+                    onClick={handleOpenContactEditor}
+                    className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+                  >
+                    Edit information
+                  </button>
+                )}
               </div>
               <div className="divide-y divide-gray-50">
                 {profile.phone && (
@@ -646,6 +1132,444 @@ export default function ProfilePage() {
         )}
 
       </div>
+
+      <input
+        ref={avatarInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleAvatarFileChange}
+      />
+
+      {avatarActionSheetOpen && isOwnProfile && (
+        <div className="fixed inset-0 z-[120] flex items-end justify-center bg-slate-950/60 p-4 backdrop-blur-sm sm:items-center">
+          <div className="w-full max-w-sm rounded-[30px] bg-white p-4 shadow-2xl">
+            <h3 className="text-lg font-extrabold text-slate-950">Profile photo</h3>
+            <p className="mt-1 text-sm text-slate-500">Choose what you want to do with your profile picture.</p>
+            <div className="mt-4 space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setAvatarActionSheetOpen(false);
+                  setAvatarViewerOpen(true);
+                }}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
+              >
+                Show full photo
+              </button>
+              <button
+                type="button"
+                onClick={handleAvatarEditRequest}
+                disabled={uploadingAvatar}
+                className="w-full rounded-2xl bg-primary px-4 py-3 text-left text-sm font-semibold text-white transition hover:bg-primary-dark disabled:opacity-60"
+              >
+                {uploadingAvatar ? 'Uploading...' : 'Edit photo'}
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAvatarActionSheetOpen(false)}
+              className="mt-3 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {avatarViewerOpen && (
+        <div
+          className="fixed inset-0 z-[125] flex items-center justify-center bg-slate-950/90 p-4 backdrop-blur-sm"
+          onClick={() => setAvatarViewerOpen(false)}
+        >
+          <button
+            type="button"
+            onClick={() => setAvatarViewerOpen(false)}
+            className="absolute right-4 top-4 rounded-full bg-white/10 p-3 text-white transition hover:bg-white/20"
+            aria-label="Close profile photo"
+          >
+            ✕
+          </button>
+          <div
+            className="relative h-[70vh] w-full max-w-3xl overflow-hidden rounded-[32px] border border-white/10 bg-white/5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Image
+              src={avatarUrl}
+              alt={profile.name || 'Profile photo'}
+              fill
+              className="object-contain"
+              sizes="100vw"
+            />
+          </div>
+        </div>
+      )}
+
+      {contactEditorOpen && isOwnProfile && (
+        <div className="fixed inset-0 z-[121] flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-6">
+          <div className="flex h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[32px] bg-white shadow-2xl sm:h-auto sm:max-h-[90vh] sm:rounded-[32px]">
+            <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-primary">Contact Info</p>
+                <h3 className="mt-1 text-xl font-extrabold text-slate-950">Edit information</h3>
+                <p className="mt-1 text-sm text-slate-500">Update the contact details shown in your About section.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setContactEditorOpen(false)}
+                className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Close contact information editor"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 space-y-4 overflow-y-auto p-5">
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Primary phone</label>
+                <input
+                  type="tel"
+                  value={contactDraft.phone}
+                  readOnly
+                  className="input-field cursor-not-allowed bg-gray-100 text-gray-500"
+                />
+                <p className="mt-2 text-xs text-gray-500">Your main phone number cannot be edited here.</p>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Secondary phone</label>
+                <input
+                  type="tel"
+                  value={contactDraft.optionalPhone}
+                  onChange={(e) => handleContactDraftChange('optionalPhone', e.target.value)}
+                  className="input-field"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Email</label>
+                <input
+                  type="email"
+                  value={contactDraft.email}
+                  onChange={(e) => handleContactDraftChange('email', e.target.value)}
+                  className="input-field"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Town / City</label>
+                <button
+                  type="button"
+                  onClick={() => setContactCityPickerOpen(true)}
+                  className="input-field flex items-center justify-between text-left"
+                >
+                  <span className={clsx('truncate', contactDraft.town ? 'text-gray-800' : 'text-gray-400')}>
+                    {contactDraft.town || 'Choose city on map'}
+                  </span>
+                  <FiMapPin className="h-4 w-4 text-primary" />
+                </button>
+                <p className="mt-2 text-xs text-gray-500">Selecting a city here also saves its map coordinates.</p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 border-t border-slate-100 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setContactEditorOpen(false)}
+                className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveContactInfo}
+                disabled={savingContactInfo}
+                className="flex-1 rounded-2xl bg-primary px-4 py-3 text-sm font-bold text-white transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {savingContactInfo ? 'Saving...' : 'Save information'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <CityMapPickerModal
+        isOpen={contactCityPickerOpen}
+        initialCity={contactDraft.town}
+        initialLat={contactDraft.lat}
+        initialLng={contactDraft.lng}
+        onClose={() => setContactCityPickerOpen(false)}
+        onConfirm={handleContactCityConfirm}
+      />
+
+      {bioEditorOpen && isOwnProfile && (
+        <div className="fixed inset-0 z-[121] flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-6">
+          <div className="flex h-[70vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[32px] bg-white shadow-2xl sm:h-auto sm:max-h-[80vh] sm:rounded-[32px]">
+            <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-primary">Biography</p>
+                <h3 className="mt-1 text-xl font-extrabold text-slate-950">Edit biography</h3>
+                <p className="mt-1 text-sm text-slate-500">Update the short bio shown in your About section.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBioEditorOpen(false)}
+                className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Close biography editor"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Biography</label>
+              <textarea
+                rows={8}
+                value={bioDraft}
+                onChange={(e) => setBioDraft(e.target.value)}
+                placeholder="Tell people about your experience, services, or background"
+                className="input-field min-h-[220px] resize-none"
+              />
+            </div>
+
+            <div className="flex gap-3 border-t border-slate-100 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setBioEditorOpen(false)}
+                className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveBio}
+                disabled={savingBio}
+                className="flex-1 rounded-2xl bg-primary px-4 py-3 text-sm font-bold text-white transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {savingBio ? 'Saving...' : 'Save biography'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {professionEditorOpen && isOwnProfile && (
+        <div className="fixed inset-0 z-[121] flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-6">
+          <div className="flex h-[78vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[32px] bg-white shadow-2xl sm:h-auto sm:max-h-[85vh] sm:rounded-[32px]">
+            <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-primary">Professions</p>
+                <h3 className="mt-1 text-xl font-extrabold text-slate-950">Edit professions</h3>
+                <p className="mt-1 text-sm text-slate-500">Choose the professions shown under your name.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setProfessionEditorOpen(false)}
+                className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Close professions editor"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5">
+              {professionsLoading ? (
+                <p className="text-sm text-slate-500">Loading professions...</p>
+              ) : professionOptions.length === 0 ? (
+                <p className="text-sm text-slate-500">No professions available right now.</p>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Search</label>
+                    <input
+                      type="text"
+                      value={professionSearch}
+                      onChange={(e) => setProfessionSearch(e.target.value)}
+                      placeholder="Search professions"
+                      className="input-field"
+                    />
+                  </div>
+
+                  {editingProfessions.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {editingProfessions.map((value) => (
+                        <button
+                          key={`selected-${value}`}
+                          type="button"
+                          onClick={() => toggleProfessionSelection(value)}
+                          className="rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+                        >
+                          {professionLabelMap[value] || value} ×
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="overflow-hidden rounded-[24px] border border-slate-200">
+                    {filteredProfessionOptions.length === 0 ? (
+                      <p className="px-4 py-4 text-sm text-slate-500">No professions match your search.</p>
+                    ) : (
+                      <div className="max-h-[340px] overflow-y-auto">
+                        {filteredProfessionOptions.map((item) => {
+                          const active = editingProfessions.includes(item.value);
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => toggleProfessionSelection(item.value)}
+                              className={clsx(
+                                'flex w-full items-center justify-between border-b border-slate-100 px-4 py-3 text-left text-sm transition-colors last:border-b-0',
+                                active ? 'bg-primary/5 text-primary' : 'bg-white text-slate-700 hover:bg-slate-50'
+                              )}
+                            >
+                              <span className="font-medium">{professionLabelMap[item.value] || item.label}</span>
+                              <span
+                                className={clsx(
+                                  'flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold',
+                                  active ? 'bg-primary text-white' : 'bg-slate-100 text-slate-400'
+                                )}
+                              >
+                                {active ? '✓' : '+'}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 border-t border-slate-100 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setProfessionEditorOpen(false)}
+                className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveProfessions}
+                disabled={savingProfessions || professionsLoading}
+                className="flex-1 rounded-2xl bg-primary px-4 py-3 text-sm font-bold text-white transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {savingProfessions ? 'Saving...' : 'Save professions'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {socialEditorOpen && isOwnProfile && (
+        <div className="fixed inset-0 z-[120] flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-6">
+          <div className="flex h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[32px] bg-white shadow-2xl sm:h-auto sm:max-h-[90vh] sm:rounded-[32px]">
+            <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-primary">Social Links</p>
+                <h3 className="mt-1 text-xl font-extrabold text-slate-950">Manage your links</h3>
+                <p className="mt-1 text-sm text-slate-500">Add, edit, or remove links shown in your About section.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSocialEditorOpen(false)}
+                className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Close social links editor"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 space-y-4 overflow-y-auto p-5">
+              {editingSocialLinks.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+                  No links yet. Add your first one below.
+                </div>
+              )}
+
+              {editingSocialLinks.map((item, index) => (
+                <div key={`social-link-edit-${index}`} className="rounded-[28px] border border-slate-200 bg-slate-50 p-4">
+                  <div className="grid gap-3 sm:grid-cols-[140px_1fr_auto]">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Type</label>
+                      <select
+                        value={item.type}
+                        onChange={(e) => handleSocialLinkChange(index, 'type', e.target.value)}
+                        className="input-field"
+                      >
+                        <option value="facebook">Facebook</option>
+                        <option value="instagram">Instagram</option>
+                        <option value="tiktok">TikTok</option>
+                        <option value="website">Website</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">URL</label>
+                      <input
+                        type="text"
+                        value={item.url}
+                        onChange={(e) => handleSocialLinkChange(index, 'url', e.target.value)}
+                        placeholder="https://example.com"
+                        className="input-field"
+                      />
+                    </div>
+
+                    <div className="flex items-end">
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSocialLink(index)}
+                        className="w-full rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600 transition hover:bg-rose-100 sm:w-auto"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-3">
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Name (optional)</label>
+                    <input
+                      type="text"
+                      value={item.name}
+                      onChange={(e) => handleSocialLinkChange(index, 'name', e.target.value)}
+                      placeholder="Displayed label"
+                      className="input-field"
+                    />
+                  </div>
+                </div>
+              ))}
+
+              <button
+                type="button"
+                onClick={handleAddSocialLink}
+                className="w-full rounded-2xl border border-dashed border-primary/30 bg-primary/5 px-4 py-3 text-sm font-semibold text-primary transition hover:bg-primary/10"
+              >
+                Add link
+              </button>
+            </div>
+
+            <div className="flex gap-3 border-t border-slate-100 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setSocialEditorOpen(false)}
+                className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveSocialLinks}
+                disabled={savingSocialLinks}
+                className="flex-1 rounded-2xl bg-primary px-4 py-3 text-sm font-bold text-white transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {savingSocialLinks ? 'Saving...' : 'Save links'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

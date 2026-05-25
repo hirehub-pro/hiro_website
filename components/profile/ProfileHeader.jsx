@@ -18,7 +18,14 @@ function StatPill({ value, label }) {
   );
 }
 
-export default function ProfileHeader({ profile, showContactActions = true, onMessageClick = null }) {
+export default function ProfileHeader({
+  profile,
+  displayProfessions = null,
+  showContactActions = true,
+  onMessageClick = null,
+  onAvatarClick = null,
+  onProfessionsClick = null,
+}) {
   const { t } = useLanguage();
 
   const avatarUrl =
@@ -70,15 +77,22 @@ export default function ProfileHeader({ profile, showContactActions = true, onMe
         <div className="flex flex-col items-center text-center">
 
           {/* Avatar ring */}
-          <div className="relative mb-3 p-1 rounded-full bg-gradient-to-br from-indigo-500 via-primary to-cyan-400 shadow-glow">
-            <div className="p-0.5 rounded-full bg-white">
-              <div className="relative w-24 h-24 md:w-28 md:h-28">
+          <button
+            type="button"
+            onClick={onAvatarClick || undefined}
+            className="relative mb-3 rounded-full p-1 shadow-glow transition-transform hover:scale-[1.02] active:scale-[0.99]"
+            aria-label={onAvatarClick ? `Open ${profile.name} profile photo` : undefined}
+          >
+            <div className="rounded-full bg-gradient-to-br from-indigo-500 via-primary to-cyan-400 p-1">
+              <div className="rounded-full bg-white p-0.5">
+                <div className="relative h-24 w-24 md:h-28 md:w-28">
                 <Image
                   src={avatarUrl}
                   alt={profile.name}
                   fill
                   className="rounded-full object-cover"
                 />
+                </div>
               </div>
             </div>
             {profile.verified && (
@@ -86,7 +100,7 @@ export default function ProfileHeader({ profile, showContactActions = true, onMe
                 <HiBadgeCheck className="w-6 h-6 text-primary" />
               </div>
             )}
-          </div>
+          </button>
 
           {/* Name + verified */}
           <h1 className="text-2xl font-extrabold text-gray-900 leading-tight flex items-center gap-1.5">
@@ -95,11 +109,17 @@ export default function ProfileHeader({ profile, showContactActions = true, onMe
           </h1>
 
           {/* Professions */}
-          {Array.isArray(profile.professions) && profile.professions.length > 0 && (
-            <p className="text-sm text-gray-500 mt-1 font-medium">
-              {profile.professions.join(' · ')}
-            </p>
-          )}
+          {(Array.isArray(displayProfessions) && displayProfessions.length > 0) || onProfessionsClick ? (
+            <button
+              type="button"
+              onClick={onProfessionsClick || undefined}
+              className="mt-1 text-sm font-medium text-gray-500 transition-colors hover:text-gray-700"
+            >
+              {Array.isArray(displayProfessions) && displayProfessions.length > 0
+                ? displayProfessions.join(' · ')
+                : 'Add professions'}
+            </button>
+          ) : null}
 
           {/* Location */}
           {(profile.town || profile.city) && (

@@ -1,0 +1,78 @@
+[debug] [2026-05-25T16:08:14.615Z] ----------------------------------------------------------------------
+[debug] [2026-05-25T16:08:14.617Z] Command:       /opt/homebrew/Cellar/node/25.9.0_2/bin/node /Users/raslan/.npm/_npx/ba4f1959e38407b5/node_modules/.bin/firebase deploy
+[debug] [2026-05-25T16:08:14.617Z] CLI Version:   15.18.0
+[debug] [2026-05-25T16:08:14.617Z] Platform:      darwin
+[debug] [2026-05-25T16:08:14.617Z] Node Version:  v25.9.0
+[debug] [2026-05-25T16:08:14.617Z] Time:          Mon May 25 2026 19:08:14 GMT+0300 (Israel Daylight Time)
+[debug] [2026-05-25T16:08:14.617Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-05-25T16:08:15.805Z] Object "/storage" in "firebase.json" has unknown property: {"additionalProperty":"bucket"}
+[debug] [2026-05-25T16:08:15.806Z] Field "/storage" in "firebase.json" is possibly invalid: must be array
+[debug] [2026-05-25T16:08:15.806Z] Field "/storage" in "firebase.json" is possibly invalid: must match a schema in anyOf
+[debug] [2026-05-25T16:08:15.808Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-05-25T16:08:15.808Z] > authorizing via signed-in user (my.hire.hub@gmail.com)
+[debug] [2026-05-25T16:08:15.808Z] [iam] checking project hire-hub-fe6c4 for permissions ["cloudfunctions.functions.create","cloudfunctions.functions.delete","cloudfunctions.functions.get","cloudfunctions.functions.list","cloudfunctions.functions.update","cloudfunctions.operations.get","datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebase.projects.update","firebaseauth.configs.update","firebaserules.releases.create","firebaserules.releases.update","firebaserules.rulesets.create"]
+[debug] [2026-05-25T16:08:15.809Z] Checked if tokens are valid: false, expires at: 1779701518766
+[debug] [2026-05-25T16:08:15.809Z] Checked if tokens are valid: false, expires at: 1779701518766
+[debug] [2026-05-25T16:08:15.809Z] > refreshing access token with scopes: []
+[debug] [2026-05-25T16:08:15.810Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-05-25T16:08:15.810Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-05-25T16:08:16.116Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-05-25T16:08:16.116Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-05-25T16:08:16.132Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/hire-hub-fe6c4:testIamPermissions [none]
+[debug] [2026-05-25T16:08:16.132Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/hire-hub-fe6c4:testIamPermissions  x-goog-user-project=hire-hub-fe6c4
+[debug] [2026-05-25T16:08:16.132Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/hire-hub-fe6c4:testIamPermissions {"permissions":["cloudfunctions.functions.create","cloudfunctions.functions.delete","cloudfunctions.functions.get","cloudfunctions.functions.list","cloudfunctions.functions.update","cloudfunctions.operations.get","datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebase.projects.update","firebaseauth.configs.update","firebaserules.releases.create","firebaserules.releases.update","firebaserules.rulesets.create"]}
+[debug] [2026-05-25T16:08:17.119Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/hire-hub-fe6c4:testIamPermissions 200
+[debug] [2026-05-25T16:08:17.119Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/hire-hub-fe6c4:testIamPermissions {"permissions":["cloudfunctions.functions.create","cloudfunctions.functions.delete","cloudfunctions.functions.get","cloudfunctions.functions.list","cloudfunctions.functions.update","cloudfunctions.operations.get","datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebase.projects.update","firebaseauth.configs.update","firebaserules.releases.create","firebaserules.releases.update","firebaserules.rulesets.create"]}
+[debug] [2026-05-25T16:08:17.119Z] Checked if tokens are valid: true, expires at: 1779728895116
+[debug] [2026-05-25T16:08:17.120Z] Checked if tokens are valid: true, expires at: 1779728895116
+[debug] [2026-05-25T16:08:17.120Z] >>> [apiv2][query] POST https://iam.googleapis.com/v1/projects/hire-hub-fe6c4/serviceAccounts/hire-hub-fe6c4@appspot.gserviceaccount.com:testIamPermissions [none]
+[debug] [2026-05-25T16:08:17.120Z] >>> [apiv2][body] POST https://iam.googleapis.com/v1/projects/hire-hub-fe6c4/serviceAccounts/hire-hub-fe6c4@appspot.gserviceaccount.com:testIamPermissions {"permissions":["iam.serviceAccounts.actAs"]}
+[debug] [2026-05-25T16:08:18.249Z] <<< [apiv2][status] POST https://iam.googleapis.com/v1/projects/hire-hub-fe6c4/serviceAccounts/hire-hub-fe6c4@appspot.gserviceaccount.com:testIamPermissions 200
+[debug] [2026-05-25T16:08:18.250Z] <<< [apiv2][body] POST https://iam.googleapis.com/v1/projects/hire-hub-fe6c4/serviceAccounts/hire-hub-fe6c4@appspot.gserviceaccount.com:testIamPermissions {"permissions":["iam.serviceAccounts.actAs"]}
+[info] 
+[info] === Deploying to 'hire-hub-fe6c4'...
+[info] 
+[info] i  deploying storage, firestore, functions, apphosting, auth 
+[info] i  storage: ensuring required API firebasestorage.googleapis.com is enabled... 
+[debug] [2026-05-25T16:08:18.252Z] Checked if tokens are valid: true, expires at: 1779728895116
+[debug] [2026-05-25T16:08:18.252Z] Checked if tokens are valid: true, expires at: 1779728895116
+[debug] [2026-05-25T16:08:18.252Z] >>> [apiv2][query] GET https://firebasestorage.googleapis.com/v1alpha/projects/hire-hub-fe6c4/defaultBucket [none]
+[debug] [2026-05-25T16:08:18.960Z] <<< [apiv2][status] GET https://firebasestorage.googleapis.com/v1alpha/projects/hire-hub-fe6c4/defaultBucket 200
+[debug] [2026-05-25T16:08:18.960Z] <<< [apiv2][body] GET https://firebasestorage.googleapis.com/v1alpha/projects/hire-hub-fe6c4/defaultBucket {"name":"projects/hire-hub-fe6c4/defaultBucket","location":"US-CENTRAL1","bucket":{"name":"projects/hire-hub-fe6c4/buckets/hire-hub-fe6c4.firebasestorage.app"},"storageClass":"REGIONAL"}
+[info] i  firebase.storage: checking storage.rules for compilation errors... 
+[debug] [2026-05-25T16:08:18.961Z] Checked if tokens are valid: true, expires at: 1779728895116
+[debug] [2026-05-25T16:08:18.961Z] Checked if tokens are valid: true, expires at: 1779728895116
+[debug] [2026-05-25T16:08:18.961Z] >>> [apiv2][query] POST https://firebaserules.googleapis.com/v1/projects/hire-hub-fe6c4:test [none]
+[debug] [2026-05-25T16:08:18.961Z] >>> [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/hire-hub-fe6c4:test [omitted]
+[debug] [2026-05-25T16:08:19.976Z] <<< [apiv2][status] POST https://firebaserules.googleapis.com/v1/projects/hire-hub-fe6c4:test 200
+[debug] [2026-05-25T16:08:19.976Z] <<< [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/hire-hub-fe6c4:test {}
+[info] ✔  firebase.storage: rules file storage.rules compiled successfully 
+[info] i  firestore: ensuring required API firestore.googleapis.com is enabled... 
+[info] i  firestore: ensuring required API firestore.googleapis.com is enabled... 
+[debug] [2026-05-25T16:08:19.978Z] Checked if tokens are valid: true, expires at: 1779728895116
+[debug] [2026-05-25T16:08:19.978Z] Checked if tokens are valid: true, expires at: 1779728895116
+[debug] [2026-05-25T16:08:19.978Z] >>> [apiv2][query] GET https://firestore.googleapis.com/v1/projects/hire-hub-fe6c4/databases/(default) [none]
+[debug] [2026-05-25T16:08:20.262Z] <<< [apiv2][status] GET https://firestore.googleapis.com/v1/projects/hire-hub-fe6c4/databases/(default) 200
+[debug] [2026-05-25T16:08:20.262Z] <<< [apiv2][body] GET https://firestore.googleapis.com/v1/projects/hire-hub-fe6c4/databases/(default) {"name":"projects/hire-hub-fe6c4/databases/(default)","uid":"d3ca2d2e-1985-4056-9485-f95f846c0785","createTime":"2026-03-11T13:46:37.023027Z","updateTime":"2026-03-11T13:46:37.023027Z","locationId":"me-west1","type":"FIRESTORE_NATIVE","concurrencyMode":"PESSIMISTIC","versionRetentionPeriod":"604800s","earliestVersionTime":"2026-05-18T16:09:00Z","appEngineIntegrationMode":"DISABLED","pointInTimeRecoveryEnablement":"POINT_IN_TIME_RECOVERY_ENABLED","deleteProtectionState":"DELETE_PROTECTION_DISABLED","databaseEdition":"STANDARD","freeTier":true,"realtimeUpdatesMode":"REALTIME_UPDATES_MODE_ENABLED","etag":"IL2+y7Lp1JQDMI7Xj5WQ1JMD"}
+[info] i  firestore: reading indexes from firestore.indexes.json... 
+[info] i  cloud.firestore: checking firestore.rules for compilation errors... 
+[debug] [2026-05-25T16:08:20.263Z] Checked if tokens are valid: true, expires at: 1779728895116
+[debug] [2026-05-25T16:08:20.263Z] Checked if tokens are valid: true, expires at: 1779728895116
+[debug] [2026-05-25T16:08:20.263Z] >>> [apiv2][query] POST https://firebaserules.googleapis.com/v1/projects/hire-hub-fe6c4:test [none]
+[debug] [2026-05-25T16:08:20.263Z] >>> [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/hire-hub-fe6c4:test [omitted]
+[debug] [2026-05-25T16:08:20.996Z] <<< [apiv2][status] POST https://firebaserules.googleapis.com/v1/projects/hire-hub-fe6c4:test 200
+[debug] [2026-05-25T16:08:20.997Z] <<< [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/hire-hub-fe6c4:test {}
+[info] ✔  cloud.firestore: rules file firestore.rules compiled successfully 
+[debug] [2026-05-25T16:08:20.998Z] Checked if tokens are valid: true, expires at: 1779728895116
+[debug] [2026-05-25T16:08:20.998Z] Checked if tokens are valid: true, expires at: 1779728895116
+[debug] [2026-05-25T16:08:20.998Z] >>> [apiv2][query] GET https://cloudresourcemanager.googleapis.com/v1/projects/hire-hub-fe6c4 [none]
+[debug] [2026-05-25T16:08:21.227Z] <<< [apiv2][status] GET https://cloudresourcemanager.googleapis.com/v1/projects/hire-hub-fe6c4 200
+[debug] [2026-05-25T16:08:21.227Z] <<< [apiv2][body] GET https://cloudresourcemanager.googleapis.com/v1/projects/hire-hub-fe6c4 {"projectNumber":"29257648718","projectId":"hire-hub-fe6c4","lifecycleState":"ACTIVE","name":"hire-hub","labels":{"firebase":"enabled","firebase-core":"disabled"},"createTime":"2026-03-06T22:02:21.079174Z"}
+[info] i  functions: preparing codebase default for deployment 
+[info] i  functions: ensuring required API cloudfunctions.googleapis.com is enabled... 
+[info] i  functions: ensuring required API cloudbuild.googleapis.com is enabled... 
+[info] i  artifactregistry: ensuring required API artifactregistry.googleapis.com is enabled... 
+[debug] [2026-05-25T16:08:21.229Z] Checked if tokens are valid: true, expires at: 1779728895116
+[debug] [2026-05-25T16:08:21.229Z] Checked if tokens are valid: true, expires at: 1779728895116
+[debug] [2026-05-25T16:08:21.229Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/hire-hub-fe6c4/adminSdkConfig [none]
