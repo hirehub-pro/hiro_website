@@ -1257,7 +1257,7 @@ export default function MessagesPage() {
                           const hasText = !isRequestLink && Boolean(String(message.message || '').trim());
                           const attachmentUrl = String(message.url || '').trim();
                           const attachmentLabel = getAttachmentLabel(attachmentKind, message.fileName);
-                          const requestUrl = String(message.requestUrl || (message.requestId ? `/requests?requestId=${encodeURIComponent(message.requestId)}` : '')).trim();
+                          const requestUrl = String(message.requestUrl || (message.requestId ? `/requests/${encodeURIComponent(message.requestId)}` : '')).trim();
 
                           return (
                             <div key={message.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>

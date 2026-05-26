@@ -378,7 +378,7 @@ export default function ProfileScheduleView({ uid, profile }) {
         .filter((item) => item.type === 'video')
         .map((item) => item.url);
       const mapsUrl = `https://maps.google.com/?q=${requestLocation.lat},${requestLocation.lng}`;
-      const requestUrl = `/requests?requestId=${encodeURIComponent(requestId)}`;
+      const requestUrl = `/requests/${encodeURIComponent(requestId)}`;
       const notificationBody = `${fromName}${fromLocation ? ` (${fromLocation})` : ''} requested you to work on ${selectedDate} from ${requestHourFrom} to ${requestHourTo}.`;
       const chatMessage = `I sent you a work request for ${selectedDate}.`;
       const requestPayload = {

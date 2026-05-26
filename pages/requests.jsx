@@ -11,78 +11,16 @@ import clsx from 'clsx';
 import { FiCalendar, FiClock, FiMapPin, FiMessageCircle, FiUser } from 'react-icons/fi';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-
-function normalizeTimestamp(value) {
-  if (!value) return null;
-  if (typeof value.toDate === 'function') return value.toDate();
-  if (value instanceof Date) return value;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function normalizeRequestDocument(id, data) {
-  return {
-    id,
-    body: data.body || '',
-    date: data.date || '',
-    fromId: data.fromId || '',
-    fromLocation: data.fromLocation || '',
-    fromName: data.fromName || 'Customer',
-    images: Array.isArray(data.images) ? data.images : [],
-    videos: Array.isArray(data.videos) ? data.videos : [],
-    media: Array.isArray(data.media) ? data.media : [],
-    jobDescription: data.jobDescription || '',
-    latitude: typeof data.latitude === 'number' ? data.latitude : null,
-    locationName: data.locationName || '',
-    longitude: typeof data.longitude === 'number' ? data.longitude : null,
-    mapUrl: data.mapUrl || '',
-    profession: data.profession || '',
-    requestId: data.requestId || id,
-    requestedFrom: data.requestedFrom || '',
-    requestedTo: data.requestedTo || '',
-    serviceLocationType: data.serviceLocationType || '',
-    status: data.status || 'pending',
-    timestamp: normalizeTimestamp(data.timestamp),
-    title: data.title || 'Work Request',
-    type: data.type || 'work_request',
-    workerId: data.workerId || '',
-    workerName: data.workerName || 'Professional',
-    workerNotificationId: data.workerNotificationId || id,
-  };
-}
-
-function formatDateTime(value) {
-  if (!value) return '';
-  return new Intl.DateTimeFormat('en-US', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(value);
-}
-
-function getStatusClass(status) {
-  switch (status) {
-    case 'accepted':
-      return 'bg-emerald-50 text-emerald-700 ring-emerald-100';
-    case 'cancelled':
-      return 'bg-red-50 text-red-700 ring-red-100';
-    case 'declined':
-      return 'bg-slate-100 text-slate-700 ring-slate-200';
-    default:
-      return 'bg-amber-50 text-amber-700 ring-amber-100';
-  }
-}
-
-function getMediaItems(request) {
-  if (request.media.length > 0) return request.media;
-
-  return [
-    ...request.images.map((url) => ({ type: 'image', url })),
-    ...request.videos.map((url) => ({ type: 'video', url })),
-  ];
-}
+import {
+  formatRequestDateTime,
+  getRequestMediaItems,
+  getRequestStatusClass,
+  normalizeRequestDocument,
+} from '../lib/request-utils';
 
 function RequestCard({ request, user, mode, highlighted }) {
-  const mediaItems = getMediaItems(request).slice(0, 5);
+  const router = useRouter();
+  const mediaItems = getRequestMediaItems(request).slice(0, 5);
   const otherUserId = mode === 'received' ? request.fromId : request.workerId;
   const otherUserName = mode === 'received' ? request.fromName : request.workerName;
   const roomId = user?.uid && otherUserId ? [user.uid, otherUserId].sort().join('_') : '';
@@ -91,12 +29,29 @@ function RequestCard({ request, user, mode, highlighted }) {
       ? `https://maps.google.com/?q=${request.latitude},${request.longitude}`
       : ''
   );
+  const detailsHref = `/requests/${encodeURIComponent(request.requestId)}?tab=${encodeURIComponent(mode)}`;
+
+  function handleCardClick(event) {
+    if (event.target instanceof Element && event.target.closest('a, button')) return;
+    router.push(detailsHref);
+  }
+
+  function handleCardKeyDown(event) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      router.push(detailsHref);
+    }
+  }
 
   return (
     <article
       id={`request-${request.requestId}`}
+      role="link"
+      tabIndex={0}
+      onClick={handleCardClick}
+      onKeyDown={handleCardKeyDown}
       className={clsx(
-        'rounded-[28px] border bg-white p-4 shadow-sm sm:p-5',
+        'cursor-pointer rounded-[28px] border bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-4 focus:ring-primary/10 sm:p-5',
         highlighted ? 'border-primary ring-4 ring-primary/10' : 'border-slate-200'
       )}
     >
@@ -104,7 +59,7 @@ function RequestCard({ request, user, mode, highlighted }) {
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-lg font-extrabold text-slate-950">{request.title}</h2>
-            <span className={clsx('rounded-full px-3 py-1 text-xs font-bold capitalize ring-1', getStatusClass(request.status))}>
+            <span className={clsx('rounded-full px-3 py-1 text-xs font-bold capitalize ring-1', getRequestStatusClass(request.status))}>
               {request.status}
             </span>
           </div>
@@ -112,11 +67,17 @@ function RequestCard({ request, user, mode, highlighted }) {
             {mode === 'received' ? `From ${otherUserName}` : `To ${otherUserName}`}
           </p>
           {request.timestamp ? (
-            <p className="mt-1 text-xs font-medium text-slate-500">{formatDateTime(request.timestamp)}</p>
+            <p className="mt-1 text-xs font-medium text-slate-500">{formatRequestDateTime(request.timestamp)}</p>
           ) : null}
         </div>
 
         <div className="flex shrink-0 flex-wrap gap-2">
+          <Link
+            href={detailsHref}
+            className="inline-flex items-center gap-2 rounded-2xl border border-primary/15 bg-primary-50 px-3 py-2 text-sm font-semibold text-primary transition hover:bg-primary-100"
+          >
+            View details
+          </Link>
           {otherUserId ? (
             <Link
               href={`/profile/${otherUserId}`}
@@ -199,6 +160,7 @@ export default function RequestsPage() {
   const [loadingRequests, setLoadingRequests] = useState(true);
   const [error, setError] = useState('');
   const focusedRequestId = typeof router.query.requestId === 'string' ? router.query.requestId : '';
+  const requestedTab = typeof router.query.tab === 'string' ? router.query.tab : '';
 
   useEffect(() => {
     if (!loading && !user) {
@@ -255,6 +217,12 @@ export default function RequestsPage() {
   useEffect(() => {
     if (isWorker) setActiveTab('received');
   }, [isWorker]);
+
+  useEffect(() => {
+    if (requestedTab === 'sent' || requestedTab === 'received') {
+      setActiveTab(requestedTab);
+    }
+  }, [requestedTab]);
 
   useEffect(() => {
     if (!focusedRequestId || loadingRequests) return;

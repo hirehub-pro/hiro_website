@@ -99,7 +99,7 @@ export default function Header() {
       roomId: data.roomId || '',
       title: data.title || (data.type === 'work_request' ? 'Work Request' : 'Notification'),
       type: data.type || 'notification',
-      url: data.url || (data.requestId ? `/requests?requestId=${encodeURIComponent(data.requestId)}` : ''),
+      url: data.url || (data.requestId ? `/requests/${encodeURIComponent(data.requestId)}` : ''),
     };
   }
 
