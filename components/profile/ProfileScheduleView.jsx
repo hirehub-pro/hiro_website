@@ -1,11 +1,28 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
+import Image from 'next/image';
 import { useRouter } from 'next/router';
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import {
+  FieldPath,
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  increment,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from 'firebase/firestore';
+import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
-import { db } from '../../lib/firebase';
+import { db, storage } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+
+const CityMapPickerModal = dynamic(() => import('../auth/CityMapPickerModal'), {
+  ssr: false,
+});
 
 function normalizeDateKey(input) {
   if (!input || typeof input !== 'string') return null;
@@ -28,6 +45,13 @@ function parseDateKey(key) {
 
 function sortDateKeys(keys) {
   return [...keys].sort((a, b) => parseDateKey(a) - parseDateKey(b));
+}
+
+function getMediaKindFromFile(file) {
+  if (!file?.type) return '';
+  if (file.type.startsWith('image/')) return 'image';
+  if (file.type.startsWith('video/')) return 'video';
+  return '';
 }
 
 function addVacationDay(vacations, dayKey) {
@@ -120,7 +144,7 @@ function removeVacationDay(vacations, dayKey) {
 
 export default function ProfileScheduleView({ uid, profile }) {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, profile: myProfile } = useAuth();
   const { t } = useLanguage();
   const [workerSchedule, setWorkerSchedule] = useState(null);
   const [loadingSchedule, setLoadingSchedule] = useState(false);
@@ -128,6 +152,21 @@ export default function ProfileScheduleView({ uid, profile }) {
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(formatDateKey(new Date()));
   const [noteText, setNoteText] = useState('');
+  const [requestModalOpen, setRequestModalOpen] = useState(false);
+  const [mapPickerOpen, setMapPickerOpen] = useState(false);
+  const [requestDescription, setRequestDescription] = useState('');
+  const [requestHourFrom, setRequestHourFrom] = useState('');
+  const [requestHourTo, setRequestHourTo] = useState('');
+  const [requestLocation, setRequestLocation] = useState({
+    label: '',
+    lat: null,
+    lng: null,
+  });
+  const [requestMediaFiles, setRequestMediaFiles] = useState([]);
+  const [requestMediaPreviews, setRequestMediaPreviews] = useState([]);
+  const [requestLocationLoading, setRequestLocationLoading] = useState(false);
+  const [submittingRequest, setSubmittingRequest] = useState(false);
+  const requestMediaPreviewsRef = useRef([]);
 
   useEffect(() => {
     const loadSchedule = async () => {
@@ -155,6 +194,290 @@ export default function ProfileScheduleView({ uid, profile }) {
   useEffect(() => {
     setNoteText('');
   }, [selectedDate]);
+
+  useEffect(() => {
+    requestMediaPreviewsRef.current = requestMediaPreviews;
+  }, [requestMediaPreviews]);
+
+  useEffect(() => (
+    () => {
+      requestMediaPreviewsRef.current.forEach((item) => {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      });
+    }
+  ), []);
+
+  function resetRequestForm() {
+    setRequestDescription('');
+    setRequestHourFrom('');
+    setRequestHourTo('');
+    setRequestLocation({ label: '', lat: null, lng: null });
+    setRequestMediaFiles([]);
+    requestMediaPreviews.forEach((item) => {
+      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+    });
+    setRequestMediaPreviews([]);
+  }
+
+  function openWorkdayRequestModal() {
+    if (!profile?.uid) return;
+
+    if (!user) {
+      router.push(`/auth/signin?next=${encodeURIComponent(router.asPath || `/profile/${uid}`)}`);
+      return;
+    }
+
+    if (user.uid === profile.uid) return;
+
+    setRequestModalOpen(true);
+  }
+
+  function closeWorkdayRequestModal() {
+    if (submittingRequest) return;
+    setRequestModalOpen(false);
+  }
+
+  function handleRequestMediaChange(event) {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
+
+    if (requestMediaFiles.length + files.length > 5) {
+      toast.error('You can upload up to 5 images or videos.');
+      event.target.value = '';
+      return;
+    }
+
+    const invalidFile = files.find((file) => !getMediaKindFromFile(file));
+    if (invalidFile) {
+      toast.error('Only image and video files are allowed.');
+      event.target.value = '';
+      return;
+    }
+
+    setRequestMediaFiles((prev) => [...prev, ...files]);
+    setRequestMediaPreviews((prev) => [
+      ...prev,
+      ...files.map((file, index) => ({
+        id: `${file.name}_${file.size}_${prev.length + index}`,
+        name: file.name,
+        kind: getMediaKindFromFile(file),
+        previewUrl: URL.createObjectURL(file),
+      })),
+    ]);
+    event.target.value = '';
+  }
+
+  function removeRequestMediaAtIndex(indexToRemove) {
+    setRequestMediaFiles((prev) => prev.filter((_file, index) => index !== indexToRemove));
+    setRequestMediaPreviews((prev) => prev.filter((item, index) => {
+      if (index === indexToRemove && item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      return index !== indexToRemove;
+    }));
+  }
+
+  function useCurrentRequestLocation() {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      toast.error('Current location is not available on this device.');
+      return;
+    }
+
+    setRequestLocationLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = Number(position.coords.latitude.toFixed(6));
+        const lng = Number(position.coords.longitude.toFixed(6));
+        setRequestLocation({
+          label: `Current location (${lat}, ${lng})`,
+          lat,
+          lng,
+        });
+        setRequestLocationLoading(false);
+      },
+      () => {
+        toast.error('Could not get your current location.');
+        setRequestLocationLoading(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+      }
+    );
+  }
+
+  function handleMapLocationConfirm(location) {
+    setRequestLocation({
+      label: location.city || `Map location (${location.lat}, ${location.lng})`,
+      lat: location.lat,
+      lng: location.lng,
+    });
+    setMapPickerOpen(false);
+  }
+
+  async function submitWorkdayRequest(event) {
+    event.preventDefault();
+
+    if (!user || !profile?.uid) return;
+
+    const description = requestDescription.trim();
+    if (!description) {
+      toast.error('Write the job description first.');
+      return;
+    }
+
+    if (!requestHourFrom || !requestHourTo) {
+      toast.error('Choose the time window.');
+      return;
+    }
+
+    if (!requestLocation.label || !Number.isFinite(requestLocation.lat) || !Number.isFinite(requestLocation.lng)) {
+      toast.error('Choose a location for the job.');
+      return;
+    }
+
+    const roomId = [user.uid, profile.uid].sort().join('_');
+    const requestRef = doc(collection(db, 'users', user.uid, 'requests'));
+    const requestId = requestRef.id;
+    const senderRequestToMeRef = doc(collection(db, 'users', user.uid, 'RequestToMe'));
+    const workerRequestRef = doc(collection(db, 'users', profile.uid, 'RequestToMe'));
+    const workerNotificationRef = doc(db, 'users', profile.uid, 'notifications', requestId);
+    const profession = Array.isArray(profile.professions) ? (profile.professions[0] || '') : '';
+    const fromName = myProfile?.name || user.displayName || 'User';
+    const fromLocation = myProfile?.town || myProfile?.city || '';
+    const workerName = profile.name || 'Worker';
+    const roomDraft = {
+      users: [user.uid, profile.uid],
+      user_names: {
+        [user.uid]: fromName,
+        [profile.uid]: workerName,
+      },
+      userNames: {
+        [user.uid]: fromName,
+        [profile.uid]: workerName,
+      },
+    };
+
+    try {
+      setSubmittingRequest(true);
+
+      const uploadedMedia = await Promise.all(requestMediaFiles.map(async (file, index) => {
+        const extension = file.name.includes('.') ? file.name.split('.').pop() : '';
+        const path = `request_images/${user.uid}_${requestId}_${index}${extension ? `.${extension}` : ''}`;
+        const uploaded = await uploadBytes(storageRef(storage, path), file, {
+          contentType: file.type,
+        });
+        return {
+          type: getMediaKindFromFile(file) || 'media',
+          url: await getDownloadURL(uploaded.ref),
+        };
+      }));
+
+      const images = uploadedMedia
+        .filter((item) => item.type === 'image')
+        .map((item) => item.url);
+      const videos = uploadedMedia
+        .filter((item) => item.type === 'video')
+        .map((item) => item.url);
+      const mapsUrl = `https://maps.google.com/?q=${requestLocation.lat},${requestLocation.lng}`;
+      const requestUrl = `/requests?requestId=${encodeURIComponent(requestId)}`;
+      const notificationBody = `${fromName}${fromLocation ? ` (${fromLocation})` : ''} requested you to work on ${selectedDate} from ${requestHourFrom} to ${requestHourTo}.`;
+      const chatMessage = `I sent you a work request for ${selectedDate}.`;
+      const requestPayload = {
+        body: notificationBody,
+        cancelledAt: null,
+        date: selectedDate,
+        fromId: user.uid,
+        fromLocation,
+        fromName,
+        images,
+        videos,
+        media: uploadedMedia,
+        jobDescription: description,
+        latitude: requestLocation.lat,
+        locationName: requestLocation.label,
+        longitude: requestLocation.lng,
+        mapUrl: mapsUrl,
+        profession,
+        requestId,
+        requestedFrom: requestHourFrom,
+        requestedTo: requestHourTo,
+        requestUrl,
+        serviceLocationType: 'provider_travels',
+        status: 'pending',
+        timestamp: serverTimestamp(),
+        title: 'Work Request',
+        type: 'work_request',
+        workerId: profile.uid,
+        workerName,
+        workerNotificationId: requestId,
+      };
+      const notificationPayload = {
+        ...requestPayload,
+        createdAt: serverTimestamp(),
+        message: notificationBody,
+        read: false,
+        requestOwnerId: profile.uid,
+        roomId,
+        url: requestUrl,
+      };
+
+      await Promise.all([
+        setDoc(requestRef, requestPayload),
+        setDoc(senderRequestToMeRef, {
+          ...requestPayload,
+          receivedAt: serverTimestamp(),
+        }),
+        setDoc(workerRequestRef, {
+          ...requestPayload,
+          receivedAt: serverTimestamp(),
+        }),
+        setDoc(workerNotificationRef, notificationPayload),
+        setDoc(doc(db, 'chat_rooms', roomId), roomDraft, { merge: true }),
+      ]);
+
+      const messageRef = await addDoc(collection(db, 'chat_rooms', roomId, 'messages'), {
+        isSystem: true,
+        message: chatMessage,
+        receiverId: profile.uid,
+        requestId,
+        requestOwnerId: user.uid,
+        requestUrl,
+        senderId: user.uid,
+        timestamp: serverTimestamp(),
+        type: 'request_link',
+        workerNotificationId: requestId,
+      });
+
+      await updateDoc(
+        doc(db, 'chat_rooms', roomId),
+        'lastMessage',
+        chatMessage,
+        'lastTimestamp',
+        serverTimestamp(),
+        new FieldPath('unreadCount', profile.uid),
+        increment(1),
+        new FieldPath('unreadCount', user.uid),
+        0
+      );
+
+      await updateDoc(workerNotificationRef, {
+        messageId: messageRef.id,
+      });
+
+      resetRequestForm();
+      setRequestModalOpen(false);
+      router.push({
+        pathname: '/messages',
+        query: {
+          roomId,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to submit workday request:', error);
+      toast.error('Could not prepare the request right now.');
+    } finally {
+      setSubmittingRequest(false);
+    }
+  }
 
   async function openRequestMessage(requestType) {
     if (!profile?.uid) return;
@@ -587,7 +910,7 @@ export default function ProfileScheduleView({ uid, profile }) {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => openRequestMessage('workday')}
+                    onClick={openWorkdayRequestModal}
                     className="rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90"
                   >
                     Ask professional to work this day
@@ -648,6 +971,171 @@ export default function ProfileScheduleView({ uid, profile }) {
           </>
         )}
       </div>
+
+      {requestModalOpen && (
+        <div className="fixed inset-0 z-[120] flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-6">
+          <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl">
+            <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">Work request</p>
+                <h3 className="mt-1 text-xl font-extrabold text-slate-950">Ask professional to work this day</h3>
+                <p className="mt-1 text-sm text-slate-500">{selectedDate}</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeWorkdayRequestModal}
+                className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Close request form"
+              >
+                x
+              </button>
+            </div>
+
+            <form onSubmit={submitWorkdayRequest} className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
+              <label className="block">
+                <span className="mb-2 block text-sm font-semibold text-slate-800">Job description</span>
+                <textarea
+                  value={requestDescription}
+                  onChange={(event) => setRequestDescription(event.target.value)}
+                  rows={5}
+                  placeholder="Describe what needs to be done"
+                  className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </label>
+
+              <div>
+                <span className="mb-2 block text-sm font-semibold text-slate-800">Time window</span>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="sr-only">From time</span>
+                    <input
+                      type="time"
+                      value={requestHourFrom}
+                      onChange={(event) => setRequestHourFrom(event.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="sr-only">To time</span>
+                    <input
+                      type="time"
+                      value={requestHourTo}
+                      onChange={(event) => setRequestHourTo(event.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-slate-800">Photos or videos</span>
+                  <span className="text-xs font-medium text-slate-500">{requestMediaFiles.length}/5</span>
+                </div>
+                <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center text-sm font-semibold text-slate-700 transition hover:bg-slate-100">
+                  <span>Add up to 5 images or videos</span>
+                  <input
+                    type="file"
+                    accept="image/*,video/*"
+                    multiple
+                    onChange={handleRequestMediaChange}
+                    className="sr-only"
+                  />
+                </label>
+                {requestMediaPreviews.length > 0 && (
+                  <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5">
+                    {requestMediaPreviews.map((item, index) => (
+                      <div key={item.id} className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
+                        <div className="relative aspect-square">
+                          {item.kind === 'image' ? (
+                            <Image
+                              src={item.previewUrl}
+                              alt=""
+                              fill
+                              sizes="120px"
+                              unoptimized
+                              className="object-cover"
+                            />
+                          ) : (
+                            <video src={item.previewUrl} className="h-full w-full object-cover" muted />
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeRequestMediaAtIndex(index)}
+                          className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-white/95 text-sm font-bold text-slate-700 shadow"
+                          aria-label="Remove media"
+                        >
+                          x
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <span className="mb-2 block text-sm font-semibold text-slate-800">Location</span>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <p className={clsx('text-sm font-medium', requestLocation.label ? 'text-slate-900' : 'text-slate-500')}>
+                    {requestLocation.label || 'Choose current location or pick on map'}
+                  </p>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={useCurrentRequestLocation}
+                      disabled={requestLocationLoading}
+                      className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-60"
+                    >
+                      {requestLocationLoading ? 'Getting location...' : 'Use current location'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMapPickerOpen(true)}
+                      className="rounded-xl bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary transition hover:bg-primary/15"
+                    >
+                      Choose in map
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3 border-t border-slate-100 pt-4">
+                <button
+                  type="button"
+                  onClick={closeWorkdayRequestModal}
+                  disabled={submittingRequest}
+                  className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingRequest}
+                  className="flex-1 rounded-2xl bg-primary px-4 py-3 text-sm font-bold text-white transition hover:bg-primary-dark disabled:opacity-60"
+                >
+                  {submittingRequest ? 'Preparing...' : 'Continue to chat'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <CityMapPickerModal
+        isOpen={mapPickerOpen}
+        allowAnyLocation
+        eyebrow="Job location"
+        title="Choose job location"
+        subtitle="Tap the map or drag the pin to the job address."
+        selectedLabel="Selected location"
+        emptySelectionText="Tap on the map to choose a location"
+        initialCity={requestLocation.label}
+        initialLat={requestLocation.lat}
+        initialLng={requestLocation.lng}
+        onClose={() => setMapPickerOpen(false)}
+        onConfirm={handleMapLocationConfirm}
+      />
     </div>
   );
 }

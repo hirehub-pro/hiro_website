@@ -3,6 +3,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
+import clsx from 'clsx';
 import {
   HiBell,
   HiChat,
@@ -19,6 +20,7 @@ import {
   HiUserCircle,
   HiVideoCamera,
 } from 'react-icons/hi';
+import { FiExternalLink } from 'react-icons/fi';
 import {
   FieldPath,
   addDoc,
@@ -1250,10 +1252,12 @@ export default function MessagesPage() {
                       <div className="space-y-3">
                         {messages.map((message) => {
                           const mine = message.senderId === user.uid;
+                          const isRequestLink = message.type === 'request_link';
                           const attachmentKind = getAttachmentKind(message);
-                          const hasText = Boolean(String(message.message || '').trim());
+                          const hasText = !isRequestLink && Boolean(String(message.message || '').trim());
                           const attachmentUrl = String(message.url || '').trim();
                           const attachmentLabel = getAttachmentLabel(attachmentKind, message.fileName);
+                          const requestUrl = String(message.requestUrl || (message.requestId ? `/requests?requestId=${encodeURIComponent(message.requestId)}` : '')).trim();
 
                           return (
                             <div key={message.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
@@ -1264,6 +1268,32 @@ export default function MessagesPage() {
                                     : 'rounded-bl-md bg-white text-gray-900'
                                 }`}
                               >
+                                {isRequestLink ? (
+                                  <div className={clsx(
+                                    'rounded-2xl border p-3',
+                                    mine ? 'border-white/20 bg-white/10' : 'border-primary/10 bg-primary-50/60'
+                                  )}>
+                                    <p className="text-sm font-bold">Work request</p>
+                                    <p className={`mt-1 text-sm leading-6 ${mine ? 'text-white/90' : 'text-slate-700'}`}>
+                                      {message.message || 'A work request was sent.'}
+                                    </p>
+                                    {requestUrl ? (
+                                      <Link
+                                        href={requestUrl}
+                                        className={clsx(
+                                          'mt-3 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition',
+                                          mine
+                                            ? 'bg-white text-primary hover:bg-white/90'
+                                            : 'bg-primary text-white hover:bg-primary-dark'
+                                        )}
+                                      >
+                                        Open request
+                                        <FiExternalLink className="h-4 w-4" />
+                                      </Link>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+
                                 {attachmentKind === 'image' && attachmentUrl ? (
                                   <a href={attachmentUrl} target="_blank" rel="noreferrer" className="block">
                                     <img
@@ -1318,7 +1348,7 @@ export default function MessagesPage() {
                                   </p>
                                 ) : null}
 
-                                {!hasText && attachmentKind === 'text' ? (
+                                {!isRequestLink && !hasText && attachmentKind === 'text' ? (
                                   <p className="text-sm leading-6 opacity-70">Unsupported message</p>
                                 ) : null}
 

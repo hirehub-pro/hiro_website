@@ -3,7 +3,7 @@ import Head from 'next/head';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { FiArrowLeft, FiCalendar, FiClock, FiDollarSign, FiExternalLink, FiEye, FiFileText, FiMapPin, FiMoreVertical, FiSend, FiStar } from 'react-icons/fi';
+import { FiArrowLeft, FiCalendar, FiChevronLeft, FiChevronRight, FiClock, FiDollarSign, FiExternalLink, FiEye, FiFileText, FiMapPin, FiMoreVertical, FiSend, FiStar } from 'react-icons/fi';
 import { HiChat, HiHeart } from 'react-icons/hi';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -117,10 +117,16 @@ function getMediaKind(item) {
   return 'image';
 }
 
+function getInitials(name) {
+  const parts = String(name || 'Anonymous').trim().split(/\s+/).filter(Boolean);
+  const initials = parts.map(function (part) { return part.charAt(0); }).join('').slice(0, 2);
+  return initials.toUpperCase() || 'A';
+}
+
 export default function BlogPostPage() {
   const router = useRouter();
   const { postId } = router.query;
-  const { dir } = useLanguage();
+  const { t, dir } = useLanguage();
   const { user, profile } = useAuth();
 
   const [post, setPost] = useState(null);
@@ -218,6 +224,36 @@ export default function BlogPostPage() {
   }, [post]);
   const seo = getCommunityPostSeo(post);
   const canonicalUrl = postId ? absoluteUrl(`/community/${postId}`) : absoluteUrl('/community');
+  const postDate = post ? normalizeDateValue(post.timestamp) : null;
+  const postTimeLabel = postDate ? postDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+  const rawCategory = String(post?.rawCategory || '').trim().toLowerCase();
+  const categoryLabel = post
+    ? (
+      post.isJobRequest || post.category === 'request' || rawCategory === 'job request'
+        ? t.community.jobRequest
+        : (post.rawCategory || CATEGORY_LABELS[post.category] || t.community.other)
+    )
+    : '';
+  const professionLabel = post ? (post.professionLabel || post.profession || '') : '';
+  const commentCount = post ? (post.commentsCount || comments.length || 0) : 0;
+  const requestInfoItems = post ? [
+    post.location ? {
+      label: 'Location',
+      value: [post.location, distanceLabel].filter(Boolean).join(' • '),
+      icon: FiMapPin,
+      action: post.locationLat && post.locationLng ? `https://maps.google.com/?q=${post.locationLat},${post.locationLng}` : '',
+    } : null,
+    (post.requestDateFrom || post.requestDateTo) ? {
+      label: 'Date',
+      value: formatDateRange(post.requestDateFrom, post.requestDateTo),
+      icon: FiCalendar,
+    } : null,
+    (post.requestHourFrom || post.requestHourTo) ? {
+      label: 'Time',
+      value: formatHourRange(post.requestHourFrom, post.requestHourTo),
+      icon: FiClock,
+    } : null,
+  ].filter(Boolean) : [];
 
   useEffect(function () {
     setActiveMediaIndex(0);
@@ -348,75 +384,46 @@ export default function BlogPostPage() {
         <link rel="canonical" href={canonicalUrl} />
       </Head>
 
-      <div className="min-h-screen bg-[#edf4fb]" dir={dir}>
-        <div className="mx-auto max-w-5xl px-4 py-6 md:py-8">
-          <div className="mb-6 flex items-center justify-between rounded-b-[24px] bg-white px-2 py-2 shadow-sm">
-            <Link href="/community" className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-slate-900 hover:bg-slate-50">
-              <FiArrowLeft className="h-5 w-5" />
-            </Link>
-            <button className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-slate-900 hover:bg-slate-50">
-              <FiMoreVertical className="h-5 w-5" />
-            </button>
+      <div className="min-h-screen bg-[#f4f8fc]" dir={dir}>
+        <div className="mx-auto max-w-6xl px-4 pb-24 pt-4 md:pb-28 md:pt-6">
+          <div className="sticky top-0 z-30 -mx-4 mb-5 border-b border-slate-200/70 bg-[#f4f8fc]/95 px-4 py-3 backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:px-0 md:py-0">
+            <div className="flex items-center justify-between">
+              <Link href="/community" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-900 shadow-sm transition hover:border-primary/30 hover:text-primary">
+                <FiArrowLeft className="h-5 w-5" />
+              </Link>
+              <button className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-950">
+                <FiMoreVertical className="h-5 w-5" />
+              </button>
+            </div>
           </div>
 
           {loading ? (
-            <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
-              <div className="h-5 w-1/2 animate-pulse rounded bg-gray-200" />
+            <div className="mx-auto max-w-4xl rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="h-5 w-1/2 animate-pulse rounded bg-slate-200" />
+              <div className="mt-5 h-64 animate-pulse rounded-[20px] bg-slate-100" />
+              <div className="mt-5 h-4 w-3/4 animate-pulse rounded bg-slate-200" />
             </div>
           ) : !post ? (
-            <div className="rounded-3xl border border-gray-100 bg-white p-8 text-center shadow-sm">
-              <p className="text-gray-600">Post not found.</p>
+            <div className="mx-auto max-w-2xl rounded-[24px] border border-slate-200 bg-white p-8 text-center shadow-sm">
+              <p className="text-slate-600">Post not found.</p>
             </div>
           ) : (
             <>
-              <article className="mx-auto max-w-3xl rounded-[28px] border border-[#d7e4f3] bg-[#edf4fb] pb-6">
-                <div className="rounded-[28px] bg-[#edf4fb] px-4 pb-2 pt-4 md:px-6">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-4">
-                      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#dce9f8] text-xl font-black text-primary md:h-12 md:w-12">
-                        {String(post.authorName || 'T').charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="text-lg font-extrabold tracking-tight text-slate-900 md:text-xl">{post.authorName || 'Anonymous'}</p>
-                        <p className="mt-1 text-sm font-bold text-slate-500 md:text-base">{formatDateValue(post.timestamp)} {normalizeDateValue(post.timestamp) ? normalizeDateValue(post.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</p>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={handleLike}
-                      className={clsx(
-                        'inline-flex items-center gap-2 rounded-[18px] border px-4 py-2 text-base font-extrabold transition-colors',
-                        hasLiked
-                          ? 'border-rose-200 bg-rose-50 text-rose-500'
-                          : 'border-rose-200 bg-white/80 text-rose-600 hover:bg-rose-50'
-                      )}
+              <article className="mx-auto max-w-4xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+                {mediaTypes.length > 0 && (
+                  <div className="relative bg-slate-950">
+                    <div
+                      ref={mediaCarouselRef}
+                      onScroll={handleMediaScroll}
+                      className="flex snap-x snap-mandatory overflow-x-auto scroll-smooth scrollbar-hide"
                     >
-                      <HiHeart className="h-5 w-5" />
-                      {post.likes || 0}
-                    </button>
-                  </div>
-
-                  <div className="mt-5 inline-flex items-center rounded-2xl bg-[#dcebfb] px-3 py-1.5 text-sm font-black text-primary md:text-base">
-                    {(post.rawCategory || 'Job Request')}{post.professionLabel || post.profession ? ` • ${post.professionLabel || post.profession}` : ''}
-                  </div>
-
-                  <h1 className="mt-6 text-3xl font-black leading-tight tracking-tight text-slate-950 md:text-4xl">{post.title}</h1>
-
-                  {mediaTypes.length > 0 && (
-                    <div className="mt-6">
-                      <div className="relative">
-                        <div
-                          ref={mediaCarouselRef}
-                          onScroll={handleMediaScroll}
-                          className="flex snap-x snap-mandatory overflow-x-auto scroll-smooth scrollbar-hide rounded-[24px]"
-                        >
-                          {mediaTypes.map(function (item, index) {
-                            return (
-                              <div
-                                key={item.url + '_' + index}
-                                className="relative h-56 w-full shrink-0 snap-center overflow-hidden bg-white shadow-sm md:h-72"
-                              >
-                                {getMediaKind(item) === 'video' ? (
+                      {mediaTypes.map(function (item, index) {
+                        return (
+                          <div
+                            key={item.url + '_' + index}
+                            className="relative aspect-[4/3] w-full shrink-0 snap-center overflow-hidden bg-slate-950 md:aspect-[16/9]"
+                          >
+                            {getMediaKind(item) === 'video' ? (
                               <video
                                 src={item.url}
                                 controls
@@ -426,44 +433,41 @@ export default function BlogPostPage() {
                               >
                                 Your browser does not support video playback.
                               </video>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={function () { openLightbox(index); }}
-                                    className="relative block h-full w-full"
-                                  >
-                                    <Image src={item.url} alt={post.title} fill className="object-cover" />
-                                  </button>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={function () { openLightbox(index); }}
+                                className="relative block h-full w-full"
+                              >
+                                <Image src={item.url} alt={post.title} fill className="object-cover" priority={index === 0} />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
 
-                        {mediaTypes.length > 1 && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={function () { scrollToMedia(activeMediaIndex - 1); }}
-                              disabled={activeMediaIndex === 0}
-                              className="absolute left-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-sm font-bold text-white transition hover:bg-black/70 disabled:cursor-not-allowed disabled:opacity-40"
-                            >
-                              {'<'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={function () { scrollToMedia(activeMediaIndex + 1); }}
-                              disabled={activeMediaIndex === mediaTypes.length - 1}
-                              className="absolute right-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-sm font-bold text-white transition hover:bg-black/70 disabled:cursor-not-allowed disabled:opacity-40"
-                            >
-                              {'>'}
-                            </button>
-                          </>
-                        )}
-                      </div>
-
-                      {mediaTypes.length > 1 && (
-                        <div className="mt-3 flex items-center justify-center gap-2">
+                    {mediaTypes.length > 1 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={function () { scrollToMedia(activeMediaIndex - 1); }}
+                          disabled={activeMediaIndex === 0}
+                          className="absolute left-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-lg transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label="Previous media"
+                        >
+                          <FiChevronLeft className="h-5 w-5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={function () { scrollToMedia(activeMediaIndex + 1); }}
+                          disabled={activeMediaIndex === mediaTypes.length - 1}
+                          className="absolute right-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-lg transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label="Next media"
+                        >
+                          <FiChevronRight className="h-5 w-5" />
+                        </button>
+                        <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-black/45 px-3 py-2 backdrop-blur">
                           {mediaTypes.map(function (item, index) {
                             return (
                               <button
@@ -471,127 +475,153 @@ export default function BlogPostPage() {
                                 type="button"
                                 onClick={function () { scrollToMedia(index); }}
                                 className={clsx(
-                                  'h-2.5 rounded-full transition-all',
-                                  index === activeMediaIndex ? 'w-6 bg-primary' : 'w-2.5 bg-slate-300'
+                                  'h-2 rounded-full transition-all',
+                                  index === activeMediaIndex ? 'w-6 bg-white' : 'w-2 bg-white/50'
                                 )}
                                 aria-label={`Go to media ${index + 1}`}
                               />
                             );
                           })}
                         </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                <div className="px-5 py-6 md:px-8 md:py-8">
+                  <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-black uppercase text-primary">
+                          {categoryLabel}
+                        </span>
+                        {professionLabel ? (
+                          <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
+                            {professionLabel}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <h1 className="mt-4 text-3xl font-black leading-tight text-slate-950 md:text-5xl">
+                        {post.title}
+                      </h1>
+
+                      <div className="mt-5 flex flex-wrap items-center gap-3 text-sm font-semibold text-slate-500">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#dce9f8] text-sm font-black text-primary">
+                            {getInitials(post.authorName)}
+                          </div>
+                          <div>
+                            <p className="font-black text-slate-900">{post.authorName || 'Anonymous'}</p>
+                            <p>{[formatDateValue(post.timestamp), postTimeLabel].filter(Boolean).join(' at ')}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 rounded-[22px] border border-slate-200 bg-slate-50 p-2 md:min-w-[250px]">
+                      <button
+                        onClick={handleLike}
+                        className={clsx(
+                          'inline-flex h-12 items-center justify-center gap-2 rounded-[18px] border bg-white px-4 text-sm font-black transition-all',
+                          hasLiked
+                            ? 'border-rose-200 text-rose-500 shadow-sm'
+                            : 'border-slate-200 text-slate-600 hover:border-rose-200 hover:text-rose-500'
+                        )}
+                      >
+                        <HiHeart className={clsx('h-5 w-5 transition-transform', hasLiked && 'scale-110')} />
+                        {post.likes || 0}
+                      </button>
+                      <div className="inline-flex h-12 items-center justify-center gap-2 rounded-[18px] border border-slate-200 bg-white px-4 text-sm font-black text-slate-600">
+                        <HiChat className="h-5 w-5 text-primary" />
+                        {commentCount}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-7 whitespace-pre-wrap text-[17px] leading-8 text-slate-700 md:text-lg">
+                    {post.content}
+                  </div>
+
+                  {(requestInfoItems.length > 0 || post.isJobRequest) && (
+                    <div className="mt-8 grid gap-3 md:grid-cols-3">
+                      {requestInfoItems.map(function (item) {
+                        const Icon = item.icon;
+                        return (
+                          <div key={item.label} className="rounded-[20px] border border-slate-200 bg-[#f8fbff] p-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-xs font-black uppercase text-slate-400">{item.label}</p>
+                                <p className="mt-2 break-words text-base font-black leading-snug text-slate-900">{item.value}</p>
+                              </div>
+                              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                                <Icon className="h-5 w-5" />
+                              </div>
+                            </div>
+                            {item.action ? (
+                              <a
+                                href={item.action}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mt-4 inline-flex items-center gap-2 text-sm font-black text-primary hover:text-primary/80"
+                              >
+                                <FiExternalLink className="h-4 w-4" />
+                                Open map
+                              </a>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+
+                      {post.isJobRequest && (
+                        <div className="rounded-[20px] border border-primary/20 bg-primary/5 p-4 md:col-span-3">
+                          <div className="grid gap-4 sm:grid-cols-3">
+                            <div>
+                              <p className="text-xs font-black uppercase text-slate-400">Offers</p>
+                              <p className="mt-2 text-2xl font-black text-slate-950">{bidComments.length}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs font-black uppercase text-slate-400">Lowest</p>
+                              <p className="mt-2 text-2xl font-black text-primary">{bidStats.lowest !== null ? formatCurrencyValue(bidStats.lowest) : '--'}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs font-black uppercase text-slate-400">Highest</p>
+                              <p className="mt-2 text-2xl font-black text-primary">{bidStats.highest !== null ? formatCurrencyValue(bidStats.highest) : '--'}</p>
+                            </div>
+                          </div>
+                        </div>
                       )}
                     </div>
                   )}
 
-                  <div className="mt-5 rounded-[24px] border border-[#d7e4f3] bg-white px-5 py-4 text-base leading-relaxed text-slate-700 shadow-sm md:text-lg">
-                    {post.content}
-                  </div>
-
-                  <div className="mt-6 space-y-4">
-                    <div className="rounded-[24px] border border-[#d7e4f3] bg-white px-5 py-4 shadow-sm">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-4">
-                          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#e7f0fb] text-primary">
-                            <FiMapPin className="h-6 w-6" />
-                          </div>
-                          <div>
-                            <p className="text-sm font-extrabold text-slate-500 md:text-base">Location (City/Area)</p>
-                            <p className="mt-1 text-lg font-black text-slate-900 md:text-xl">
-                              {post.location}
-                              {distanceLabel ? ` • ${distanceLabel}` : ''}
-                            </p>
-                          </div>
-                        </div>
-                        <a
-                          href={post.locationLat && post.locationLng ? `https://maps.google.com/?q=${post.locationLat},${post.locationLng}` : '#'}
-                          target="_blank"
-                          rel="noreferrer"
-                          className={clsx(
-                            'inline-flex h-9 w-9 items-center justify-center rounded-2xl text-slate-400',
-                            post.locationLat && post.locationLng ? 'hover:bg-slate-50 hover:text-primary' : 'pointer-events-none opacity-50'
-                          )}
-                        >
-                          <FiExternalLink className="h-5 w-5" />
-                        </a>
-                      </div>
+                  <div className="mt-9 flex items-center justify-between border-t border-slate-200 pt-6">
+                    <div>
+                      <h2 className="text-2xl font-black tracking-tight text-slate-950">Comments</h2>
+                      <p className="mt-1 text-sm font-semibold text-slate-500">{commentCount} {commentCount === 1 ? 'reply' : 'replies'}</p>
                     </div>
-
-                    {(post.requestDateFrom || post.requestDateTo) && (
-                      <div className="rounded-[24px] border border-[#d7e4f3] bg-white px-5 py-4 shadow-sm">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-4">
-                            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#e7f0fb] text-primary">
-                              <FiCalendar className="h-6 w-6" />
-                            </div>
-                            <div>
-                              <p className="text-sm font-extrabold text-slate-500 md:text-base">From date</p>
-                              <p className="mt-1 text-lg font-black text-slate-900 md:text-xl">{formatDateRange(post.requestDateFrom, post.requestDateTo)}</p>
-                            </div>
-                          </div>
-                          <div className="inline-flex h-9 w-9 items-center justify-center rounded-2xl text-slate-400">
-                            <FiExternalLink className="h-5 w-5" />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {(post.requestHourFrom || post.requestHourTo) && (
-                      <div className="rounded-[24px] border border-[#d7e4f3] bg-white px-5 py-4 shadow-sm">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-4">
-                            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#e7f0fb] text-primary">
-                              <FiClock className="h-6 w-6" />
-                            </div>
-                            <div>
-                              <p className="text-sm font-extrabold text-slate-500 md:text-base">Preferred time</p>
-                              <p className="mt-1 text-lg font-black text-slate-900 md:text-xl">{formatHourRange(post.requestHourFrom, post.requestHourTo)}</p>
-                            </div>
-                          </div>
-                          <div className="inline-flex h-9 w-9 items-center justify-center rounded-2xl text-slate-400">
-                            <FiClock className="h-5 w-5" />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="rounded-[24px] border border-[#b9d8fb] bg-[#dcecfb] p-4 shadow-sm">
-                      <div className="rounded-[20px] bg-white px-5 py-4">
-                        <div className="grid grid-cols-2 divide-x divide-slate-200">
-                          <div className="pr-4">
-                            <p className="text-sm font-extrabold text-slate-500 md:text-base">Lowest offer</p>
-                            <p className="mt-2 text-xl font-black text-primary md:text-2xl">{bidStats.lowest !== null ? formatCurrencyValue(bidStats.lowest) : '--'}</p>
-                          </div>
-                          <div className="pl-4">
-                            <p className="text-sm font-extrabold text-slate-500 md:text-base">Highest offer</p>
-                            <p className="mt-2 text-xl font-black text-primary md:text-2xl">{bidStats.highest !== null ? formatCurrencyValue(bidStats.highest) : '--'}</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-8 border-t border-[#d7e4f3] pt-8">
-                    <div className="flex items-center gap-4">
-                      <h2 className="text-2xl font-black tracking-tight text-slate-950 md:text-3xl">Comments</h2>
-                      <span className="inline-flex h-9 min-w-9 items-center justify-center rounded-full bg-[#dcebfb] px-3 text-sm font-black text-primary md:text-base">
-                        {post.commentsCount || comments.length || 0}
-                      </span>
-                    </div>
+                    <a href="#reply" className="inline-flex h-11 items-center justify-center rounded-full bg-slate-950 px-5 text-sm font-black text-white transition hover:bg-primary">
+                      Reply
+                    </a>
                   </div>
                 </div>
               </article>
 
-              <section className="mx-auto mt-6 max-w-3xl space-y-4">
+              <section className="mx-auto mt-5 max-w-4xl space-y-3">
                 {comments.length === 0 ? (
-                  <p className="rounded-[24px] border border-[#d7e4f3] bg-white px-5 py-4 text-base text-slate-500 shadow-sm">No comments yet.</p>
+                  <div className="rounded-[22px] border border-dashed border-slate-300 bg-white/80 px-5 py-8 text-center text-base font-semibold text-slate-500">
+                    No comments yet.
+                  </div>
                 ) : (
                   comments.map(function (comment) {
                     const hasQuoteItems = Array.isArray(comment.quoteItems) && comment.quoteItems.length > 0;
                     const commentProfile = comment.authorUid ? commentProfiles[comment.authorUid] : null;
 
                     return (
-                      <div key={comment.id} className="rounded-[24px] border border-[#d7e4f3] bg-white px-5 py-5 shadow-sm">
-                        <div className="flex items-start justify-between gap-4">
+                      <div key={comment.id} className={clsx(
+                        'rounded-[22px] border bg-white px-5 py-5 shadow-sm',
+                        comment.isBid ? 'border-primary/20 ring-1 ring-primary/10' : 'border-slate-200'
+                      )}>
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                           <div className="flex items-start gap-4">
                             {commentProfile?.profileImageUrl ? (
                               <Image
@@ -602,36 +632,38 @@ export default function BlogPostPage() {
                                 className="h-12 w-12 rounded-full object-cover"
                               />
                             ) : (
-                              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#dce9f8] text-lg font-black text-primary">
-                                {String(comment.authorName || 'A').charAt(0).toUpperCase()}
+                              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#dce9f8] text-sm font-black text-primary">
+                                {getInitials(comment.authorName)}
                               </div>
                             )}
-                            <div>
-                              <p className="text-lg font-black text-slate-950 md:text-xl">{comment.authorName || 'Anonymous'}</p>
+                            <div className="min-w-0">
+                              <p className="text-base font-black text-slate-950">{comment.authorName || 'Anonymous'}</p>
+                              <p className="mt-1 text-sm font-semibold text-slate-400">{timeAgo(comment.timestamp)}</p>
                               {commentProfile && (
-                                <div className="mt-2 flex items-center gap-2 text-slate-500">
+                                <div className="mt-2 flex items-center gap-2 text-sm text-slate-500">
                                   <FiStar className="h-4 w-4 fill-amber-400 text-amber-400" />
-                                  <span className="text-base font-black text-slate-700">{Number(commentProfile.avgRating || 0).toFixed(1)}</span>
-                                  <span className="text-base">({commentProfile.reviewCount || 0})</span>
+                                  <span className="font-black text-slate-700">{Number(commentProfile.avgRating || 0).toFixed(1)}</span>
+                                  <span>({commentProfile.reviewCount || 0})</span>
                                 </div>
                               )}
                             </div>
                           </div>
 
                           {comment.isBid && comment.bidPrice !== null ? (
-                            <p className="text-xl font-black text-primary md:text-2xl">{formatCurrencyValue(comment.bidPrice)}</p>
-                          ) : (
-                            <p className="text-sm font-semibold text-slate-400">{timeAgo(comment.timestamp)}</p>
-                          )}
+                            <div className="inline-flex w-fit items-center gap-2 rounded-full bg-primary/10 px-4 py-2 text-lg font-black text-primary">
+                              <FiDollarSign className="h-4 w-4" />
+                              {formatCurrencyValue(comment.bidPrice)}
+                            </div>
+                          ) : null}
                         </div>
 
                         {comment.text && (
-                          <p className="mt-4 whitespace-pre-wrap text-base leading-relaxed text-slate-700 md:text-lg">{comment.text}</p>
+                          <p className="mt-4 whitespace-pre-wrap text-base leading-7 text-slate-700">{comment.text}</p>
                         )}
 
                         {hasQuoteItems && (
-                          <div className="mt-4 rounded-[20px] bg-[#f5f9ff] p-4">
-                            <p className="text-sm font-black uppercase tracking-[0.18em] text-slate-400">Quote items</p>
+                          <div className="mt-4 rounded-[18px] bg-[#f8fbff] p-4">
+                            <p className="text-xs font-black uppercase text-slate-400">Quote items</p>
                             <div className="mt-3 space-y-3">
                               {comment.quoteItems.map(function (item, index) {
                                 const lineTotal = (Number(item.quantity) || 0) * (Number(item.price) || 0);
@@ -659,7 +691,7 @@ export default function BlogPostPage() {
                               href={comment.quoteUrl}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex items-center gap-2 text-base font-black text-primary hover:text-primary/80 md:text-lg"
+                              className="inline-flex items-center gap-2 text-base font-black text-primary hover:text-primary/80"
                             >
                               <FiEye className="h-5 w-5" />
                               View quote
@@ -672,40 +704,41 @@ export default function BlogPostPage() {
                 )}
               </section>
 
-              <section className="sticky bottom-0 mx-auto mt-8 max-w-3xl rounded-t-[24px] border border-[#d7e4f3] bg-white px-4 py-4 shadow-[0_-10px_30px_rgba(15,23,42,0.08)]">
-                <form onSubmit={handleSubmitComment} className="space-y-4">
+              <section id="reply" className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-10px_35px_rgba(15,23,42,0.12)] backdrop-blur">
+                <form onSubmit={handleSubmitComment} className="mx-auto flex max-w-4xl flex-col gap-3 md:flex-row md:items-end">
                   {post.isJobRequest && (
-                    <div className="flex items-center gap-3 rounded-[20px] border border-[#d7e4f3] bg-[#f8fbff] px-4 py-3">
+                    <div className="flex h-12 items-center gap-3 rounded-[18px] border border-slate-200 bg-[#f8fbff] px-4 md:w-52">
                       <FiDollarSign className="h-5 w-5 text-primary" />
                       <input
                         value={bidPriceInput}
                         onChange={function (e) { setBidPriceInput(e.target.value.replace(/[^\d.]/g, '')); }}
                         inputMode="decimal"
                         placeholder="Bid Price"
-                        className="flex-1 bg-transparent text-base text-slate-700 placeholder:text-slate-400 focus:outline-none md:text-lg"
+                        className="min-w-0 flex-1 bg-transparent text-base font-semibold text-slate-700 placeholder:text-slate-400 focus:outline-none"
                       />
-                      <FiFileText className="h-5 w-5 text-primary" />
+                      <FiFileText className="h-5 w-5 flex-shrink-0 text-primary" />
                     </div>
                   )}
 
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-1 items-end gap-3">
                     <textarea
                       value={commentText}
                       onChange={function (e) { setCommentText(e.target.value); }}
                       placeholder={user ? 'Add a comment or offer...' : 'Sign in to write a comment'}
                       rows={1}
                       disabled={!user || submitting}
-                      className="min-h-[60px] flex-1 resize-none rounded-[22px] border border-[#d7e4f3] bg-[#f8fbff] px-4 py-3 text-base text-slate-800 placeholder:text-slate-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15 md:text-lg"
+                      className="min-h-[52px] flex-1 resize-none rounded-[18px] border border-slate-200 bg-[#f8fbff] px-4 py-3 text-base text-slate-800 placeholder:text-slate-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
                     />
                     <button
                       type="submit"
                       disabled={!user || submitting || !commentText.trim()}
                       className={clsx(
-                        'inline-flex h-12 w-12 items-center justify-center rounded-full text-white transition-all',
+                        'inline-flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full text-white transition-all',
                         !user || submitting || !commentText.trim()
                           ? 'bg-slate-200'
                           : 'bg-primary shadow-lg shadow-primary/25 hover:scale-105'
                       )}
+                      aria-label="Send comment"
                     >
                       <FiSend className="h-5 w-5" />
                     </button>

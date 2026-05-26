@@ -139,6 +139,8 @@ export default function CommunityPage() {
   const seo = getCommunityPageSeo();
 
   const [filter, setFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('newest');
+  const [showSortMenu, setShowSortMenu] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -171,6 +173,13 @@ export default function CommunityPage() {
     question: t.community.question,
     other: t.community.other,
   };
+
+  const sortOptions = [
+    { value: 'newest', label: t.community.sortNewest },
+    { value: 'liked', label: t.community.sortLiked },
+    { value: 'commented', label: t.community.sortCommented },
+    { value: 'nearest', label: t.community.sortNearest },
+  ];
 
   async function loadPosts() {
     setLoading(true);
@@ -313,6 +322,29 @@ export default function CommunityPage() {
     return `${km.toFixed(km < 10 ? 1 : 0)} km`;
   }
 
+  function getPostDistanceKm(post) {
+    const preferredLat =
+      typeof myProfile?.activeSearchLat === 'number' ? myProfile.activeSearchLat : myProfile?.lat;
+    const preferredLng =
+      typeof myProfile?.activeSearchLng === 'number' ? myProfile.activeSearchLng : myProfile?.lng;
+
+    if (
+      typeof post.locationLat !== 'number' ||
+      typeof post.locationLng !== 'number' ||
+      typeof preferredLat !== 'number' ||
+      typeof preferredLng !== 'number'
+    ) {
+      return Number.POSITIVE_INFINITY;
+    }
+
+    return haversineKm(preferredLat, preferredLng, post.locationLat, post.locationLng);
+  }
+
+  function getPostTime(post) {
+    const date = normalizeDateValue(post.timestamp);
+    return date ? date.getTime() : 0;
+  }
+
   const filteredPosts = posts.filter(function (p) {
     const normalizedCategory = getNormalizedCategory(p.category);
     const isCoreCategory = ['recommended', 'request', 'tip', 'question'].includes(normalizedCategory);
@@ -326,10 +358,18 @@ export default function CommunityPage() {
     const searchMatch = !searchTerm.trim() || haystack.includes(searchTerm.trim().toLowerCase());
     return categoryMatch && searchMatch;
   }).sort(function (a, b) {
-    const aTime = normalizeDateValue(a.timestamp);
-    const bTime = normalizeDateValue(b.timestamp);
-    return (bTime ? bTime.getTime() : 0) - (aTime ? aTime.getTime() : 0);
+    if (sortBy === 'liked') {
+      return (b.likes || 0) - (a.likes || 0) || getPostTime(b) - getPostTime(a);
+    }
+    if (sortBy === 'commented') {
+      return (b.commentsCount || 0) - (a.commentsCount || 0) || getPostTime(b) - getPostTime(a);
+    }
+    if (sortBy === 'nearest') {
+      return getPostDistanceKm(a) - getPostDistanceKm(b) || getPostTime(b) - getPostTime(a);
+    }
+    return getPostTime(b) - getPostTime(a);
   });
+  const activeSortOption = sortOptions.find(function (option) { return option.value === sortBy; }) || sortOptions[0];
 
   function openPost(postId) {
     if (!postId) return;
@@ -523,9 +563,47 @@ export default function CommunityPage() {
               >
                 <FiRefreshCw className="h-5 w-5" />
               </button>
-              <button className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-primary hover:bg-white/70">
-                <FiFilter className="h-5 w-5" />
-              </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={function () { setShowSortMenu(function (prev) { return !prev; }); }}
+                  className={clsx(
+                    'inline-flex h-10 items-center gap-2 rounded-2xl px-3 text-sm font-black text-primary hover:bg-white/70',
+                    showSortMenu && 'bg-white shadow-sm'
+                  )}
+                  aria-expanded={showSortMenu}
+                  aria-haspopup="menu"
+                >
+                  <FiFilter className="h-5 w-5" />
+                  <span className="hidden sm:inline">{activeSortOption.label}</span>
+                </button>
+                {showSortMenu && (
+                  <div className="absolute right-0 top-12 z-50 w-52 overflow-hidden rounded-[18px] border border-[#d7e4f3] bg-white p-1.5 shadow-[0_18px_45px_rgba(15,23,42,0.16)]" role="menu">
+                    <p className="px-3 py-2 text-xs font-black uppercase text-slate-400">{t.community.sort}</p>
+                    {sortOptions.map(function (option) {
+                      const active = option.value === sortBy;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={function () {
+                            setSortBy(option.value);
+                            setShowSortMenu(false);
+                          }}
+                          className={clsx(
+                            'flex w-full items-center justify-between rounded-[14px] px-3 py-2.5 text-left text-sm font-bold transition-colors',
+                            active ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:bg-slate-50'
+                          )}
+                          role="menuitem"
+                        >
+                          {option.label}
+                          {active ? <FiCheck className="h-4 w-4" /> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -681,7 +759,7 @@ export default function CommunityPage() {
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="inline-flex items-center rounded-full bg-[#dcebfb] px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-primary">
-                            {catKey === 'request' ? 'Job Request' : (filterLabels[catKey] || t.community.other)}
+                            {catKey === 'request' ? t.community.jobRequest : (filterLabels[catKey] || t.community.other)}
                           </span>
                           {professionLabel ? (
                             <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">

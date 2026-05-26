@@ -89,6 +89,19 @@ function buildProfileAvatarUrl(profile) {
     || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.name || 'U')}&background=1976D2&color=fff&size=400`;
 }
 
+function serializeFirestoreValue(value) {
+  if (!value) return value;
+  if (typeof value.toDate === 'function') return value.toDate().toISOString();
+  if (value instanceof Date) return value.toISOString();
+  if (Array.isArray(value)) return value.map(serializeFirestoreValue);
+  if (typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, serializeFirestoreValue(item)])
+    );
+  }
+  return value;
+}
+
 function normalizeDateKey(input) {
   if (!input || typeof input !== 'string') return null;
   const parts = input.split('-').map((p) => Number.parseInt(p, 10));
@@ -200,18 +213,24 @@ function removeVacationDay(vacations, dayKey) {
   });
 }
 
-export default function ProfilePage() {
+export default function ProfilePage({
+  initialProfile = null,
+  initialProjects = [],
+  initialReviews = [],
+}) {
   const router            = useRouter();
   const { uid }           = router.query;
   const { user, profile: myProfile } = useAuth();
   const { t, locale }     = useLanguage();
 
-  const [profile, setProfile]     = useState(null);
-  const [projects, setProjects]   = useState([]);
-  const [reviews, setReviews]     = useState([]);
+  const [profile, setProfile]     = useState(initialProfile);
+  const [projects, setProjects]   = useState(initialProjects);
+  const [reviews, setReviews]     = useState(initialReviews);
   const [tab, setTab]             = useState('projects');
-  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [loadingProfile, setLoadingProfile] = useState(!initialProfile);
   const [loadingData, setLoadingData]       = useState(false);
+  const [loadedProfileUid, setLoadedProfileUid] = useState(initialProfile?.uid || '');
+  const [loadedDataUid, setLoadedDataUid] = useState(initialProfile?.uid || '');
   const [workerSchedule, setWorkerSchedule] = useState(null);
   const [loadingSchedule, setLoadingSchedule] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
@@ -249,12 +268,19 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!uid) return;
+    if (loadedProfileUid === uid) {
+      setLoadingProfile(false);
+      return;
+    }
     setLoadingProfile(true);
     getUserProfile(uid)
-      .then(setProfile)
+      .then((nextProfile) => {
+        setProfile(nextProfile);
+        setLoadedProfileUid(uid);
+      })
       .catch(console.error)
       .finally(() => setLoadingProfile(false));
-  }, [uid]);
+  }, [uid, loadedProfileUid]);
 
   useEffect(() => {
     let isMounted = true;
@@ -300,11 +326,13 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!uid) return;
+    if (loadedDataUid === uid) return;
     setLoadingData(true);
     Promise.all([getWorkerProjects(uid), getWorkerReviews(uid)])
       .then(([p, r]) => {
         setProjects(p);
         setReviews(r);
+        setLoadedDataUid(uid);
         setProfile((current) => current ? ({
           ...current,
           projectCount: p.length,
@@ -313,7 +341,7 @@ export default function ProfilePage() {
       })
       .catch(console.error)
       .finally(() => setLoadingData(false));
-  }, [uid]);
+  }, [uid, loadedDataUid]);
 
   useEffect(() => {
     const loadSchedule = async () => {
@@ -893,6 +921,7 @@ export default function ProfilePage() {
         <meta property="og:description" content={seo.description} />
         <meta property="og:type" content="profile" />
         <meta property="og:url" content={canonicalUrl} />
+        {profile.profileImageUrl ? <meta property="og:image" content={profile.profileImageUrl} /> : null}
         <link rel="canonical" href={canonicalUrl} />
       </Head>
 
@@ -1594,4 +1623,42 @@ function InfoRow({ label, value, icon }) {
       </div>
     </div>
   );
+}
+
+export async function getServerSideProps({ params }) {
+  const uid = String(params?.uid || '').trim();
+
+  if (!uid) {
+    return { notFound: true };
+  }
+
+  try {
+    const initialProfile = await getUserProfile(uid);
+
+    if (!initialProfile) {
+      return { notFound: true };
+    }
+
+    const [initialProjects, initialReviews] = await Promise.all([
+      getWorkerProjects(uid),
+      getWorkerReviews(uid),
+    ]);
+
+    const profileWithCounts = {
+      ...initialProfile,
+      projectCount: initialProjects.length,
+      reviewCount: initialProfile.reviewCount ?? initialReviews.length,
+    };
+
+    return {
+      props: serializeFirestoreValue({
+        initialProfile: profileWithCounts,
+        initialProjects,
+        initialReviews,
+      }),
+    };
+  } catch (error) {
+    console.error('Failed to render profile server-side:', error);
+    return { notFound: true };
+  }
 }

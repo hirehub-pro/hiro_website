@@ -80,6 +80,12 @@ export default function CityMapPickerModal({
   initialCity = '',
   initialLat = null,
   initialLng = null,
+  allowAnyLocation = false,
+  eyebrow = 'Map Picker',
+  title = 'Choose your city from the map',
+  subtitle = 'Tap the map or drag the pin, then confirm the city.',
+  selectedLabel = 'Selected city',
+  emptySelectionText = 'Tap on the map to choose a city',
   onClose,
   onConfirm,
 }) {
@@ -145,14 +151,14 @@ export default function CityMapPickerModal({
 
         if (!cancelled) {
           setCityName(nextCity || '');
-          if (!nextCity) {
+          if (!nextCity && !allowAnyLocation) {
             setLocationError('We found the location, but not a city name. Try another point.');
-          } else if (!hasHebrewText(nextCity)) {
+          } else if (nextCity && !hasHebrewText(nextCity) && !allowAnyLocation) {
             setLocationError('Please choose a location that returns a Hebrew city name.');
           }
         }
       } catch (error) {
-        if (!cancelled) {
+        if (!cancelled && !allowAnyLocation) {
           setLocationError('Could not read the city name from the map. Try again.');
         }
       } finally {
@@ -168,7 +174,7 @@ export default function CityMapPickerModal({
     return () => {
       cancelled = true;
     };
-  }, [hasResolvedCurrentPoint, isOpen, selectedLocation]);
+  }, [allowAnyLocation, hasResolvedCurrentPoint, isOpen, selectedLocation]);
 
   function handleUseCurrentLocation() {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
@@ -202,6 +208,15 @@ export default function CityMapPickerModal({
 
   function handleConfirm() {
     if (!selectedLocation) return;
+    if (allowAnyLocation) {
+      onConfirm({
+        city: cityName.trim(),
+        lat: selectedLocation.lat,
+        lng: selectedLocation.lng,
+      });
+      return;
+    }
+
     if (!cityName.trim()) {
       setLocationError('Pick a point with a valid city before continuing.');
       return;
@@ -220,14 +235,20 @@ export default function CityMapPickerModal({
 
   if (!isOpen) return null;
 
+  const displayLocationLabel = cityName || (
+    allowAnyLocation && selectedLocation
+      ? `${selectedLocation.lat}, ${selectedLocation.lng}`
+      : emptySelectionText
+  );
+
   return (
     <div className="fixed inset-0 z-[140] flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-6">
       <div className="flex h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[32px] bg-white shadow-2xl sm:h-auto sm:max-h-[90vh] sm:rounded-[32px]">
         <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.24em] text-primary">Map Picker</p>
-            <h3 className="mt-1 text-xl font-extrabold text-slate-950">Choose your city from the map</h3>
-            <p className="mt-1 text-sm text-slate-500">Tap the map or drag the pin, then confirm the city.</p>
+            <p className="text-xs font-bold uppercase tracking-[0.24em] text-primary">{eyebrow}</p>
+            <h3 className="mt-1 text-xl font-extrabold text-slate-950">{title}</h3>
+            <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
           </div>
           <button
             type="button"
@@ -273,13 +294,13 @@ export default function CityMapPickerModal({
           <div className="flex flex-col gap-3 rounded-[28px] bg-slate-50 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">Selected city</p>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">{selectedLabel}</p>
                 <div className="mt-1 flex items-center gap-2">
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-600">
                     <HiLocationMarker className="h-4 w-4" />
                   </span>
-                  <span className={clsx('text-sm font-semibold', cityName ? 'text-slate-900' : 'text-slate-400')}>
-                    {isResolvingCity ? 'Finding city name...' : cityName || 'Tap on the map to choose a city'}
+                  <span className={clsx('text-sm font-semibold', displayLocationLabel !== emptySelectionText ? 'text-slate-900' : 'text-slate-400')}>
+                    {isResolvingCity ? 'Finding location name...' : displayLocationLabel}
                   </span>
                 </div>
               </div>
@@ -311,7 +332,7 @@ export default function CityMapPickerModal({
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={!selectedLocation || isResolvingCity || !cityName.trim()}
+            disabled={!selectedLocation || isResolvingCity || (!allowAnyLocation && !cityName.trim())}
             className="flex-1 rounded-2xl bg-primary px-4 py-3 text-sm font-bold text-white transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
           >
             OK
