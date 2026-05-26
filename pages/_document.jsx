@@ -1,8 +1,12 @@
-import { Html, Head, Main, NextScript } from 'next/document';
+import Document, { Html, Head, Main, NextScript } from 'next/document';
+import { normalizeSeoLocale } from '../lib/seo-locale';
 
-export default function Document() {
+function MyDocument(props) {
+  const locale = props.locale || 'he';
+  const dir = props.dir || (locale === 'en' ? 'ltr' : 'rtl');
+
   return (
-    <Html lang="en">
+    <Html lang={locale} dir={dir}>
       <Head>
         <meta charSet="UTF-8" />
         <meta name="description" content="Hiro – Find trusted professionals near you" />
@@ -23,7 +27,7 @@ export default function Document() {
           as="style"
         />
         <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
           rel="stylesheet"
           media="print"
           onLoad="this.media='all'"
@@ -42,3 +46,17 @@ export default function Document() {
     </Html>
   );
 }
+
+MyDocument.getInitialProps = async (ctx) => {
+  const initialProps = await Document.getInitialProps(ctx);
+  const locale = normalizeSeoLocale(ctx.query?.lang);
+  const dir = locale === 'en' ? 'ltr' : 'rtl';
+
+  return {
+    ...initialProps,
+    locale,
+    dir,
+  };
+};
+
+export default MyDocument;

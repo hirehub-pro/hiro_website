@@ -14,6 +14,8 @@ import { getBlogPosts, createBlogPost, toggleBlogPostLike } from '../lib/firesto
 import { db, storage } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { getCommunityPageSeo } from '../lib/page-seo';
+import { absoluteUrl } from '../lib/seo-locale';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 
@@ -134,6 +136,7 @@ export default function CommunityPage() {
   const { t, dir, locale } = useLanguage();
   const { user, profile: myProfile } = useAuth();
   const router = useRouter();
+  const seo = getCommunityPageSeo();
 
   const [filter, setFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -499,7 +502,15 @@ export default function CommunityPage() {
 
   return (
     <>
-      <Head><title>{'Hiro  ' + t.community.title}</title></Head>
+      <Head>
+        <title>{seo.title}</title>
+        <meta name="description" content={seo.description} />
+        <meta property="og:title" content={seo.title} />
+        <meta property="og:description" content={seo.description} />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content={absoluteUrl('/community')} />
+        <link rel="canonical" href={absoluteUrl('/community')} />
+      </Head>
 
       <div className="min-h-screen bg-[#edf4fb]" dir={dir}>
         <div className="mx-auto max-w-6xl px-4 pt-8">

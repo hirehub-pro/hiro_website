@@ -23,7 +23,7 @@ import clsx from 'clsx';
 import { doc, getDoc } from 'firebase/firestore';
 import { searchWorkers } from '../../lib/firestore';
 import { db } from '../../lib/firebase';
-import { findProfessionBySlug, slugifyProfession } from '../../lib/search-routing';
+import { buildLocalizedSearchPath, findProfessionBySlug, slugifyProfession } from '../../lib/search-routing';
 import { getProfessionSeoData } from '../../lib/profession-seo';
 import WorkerCard from '../workers/WorkerCard';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -156,6 +156,7 @@ export default function SearchPageContent({ categorySlug = '' }) {
   const { t, dir, locale } = useLanguage();
   const { profile } = useAuth();
   const router = useRouter();
+  const routeLocale = typeof router.query.lang === 'string' ? router.query.lang : '';
   const inputRef = useRef(null);
   const lastScrollYRef = useRef(0);
   const radiusFilterHiddenRef = useRef(false);
@@ -320,16 +321,22 @@ export default function SearchPageContent({ categorySlug = '' }) {
 
     if (matchedProfession) {
       const professionValue = matchedProfession.value || matchedProfession.en || normalizedQuery;
-      router.push(`/search/${slugifyProfession(professionValue)}`);
+      router.push(buildLocalizedSearchPath({
+        categorySlug: slugifyProfession(professionValue),
+        locale: routeLocale,
+      }));
       return;
     }
 
-    router.push(`/search?q=${encodeURIComponent(normalizedQuery)}`);
+    router.push(`${buildLocalizedSearchPath({ locale: routeLocale })}?q=${encodeURIComponent(normalizedQuery)}`);
   }
 
   function chooseProfession(profession) {
     const value = profession.value || profession.en || getProfessionLabel(profession, locale);
-    router.push(`/search/${slugifyProfession(value)}`);
+    router.push(buildLocalizedSearchPath({
+      categorySlug: slugifyProfession(value),
+      locale: routeLocale,
+    }));
   }
 
   const matchedProfession = useMemo(() => (
@@ -356,7 +363,7 @@ export default function SearchPageContent({ categorySlug = '' }) {
     setQuery('');
     setWorkers([]);
     setHasSearched(false);
-    router.push('/search');
+    router.push(buildLocalizedSearchPath({ locale: routeLocale }));
     inputRef.current?.focus();
   }
 

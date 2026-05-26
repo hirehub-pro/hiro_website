@@ -7,6 +7,8 @@ import { HiArrowLeft, HiChat, HiHeart } from 'react-icons/hi';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../../../contexts/AuthContext';
+import { getProjectPageSeo } from '../../../../lib/page-seo';
+import { absoluteUrl } from '../../../../lib/seo-locale';
 import {
   getWorkerProject,
   getProjectComments,
@@ -37,6 +39,10 @@ export default function ProjectDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [commentText, setCommentText] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const seo = getProjectPageSeo(project, project?.userName || '');
+  const canonicalUrl = uid && projectId
+    ? absoluteUrl(`/profile/${uid}/projects/${projectId}`)
+    : absoluteUrl('/search');
 
   useEffect(function () {
     if (!uid || !projectId) return;
@@ -132,7 +138,16 @@ export default function ProjectDetailsPage() {
 
   return (
     <>
-      <Head><title>{project ? 'Project - Hiro' : 'Project - Hiro'}</title></Head>
+      <Head>
+        <title>{seo.title}</title>
+        <meta name="description" content={seo.description} />
+        <meta property="og:title" content={seo.title} />
+        <meta property="og:description" content={seo.description} />
+        <meta property="og:type" content="article" />
+        <meta property="og:url" content={canonicalUrl} />
+        {project?.imageUrl ? <meta property="og:image" content={project.imageUrl} /> : null}
+        <link rel="canonical" href={canonicalUrl} />
+      </Head>
 
       <div className="mx-auto max-w-3xl px-4 py-6 md:py-8">
         <div className="mb-4">

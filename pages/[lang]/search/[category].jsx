@@ -1,0 +1,65 @@
+import Head from 'next/head';
+import SearchPageContent from '../../../components/search/SearchPageContent';
+import { getProfessionSeoData } from '../../../lib/profession-seo';
+import { absoluteUrl, buildAlternateLanguageUrls, normalizeSeoLocale } from '../../../lib/seo-locale';
+
+export default function LocalizedSearchCategoryPage({ locale, categorySlug, title, description, keywords }) {
+  const path = `/search/${categorySlug}`;
+  const alternateUrls = buildAlternateLanguageUrls(path);
+  const canonicalUrl = absoluteUrl(locale === 'he' ? path : `/${locale}${path}`);
+
+  return (
+    <>
+      <Head>
+        <title>{title}</title>
+        <meta name="description" content={description} />
+        {keywords ? <meta name="keywords" content={keywords} /> : null}
+        <link rel="canonical" href={canonicalUrl} />
+        {alternateUrls.map((alternate) => (
+          <link
+            key={alternate.locale}
+            rel="alternate"
+            hrefLang={alternate.locale}
+            href={alternate.href}
+          />
+        ))}
+        <link rel="alternate" hrefLang="x-default" href={absoluteUrl(path)} />
+      </Head>
+      <SearchPageContent categorySlug={categorySlug} />
+    </>
+  );
+}
+
+export async function getServerSideProps({ params }) {
+  const locale = normalizeSeoLocale(params?.lang);
+  const categorySlug = String(params?.category || '').trim().toLowerCase();
+
+  if (!categorySlug) {
+    return { notFound: true };
+  }
+
+  if (locale === 'he') {
+    return {
+      redirect: {
+        destination: `/search/${categorySlug}`,
+        permanent: true,
+      },
+    };
+  }
+
+  if (locale !== params?.lang) {
+    return { notFound: true };
+  }
+
+  const seoData = getProfessionSeoData(categorySlug, locale);
+
+  return {
+    props: {
+      locale,
+      categorySlug,
+      title: seoData.title,
+      description: seoData.description,
+      keywords: seoData.keywords?.join(', ') || '',
+    },
+  };
+}

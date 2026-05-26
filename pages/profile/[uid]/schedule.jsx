@@ -11,6 +11,8 @@ import { getUserProfile } from '../../../lib/firestore';
 import ProfileHeader from '../../../components/profile/ProfileHeader';
 import ProfileScheduleView from '../../../components/profile/ProfileScheduleView';
 import { useAuth } from '../../../contexts/AuthContext';
+import { getProfilePageSeo } from '../../../lib/page-seo';
+import { absoluteUrl } from '../../../lib/seo-locale';
 
 function normalizeDateKey(input) {
   if (!input || typeof input !== 'string') return null;
@@ -136,6 +138,8 @@ export default function WorkerSchedulePage() {
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(formatDateKey(new Date()));
   const [noteText, setNoteText] = useState('');
+  const seo = getProfilePageSeo(profile, { schedule: true });
+  const canonicalUrl = uid ? absoluteUrl(`/profile/${uid}/schedule`) : absoluteUrl('/search');
 
   useEffect(() => {
     if (!uid) return;
@@ -424,7 +428,13 @@ export default function WorkerSchedulePage() {
   return (
     <>
       <Head>
-        <title>{profile.name} Schedule – Hiro</title>
+        <title>{seo.title}</title>
+        <meta name="description" content={seo.description} />
+        <meta property="og:title" content={seo.title} />
+        <meta property="og:description" content={seo.description} />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content={canonicalUrl} />
+        <link rel="canonical" href={canonicalUrl} />
       </Head>
 
       <ProfileHeader

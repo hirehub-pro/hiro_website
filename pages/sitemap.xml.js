@@ -1,6 +1,7 @@
 import { collection, collectionGroup, doc, getDoc, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { slugifyProfession } from '../lib/search-routing';
+import { SEO_LOCALES, localizePath } from '../lib/seo-locale';
 
 const SITE_URL = 'https://hiro-services.com';
 
@@ -55,6 +56,13 @@ export async function getServerSideProps({ res }) {
 
   addUrl('/', { lastmod: nowIso, changefreq: 'daily', priority: '1.0' });
   addUrl('/search', { lastmod: nowIso, changefreq: 'daily', priority: '0.9' });
+  SEO_LOCALES.filter((locale) => locale !== 'he').forEach((locale) => {
+    addUrl(localizePath('/search', locale), {
+      lastmod: nowIso,
+      changefreq: 'daily',
+      priority: '0.8',
+    });
+  });
   addUrl('/community', { lastmod: nowIso, changefreq: 'daily', priority: '0.8' });
   addUrl('/contact', { lastmod: nowIso, changefreq: 'monthly', priority: '0.7' });
 
@@ -66,10 +74,12 @@ export async function getServerSideProps({ res }) {
       const source = item.en || item.logo || item.he || item.ar;
       const slug = slugifyProfession(source);
       if (!slug) return;
-      addUrl(`/search/${slug}`, {
-        lastmod: nowIso,
-        changefreq: 'weekly',
-        priority: '0.8',
+      SEO_LOCALES.forEach((locale) => {
+        addUrl(localizePath(`/search/${slug}`, locale), {
+          lastmod: nowIso,
+          changefreq: 'weekly',
+          priority: locale === 'he' ? '0.8' : '0.7',
+        });
       });
     });
   } catch (error) {

@@ -7,6 +7,7 @@ import SiteFooter from '../components/layout/SiteFooter';
 import { Toaster } from 'react-hot-toast';
 import { HiArrowSmRight, HiX } from 'react-icons/hi';
 import { startForegroundPushNotifications } from '../lib/notifications';
+import { initFirebaseAppCheck } from '../lib/firebase';
 import 'leaflet/dist/leaflet.css';
 import '../styles/globals.css';
 
@@ -41,6 +42,10 @@ export default function App({ Component, pageProps }) {
   const getLayout = Component.getLayout ?? ((page) => <Layout>{page}</Layout>);
   const showFooter = Component.showFooter !== false;
   const [showOpenAppPrompt, setShowOpenAppPrompt] = useState(false);
+
+  useEffect(() => {
+    initFirebaseAppCheck().catch(() => {});
+  }, []);
 
   useEffect(() => {
     let unsubscribe = null;

@@ -9,6 +9,8 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { getCommunityPostSeo } from '../../lib/page-seo';
+import { absoluteUrl } from '../../lib/seo-locale';
 import {
   getBlogPost,
   getBlogComments,
@@ -214,6 +216,8 @@ export default function BlogPostPage() {
     if (post.imageUrl) return [{ url: post.imageUrl, type: 'image' }];
     return [];
   }, [post]);
+  const seo = getCommunityPostSeo(post);
+  const canonicalUrl = postId ? absoluteUrl(`/community/${postId}`) : absoluteUrl('/community');
 
   useEffect(function () {
     setActiveMediaIndex(0);
@@ -333,7 +337,16 @@ export default function BlogPostPage() {
 
   return (
     <>
-      <Head><title>{post ? post.title + ' - Hiro' : 'Post - Hiro'}</title></Head>
+      <Head>
+        <title>{seo.title}</title>
+        <meta name="description" content={seo.description} />
+        <meta property="og:title" content={seo.title} />
+        <meta property="og:description" content={seo.description} />
+        <meta property="og:type" content="article" />
+        <meta property="og:url" content={canonicalUrl} />
+        {post?.imageUrl ? <meta property="og:image" content={post.imageUrl} /> : null}
+        <link rel="canonical" href={canonicalUrl} />
+      </Head>
 
       <div className="min-h-screen bg-[#edf4fb]" dir={dir}>
         <div className="mx-auto max-w-5xl px-4 py-6 md:py-8">

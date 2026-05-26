@@ -23,6 +23,8 @@ import ReviewsList from '../../components/profile/ReviewsList';
 import ProfileScheduleView from '../../components/profile/ProfileScheduleView';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { getProfilePageSeo } from '../../lib/page-seo';
+import { absoluteUrl } from '../../lib/seo-locale';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
@@ -242,6 +244,8 @@ export default function ProfilePage() {
   const [savingProfessions, setSavingProfessions] = useState(false);
   const avatarInputRef = useRef(null);
   const socialLinks = getNormalizedSocialLinks(profile);
+  const seo = getProfilePageSeo(profile);
+  const canonicalUrl = uid ? absoluteUrl(`/profile/${uid}`) : absoluteUrl('/search');
 
   useEffect(() => {
     if (!uid) return;
@@ -883,7 +887,13 @@ export default function ProfilePage() {
   return (
     <>
       <Head>
-        <title>{profile.name} – Hiro</title>
+        <title>{seo.title}</title>
+        <meta name="description" content={seo.description} />
+        <meta property="og:title" content={seo.title} />
+        <meta property="og:description" content={seo.description} />
+        <meta property="og:type" content="profile" />
+        <meta property="og:url" content={canonicalUrl} />
+        <link rel="canonical" href={canonicalUrl} />
       </Head>
 
       <ProfileHeader

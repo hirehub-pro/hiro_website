@@ -9,6 +9,7 @@ import Image from 'next/image';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { getUserSavedLocations, setUserActiveLocation } from '../../lib/firestore';
+import { replacePathLocale } from '../../lib/seo-locale';
 
 const localeLabels = { en: 'EN', he: 'עב', ar: 'ع' };
 const dateLocales = { en: 'en-US', he: 'he-IL', ar: 'ar' };
@@ -70,6 +71,18 @@ export default function Header() {
       dateStyle: 'medium',
       timeStyle: 'short',
     }).format(value);
+  }
+
+  function handleLocaleChange(nextLocale) {
+    changeLocale(nextLocale);
+
+    const isSearchRoute = /^\/(?:(?:en|ar)\/)?search(?:\/|$|\?)/.test(router.asPath);
+    if (!isSearchRoute) return;
+
+    const nextPath = replacePathLocale(router.asPath, nextLocale);
+    if (nextPath !== router.asPath) {
+      router.push(nextPath);
+    }
   }
 
   async function handleOpenLocations() {
@@ -233,7 +246,7 @@ export default function Header() {
                 {Object.keys(localeLabels).map((l) => (
                   <button
                     key={l}
-                    onClick={() => changeLocale(l)}
+                    onClick={() => handleLocaleChange(l)}
                     className={clsx(
                       'rounded-xl px-2.5 py-1 text-xs font-bold transition-all duration-200',
                       locale === l ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-900'
