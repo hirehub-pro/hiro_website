@@ -242,6 +242,8 @@ export default function RequestDetailsPage() {
     <>
       <Head>
         <title>Hiro | Request details</title>
+        <meta name="robots" content="noindex, nofollow, noarchive" />
+        <meta name="googlebot" content="noindex, nofollow, noarchive" />
       </Head>
 
       <main className="mx-auto max-w-6xl px-4 py-6 md:py-8">

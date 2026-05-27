@@ -1,6 +1,8 @@
 import Head from 'next/head';
+import { doc, getDoc } from 'firebase/firestore';
 import SearchPageContent from '../../../components/search/SearchPageContent';
-import { getProfessionSeoData } from '../../../lib/profession-seo';
+import { db } from '../../../lib/firebase';
+import { findProfessionMetadataBySlug, getProfessionSeoData } from '../../../lib/profession-seo';
 import { absoluteUrl, buildAlternateLanguageUrls, normalizeSeoLocale } from '../../../lib/seo-locale';
 
 export default function LocalizedSearchCategoryPage({ locale, categorySlug, title, description, keywords }) {
@@ -51,7 +53,19 @@ export async function getServerSideProps({ params }) {
     return { notFound: true };
   }
 
-  const seoData = getProfessionSeoData(categorySlug, locale);
+  let professionLabel = '';
+
+  try {
+    const professionsSnap = await getDoc(doc(db, 'metadata', 'professions'));
+    const matchedProfession = findProfessionMetadataBySlug(professionsSnap.data()?.items, categorySlug);
+    professionLabel = String(
+      matchedProfession?.[locale] || matchedProfession?.he || matchedProfession?.en || ''
+    ).trim();
+  } catch (error) {
+    professionLabel = '';
+  }
+
+  const seoData = getProfessionSeoData(categorySlug, locale, professionLabel);
 
   return {
     props: {
