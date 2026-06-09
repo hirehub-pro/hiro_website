@@ -2,6 +2,7 @@ import { collection, collectionGroup, doc, getDoc, getDocs } from 'firebase/fire
 import { db } from '../lib/firebase';
 import { slugifyProfession } from '../lib/search-routing';
 import { SEO_LOCALES, localizePath } from '../lib/seo-locale';
+import { buildCommunityPostPath, buildProfilePath } from '../lib/profile-routing';
 
 const SITE_URL = 'https://hiro-services.com';
 
@@ -93,7 +94,7 @@ export async function getServerSideProps({ res }) {
       const uid = userDoc.id;
       const lastmod = toLastMod(data.updatedAt || data.createdAt);
 
-      addUrl(`/profile/${uid}`, {
+      addUrl(buildProfilePath({ uid, name: data.name }), {
         lastmod,
         changefreq: 'weekly',
         priority: data.role === 'worker' ? '0.8' : '0.6',
@@ -115,7 +116,10 @@ export async function getServerSideProps({ res }) {
     const postsSnap = await getDocs(collection(db, 'blog_posts'));
     postsSnap.docs.forEach((postDoc) => {
       const data = postDoc.data() || {};
-      addUrl(`/community/${postDoc.id}`, {
+      addUrl(buildCommunityPostPath({
+        id: postDoc.id,
+        authorName: data.authorName,
+      }), {
         lastmod: toLastMod(data.updatedAt || data.timestamp),
         changefreq: 'weekly',
         priority: '0.7',

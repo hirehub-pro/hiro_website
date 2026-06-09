@@ -44,12 +44,14 @@ const structuredData = {
   '@graph': [
     {
       '@type': 'WebSite',
+      '@id': `${HOMEPAGE_URL}#website`,
       url: HOMEPAGE_URL,
       name: SITE_NAME,
       alternateName: SITE_ALTERNATE_NAME,
     },
     {
       '@type': 'Organization',
+      '@id': `${HOMEPAGE_URL}#organization`,
       url: HOMEPAGE_URL,
       name: SITE_NAME,
       alternateName: SITE_ALTERNATE_NAME,

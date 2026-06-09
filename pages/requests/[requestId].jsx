@@ -31,6 +31,7 @@ import {
 import toast from 'react-hot-toast';
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 import {
   formatRequestDateTime,
   getRequestMediaItems,
@@ -62,7 +63,7 @@ function DetailStat({ icon: Icon, label, value, href }) {
   );
 }
 
-function PersonCard({ label, name, href, town }) {
+function PersonCard({ label, name, href, town, openProfileLabel }) {
   return (
     <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
       <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">{label}</p>
@@ -76,7 +77,7 @@ function PersonCard({ label, name, href, town }) {
           className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
         >
           <FiUser className="h-4 w-4" />
-          Open profile
+          {openProfileLabel}
         </Link>
       ) : null}
     </div>
@@ -87,6 +88,8 @@ export default function RequestDetailsPage() {
   const router = useRouter();
   const { requestId } = router.query;
   const { user, loading } = useAuth();
+  const { t, locale, dir } = useLanguage();
+  const copy = t.requests;
   const [request, setRequest] = useState(null);
   const [requestMode, setRequestMode] = useState('sent');
   const [pageLoading, setPageLoading] = useState(true);
@@ -135,11 +138,11 @@ export default function RequestDetailsPage() {
         }
 
         setRequest(null);
-        setError('We could not find that request.');
+        setError(copy.notFound);
       } catch (loadError) {
         if (!cancelled) {
           setRequest(null);
-          setError('Could not load request details right now.');
+          setError(copy.detailsLoadError);
         }
       } finally {
         if (!cancelled) setPageLoading(false);
@@ -151,7 +154,7 @@ export default function RequestDetailsPage() {
     return () => {
       cancelled = true;
     };
-  }, [requestId, user?.uid]);
+  }, [copy.detailsLoadError, copy.notFound, requestId, user?.uid]);
 
   const mediaItems = useMemo(
     () => (request ? getRequestMediaItems(request).filter((item) => item?.url) : []),
@@ -159,7 +162,7 @@ export default function RequestDetailsPage() {
   );
   const otherUserId = requestMode === 'received' ? request?.fromId : request?.workerId;
   const otherUserName = requestMode === 'received' ? request?.fromName : request?.workerName;
-  const otherUserLabel = requestMode === 'received' ? 'Requested by' : 'Assigned to';
+  const otherUserLabel = requestMode === 'received' ? copy.requestedBy : copy.assignedTo;
   const roomId = user?.uid && otherUserId ? [user.uid, otherUserId].sort().join('_') : '';
   const mapHref = request?.mapUrl || (
     typeof request?.latitude === 'number' && typeof request?.longitude === 'number'
@@ -187,10 +190,10 @@ export default function RequestDetailsPage() {
       ]);
 
       setRequest((current) => (current ? { ...current, status: nextStatus } : current));
-      toast.success(nextStatus === 'accepted' ? 'Request accepted.' : 'Request refused.');
+      toast.success(nextStatus === 'accepted' ? copy.acceptedToast : copy.refusedToast);
     } catch (updateError) {
-      setError('Could not update the request status right now.');
-      toast.error('Could not update the request status right now.');
+      setError(copy.updateError);
+      toast.error(copy.updateError);
     } finally {
       setActionLoading('');
     }
@@ -219,10 +222,10 @@ export default function RequestDetailsPage() {
       });
 
       setRequest((current) => (current ? { ...current, status: 'cancelled' } : current));
-      toast.success('Request cancelled.');
+      toast.success(copy.cancelledToast);
     } catch (cancelError) {
-      setError('Could not cancel the request right now.');
-      toast.error('Could not cancel the request right now.');
+      setError(copy.cancelError);
+      toast.error(copy.cancelError);
     } finally {
       setActionLoading('');
     }
@@ -241,18 +244,18 @@ export default function RequestDetailsPage() {
   return (
     <>
       <Head>
-        <title>Hiro | Request details</title>
+        <title>Hiro | {copy.detailsTitle}</title>
         <meta name="robots" content="noindex, nofollow, noarchive" />
         <meta name="googlebot" content="noindex, nofollow, noarchive" />
       </Head>
 
-      <main className="mx-auto max-w-6xl px-4 py-6 md:py-8">
+      <main className="mx-auto max-w-6xl px-4 py-6 md:py-8" dir={dir}>
         <Link
           href={backHref}
           className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
         >
-          <FiArrowLeft className="h-4 w-4" />
-          Back to requests
+          <FiArrowLeft className={clsx('h-4 w-4', dir === 'rtl' && 'rotate-180')} />
+          {copy.back}
         </Link>
 
         {pageLoading ? (
@@ -268,15 +271,15 @@ export default function RequestDetailsPage() {
             <section className="mt-6 overflow-hidden rounded-[32px] border border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(126,178,232,0.22),_transparent_40%),linear-gradient(135deg,_#ffffff,_#f8fbff)] p-6 shadow-sm sm:p-8">
               <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                 <div className="max-w-3xl">
-                  <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">Request Details</p>
+                  <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">{copy.detailsTitle}</p>
                   <div className="mt-3 flex flex-wrap items-center gap-3">
                     <h1 className="text-3xl font-extrabold tracking-tight text-slate-950">{request.title}</h1>
                     <span className={clsx('rounded-full px-3 py-1 text-xs font-bold capitalize ring-1', getRequestStatusClass(request.status))}>
-                      {request.status}
+                      {copy[request.status] || request.status}
                     </span>
                   </div>
                   <p className="mt-3 max-w-2xl whitespace-pre-line text-sm leading-7 text-slate-700">
-                    {request.jobDescription || request.body || 'No job description was added.'}
+                    {request.jobDescription || request.body || copy.noDescription}
                   </p>
                   <div className="mt-4 flex flex-wrap gap-2">
                     {requestMode === 'received' ? (
@@ -293,7 +296,7 @@ export default function RequestDetailsPage() {
                           )}
                         >
                           <FiCheck className="h-4 w-4" />
-                          {actionLoading === 'accepted' ? 'Accepting...' : request.status === 'accepted' ? 'Accepted' : 'Agree'}
+                          {actionLoading === 'accepted' ? copy.accepting : request.status === 'accepted' ? copy.accepted : copy.agree}
                         </button>
                         <button
                           type="button"
@@ -307,7 +310,7 @@ export default function RequestDetailsPage() {
                           )}
                         >
                           <FiX className="h-4 w-4" />
-                          {actionLoading === 'declined' ? 'Refusing...' : request.status === 'declined' ? 'Refused' : 'Refuse'}
+                          {actionLoading === 'declined' ? copy.refusing : request.status === 'declined' ? copy.refused : copy.refuse}
                         </button>
                       </>
                     ) : null}
@@ -324,7 +327,7 @@ export default function RequestDetailsPage() {
                         )}
                       >
                         <FiTrash2 className="h-4 w-4" />
-                        {actionLoading === 'cancelled' ? 'Cancelling...' : request.status === 'cancelled' ? 'Cancelled' : 'Cancel request'}
+                        {actionLoading === 'cancelled' ? copy.cancelling : request.status === 'cancelled' ? copy.cancelled : copy.cancelRequest}
                       </button>
                     ) : null}
                     {roomId ? (
@@ -333,7 +336,7 @@ export default function RequestDetailsPage() {
                         className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white transition hover:bg-primary-dark"
                       >
                         <FiMessageCircle className="h-4 w-4" />
-                        Open chat
+                        {copy.openChat}
                       </Link>
                     ) : null}
                     {mapHref ? (
@@ -344,61 +347,65 @@ export default function RequestDetailsPage() {
                         className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                       >
                         <FiMapPin className="h-4 w-4" />
-                        Open location
+                        {copy.openLocation}
                       </a>
                     ) : null}
                   </div>
                 </div>
 
                 <div className="rounded-[28px] border border-white/70 bg-white/80 p-5 shadow-sm backdrop-blur">
-                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Created</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">{copy.created}</p>
                   <p className="mt-2 text-lg font-bold text-slate-950">
-                    {request.timestamp ? formatRequestDateTime(request.timestamp) : 'Not available'}
+                    {request.timestamp ? formatRequestDateTime(request.timestamp, locale) : copy.notAvailable}
                   </p>
                   <p className="mt-3 text-sm text-slate-500">
-                    {requestMode === 'received' ? 'This request was sent to you.' : 'This is a request you created.'}
+                    {requestMode === 'received' ? copy.receivedNote : copy.sentNote}
                   </p>
                 </div>
               </div>
             </section>
 
             <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <DetailStat icon={FiCalendar} label="Date" value={request.date || 'No date selected'} />
+              <DetailStat icon={FiCalendar} label={copy.date} value={request.date || copy.noDateSelected} />
               <DetailStat
                 icon={FiClock}
-                label="Time"
-                value={request.requestedFrom && request.requestedTo ? `${request.requestedFrom} - ${request.requestedTo}` : 'No time window'}
+                label={copy.time}
+                value={request.requestedFrom && request.requestedTo ? `${request.requestedFrom} - ${request.requestedTo}` : copy.noTimeWindow}
               />
-              <DetailStat icon={FiMapPin} label="Location" value={request.locationName || 'No location added'} href={mapHref} />
-              <DetailStat icon={FiTag} label="Profession" value={request.profession || 'General request'} />
+              <DetailStat icon={FiMapPin} label={copy.location} value={request.locationName || copy.noLocationAdded} href={mapHref} />
+              <DetailStat icon={FiTag} label={copy.profession} value={request.profession || copy.generalRequest} />
             </section>
 
             <section className="mt-6 grid gap-4 lg:grid-cols-2">
               <PersonCard
                 label={otherUserLabel}
-                name={otherUserName || 'Unknown user'}
+                name={otherUserName || copy.unknownUser}
                 href={otherUserId ? `/profile/${otherUserId}` : ''}
                 town={requestMode === 'received' ? request.fromLocation : ''}
+                openProfileLabel={copy.openProfile}
               />
               <PersonCard
-                label="Request type"
-                name={request.serviceLocationType === 'provider_travels' ? 'Professional travels to customer' : 'Custom arrangement'}
+                label={copy.requestType}
+                name={request.serviceLocationType === 'provider_travels' ? copy.providerTravels : copy.customArrangement}
                 town={request.body && request.body !== request.jobDescription ? request.body : ''}
+                openProfileLabel={copy.openProfile}
               />
             </section>
 
             <section className="mt-6 rounded-[32px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">Media</p>
-                  <h2 className="mt-1 text-2xl font-extrabold text-slate-950">Images and attachments</h2>
+                  <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">{copy.media}</p>
+                  <h2 className="mt-1 text-2xl font-extrabold text-slate-950">{copy.mediaTitle}</h2>
                 </div>
-                <p className="text-sm font-semibold text-slate-400">{mediaItems.length} item{mediaItems.length === 1 ? '' : 's'}</p>
+                <p className="text-sm font-semibold text-slate-400">
+                  {mediaItems.length} {mediaItems.length === 1 ? copy.item : copy.items}
+                </p>
               </div>
 
               {mediaItems.length === 0 ? (
                 <div className="mt-5 rounded-[24px] border border-dashed border-slate-200 bg-slate-50 px-4 py-12 text-center text-sm font-semibold text-slate-500">
-                  No media was attached to this request.
+                  {copy.noMedia}
                 </div>
               ) : (
                 <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -416,7 +423,7 @@ export default function RequestDetailsPage() {
                         ) : (
                           <Image
                             src={item.url}
-                            alt={`Request media ${index + 1}`}
+                            alt={`${copy.media} ${index + 1}`}
                             fill
                             sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"
                             className="object-cover transition duration-300 group-hover:scale-[1.02]"
@@ -424,8 +431,8 @@ export default function RequestDetailsPage() {
                         )}
                       </div>
                       <div className="flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700">
-                        <span className="capitalize">{item.type || 'media'}</span>
-                        <span className="text-primary">Open</span>
+                        <span>{item.type === 'video' ? copy.video : copy.image}</span>
+                        <span className="text-primary">{copy.open}</span>
                       </div>
                     </a>
                   ))}

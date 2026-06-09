@@ -51,7 +51,7 @@ export default function Header() {
     { href: '/search',    label: t.nav.search },
     { href: '/community', label: t.nav.blog },
     { href: '/messages',  label: t.nav.messages },
-    ...(user ? [{ href: '/requests', label: 'Requests' }] : []),
+    ...(user ? [{ href: '/requests', label: t.nav.requests }] : []),
     ...(isAdmin ? [{ href: '/admin', label: 'Admin' }] : []),
   ];
 

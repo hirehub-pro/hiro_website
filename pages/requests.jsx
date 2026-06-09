@@ -11,6 +11,7 @@ import clsx from 'clsx';
 import { FiCalendar, FiClock, FiMapPin, FiMessageCircle, FiUser } from 'react-icons/fi';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import {
   formatRequestDateTime,
   getRequestMediaItems,
@@ -18,7 +19,11 @@ import {
   normalizeRequestDocument,
 } from '../lib/request-utils';
 
-function RequestCard({ request, user, mode, highlighted }) {
+function getStatusLabel(copy, status) {
+  return copy[status] || status;
+}
+
+function RequestCard({ request, user, mode, highlighted, copy, locale }) {
   const router = useRouter();
   const mediaItems = getRequestMediaItems(request).slice(0, 5);
   const otherUserId = mode === 'received' ? request.fromId : request.workerId;
@@ -60,14 +65,14 @@ function RequestCard({ request, user, mode, highlighted }) {
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-lg font-extrabold text-slate-950">{request.title}</h2>
             <span className={clsx('rounded-full px-3 py-1 text-xs font-bold capitalize ring-1', getRequestStatusClass(request.status))}>
-              {request.status}
+              {getStatusLabel(copy, request.status)}
             </span>
           </div>
           <p className="mt-1 text-sm font-semibold text-slate-700">
-            {mode === 'received' ? `From ${otherUserName}` : `To ${otherUserName}`}
+            {mode === 'received' ? `${copy.from} ${otherUserName}` : `${copy.to} ${otherUserName}`}
           </p>
           {request.timestamp ? (
-            <p className="mt-1 text-xs font-medium text-slate-500">{formatRequestDateTime(request.timestamp)}</p>
+            <p className="mt-1 text-xs font-medium text-slate-500">{formatRequestDateTime(request.timestamp, locale)}</p>
           ) : null}
         </div>
 
@@ -76,7 +81,7 @@ function RequestCard({ request, user, mode, highlighted }) {
             href={detailsHref}
             className="inline-flex items-center gap-2 rounded-2xl border border-primary/15 bg-primary-50 px-3 py-2 text-sm font-semibold text-primary transition hover:bg-primary-100"
           >
-            View details
+            {copy.viewDetails}
           </Link>
           {otherUserId ? (
             <Link
@@ -84,7 +89,7 @@ function RequestCard({ request, user, mode, highlighted }) {
               className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
             >
               <FiUser className="h-4 w-4" />
-              Profile
+              {copy.profile}
             </Link>
           ) : null}
           {roomId ? (
@@ -93,35 +98,35 @@ function RequestCard({ request, user, mode, highlighted }) {
               className="inline-flex items-center gap-2 rounded-2xl bg-primary px-3 py-2 text-sm font-semibold text-white transition hover:bg-primary-dark"
             >
               <FiMessageCircle className="h-4 w-4" />
-              Chat
+              {copy.chat}
             </Link>
           ) : null}
         </div>
       </div>
 
       <p className="mt-4 whitespace-pre-line rounded-2xl bg-slate-50 p-3 text-sm leading-6 text-slate-700">
-        {request.jobDescription || request.body || 'No job description was added.'}
+        {request.jobDescription || request.body || copy.noDescription}
       </p>
 
       <div className="mt-4 grid gap-2 text-sm text-slate-600 sm:grid-cols-3">
         <div className="flex items-center gap-2 rounded-2xl bg-slate-50 px-3 py-2">
           <FiCalendar className="h-4 w-4 text-primary" />
-          <span className="font-semibold text-slate-800">{request.date || 'No date'}</span>
+          <span className="font-semibold text-slate-800">{request.date || copy.noDate}</span>
         </div>
         <div className="flex items-center gap-2 rounded-2xl bg-slate-50 px-3 py-2">
           <FiClock className="h-4 w-4 text-primary" />
           <span className="font-semibold text-slate-800">
-            {request.requestedFrom && request.requestedTo ? `${request.requestedFrom} - ${request.requestedTo}` : 'No time'}
+            {request.requestedFrom && request.requestedTo ? `${request.requestedFrom} - ${request.requestedTo}` : copy.noTime}
           </span>
         </div>
         <div className="flex items-center gap-2 rounded-2xl bg-slate-50 px-3 py-2">
           <FiMapPin className="h-4 w-4 text-primary" />
           {mapHref ? (
             <a href={mapHref} target="_blank" rel="noreferrer" className="truncate font-semibold text-slate-800 hover:text-primary">
-              {request.locationName || 'Open map'}
+              {request.locationName || copy.openMap}
             </a>
           ) : (
-            <span className="truncate font-semibold text-slate-800">{request.locationName || 'No location'}</span>
+            <span className="truncate font-semibold text-slate-800">{request.locationName || copy.noLocation}</span>
           )}
         </div>
       </div>
@@ -154,6 +159,8 @@ function RequestCard({ request, user, mode, highlighted }) {
 export default function RequestsPage() {
   const router = useRouter();
   const { user, loading, isWorker } = useAuth();
+  const { t, locale, dir } = useLanguage();
+  const copy = t.requests;
   const [sentRequests, setSentRequests] = useState([]);
   const [receivedRequests, setReceivedRequests] = useState([]);
   const [activeTab, setActiveTab] = useState('sent');
@@ -200,7 +207,7 @@ export default function RequestsPage() {
       } catch (loadError) {
         if (!cancelled) {
           console.error('Failed to load requests:', loadError);
-          setError('Could not load requests right now.');
+          setError(copy.loadError);
         }
       } finally {
         if (!cancelled) setLoadingRequests(false);
@@ -212,7 +219,7 @@ export default function RequestsPage() {
     return () => {
       cancelled = true;
     };
-  }, [user?.uid]);
+  }, [copy.loadError, user?.uid]);
 
   useEffect(() => {
     if (isWorker) setActiveTab('received');
@@ -246,8 +253,8 @@ export default function RequestsPage() {
 
   const activeRequests = activeTab === 'received' ? receivedRequests : sentRequests;
   const emptyText = activeTab === 'received'
-    ? 'No one has sent you a work request yet.'
-    : 'You have not sent any work requests yet.';
+    ? copy.noReceived
+    : copy.noSent;
 
   const stats = useMemo(() => {
     const all = [...sentRequests, ...receivedRequests];
@@ -271,26 +278,26 @@ export default function RequestsPage() {
   return (
     <>
       <Head>
-        <title>Hiro | My requests</title>
+        <title>Hiro | {copy.title}</title>
       </Head>
 
-      <main className="mx-auto max-w-5xl px-4 py-6 md:py-8">
+      <main className="mx-auto max-w-5xl px-4 py-6 md:py-8" dir={dir}>
         <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">Requests</p>
-            <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-slate-950">My requests</h1>
+            <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">{copy.eyebrow}</p>
+            <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-slate-950">{copy.title}</h1>
           </div>
           <div className="grid grid-cols-3 gap-2 sm:min-w-80">
             <div className="rounded-2xl bg-slate-50 p-3 text-center">
-              <p className="text-xs font-semibold text-slate-500">Total</p>
+              <p className="text-xs font-semibold text-slate-500">{copy.total}</p>
               <p className="text-xl font-extrabold text-slate-950">{stats.total}</p>
             </div>
             <div className="rounded-2xl bg-amber-50 p-3 text-center">
-              <p className="text-xs font-semibold text-amber-700">Pending</p>
+              <p className="text-xs font-semibold text-amber-700">{copy.pending}</p>
               <p className="text-xl font-extrabold text-amber-800">{stats.pending}</p>
             </div>
             <div className="rounded-2xl bg-emerald-50 p-3 text-center">
-              <p className="text-xs font-semibold text-emerald-700">Accepted</p>
+              <p className="text-xs font-semibold text-emerald-700">{copy.accepted}</p>
               <p className="text-xl font-extrabold text-emerald-800">{stats.accepted}</p>
             </div>
           </div>
@@ -305,7 +312,7 @@ export default function RequestsPage() {
               activeTab === 'sent' ? 'bg-white text-primary shadow-sm' : 'text-slate-600 hover:text-slate-950'
             )}
           >
-            Sent ({sentRequests.length})
+            {copy.sent} ({sentRequests.length})
           </button>
           <button
             type="button"
@@ -315,7 +322,7 @@ export default function RequestsPage() {
               activeTab === 'received' ? 'bg-white text-primary shadow-sm' : 'text-slate-600 hover:text-slate-950'
             )}
           >
-            Received ({receivedRequests.length})
+            {copy.received} ({receivedRequests.length})
           </button>
         </div>
 
@@ -334,7 +341,7 @@ export default function RequestsPage() {
               href="/search"
               className="mt-4 inline-flex rounded-2xl bg-primary px-5 py-3 text-sm font-bold text-white transition hover:bg-primary-dark"
             >
-              Find a professional
+              {copy.findProfessional}
             </Link>
           </div>
         ) : (
@@ -346,6 +353,8 @@ export default function RequestsPage() {
                 user={user}
                 mode={activeTab}
                 highlighted={request.requestId === focusedRequestId}
+                copy={copy}
+                locale={locale}
               />
             ))}
           </div>

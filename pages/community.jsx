@@ -10,6 +10,7 @@ import {
 import { FiCalendar, FiCheck, FiClock, FiFilter, FiMapPin, FiRefreshCw, FiSearch, FiUser } from 'react-icons/fi';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
+import { buildCommunityPostPath } from '../lib/profile-routing';
 import { getBlogPosts, createBlogPost, toggleBlogPostLike } from '../lib/firestore';
 import { db, storage } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
@@ -371,9 +372,9 @@ export default function CommunityPage() {
   });
   const activeSortOption = sortOptions.find(function (option) { return option.value === sortBy; }) || sortOptions[0];
 
-  function openPost(postId) {
-    if (!postId) return;
-    router.push('/community/' + postId);
+  function openPost(post) {
+    if (!post?.id) return;
+    router.push(buildCommunityPostPath(post));
   }
 
   async function handleLike(post) {
@@ -725,7 +726,7 @@ export default function CommunityPage() {
                 <article
                   key={post.id}
                   className="group flex cursor-pointer flex-col overflow-hidden rounded-[28px] border border-[#d7e4f3] bg-white shadow-[0_18px_45px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-1 hover:border-[#b8d5f4] hover:shadow-[0_24px_60px_rgba(15,23,42,0.1)]"
-                  onClick={function () { openPost(post.id); }}
+                  onClick={function () { openPost(post); }}
                 >
                   {primaryMedia && (
                     <div className="relative aspect-[16/10] w-full overflow-hidden border-b border-[#e5eef8] bg-[#f3f8fd]">
@@ -836,7 +837,7 @@ export default function CommunityPage() {
                           {post.likes || 0}
                         </button>
                         <button
-                          onClick={function (e) { e.stopPropagation(); openPost(post.id); }}
+                          onClick={function (e) { e.stopPropagation(); openPost(post); }}
                           className="inline-flex h-10 items-center gap-2 rounded-full border border-slate-200 px-3 text-sm font-bold text-slate-500 transition-colors hover:border-primary hover:text-primary"
                         >
                           <HiChat className="h-4.5 w-4.5" />

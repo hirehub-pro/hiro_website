@@ -11,7 +11,7 @@ import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, storage } from '../../lib/firebase';
 import {
-  getUserProfile,
+  resolveUserProfile,
   getWorkerProjects,
   getWorkerReviews,
   addReview,
@@ -25,6 +25,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { getProfilePageSeo } from '../../lib/page-seo';
 import { absoluteUrl } from '../../lib/seo-locale';
+import { buildProfilePath, buildProfileSlug } from '../../lib/profile-routing';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
@@ -217,9 +218,10 @@ export default function ProfilePage({
   initialProfile = null,
   initialProjects = [],
   initialReviews = [],
+  initialProfileRoute = '',
 }) {
   const router            = useRouter();
-  const { uid }           = router.query;
+  const profileRoute      = typeof router.query.uid === 'string' ? router.query.uid : '';
   const { user, profile: myProfile } = useAuth();
   const { t, locale }     = useLanguage();
 
@@ -229,7 +231,7 @@ export default function ProfilePage({
   const [tab, setTab]             = useState('projects');
   const [loadingProfile, setLoadingProfile] = useState(!initialProfile);
   const [loadingData, setLoadingData]       = useState(false);
-  const [loadedProfileUid, setLoadedProfileUid] = useState(initialProfile?.uid || '');
+  const [loadedProfileRoute, setLoadedProfileRoute] = useState(initialProfileRoute);
   const [loadedDataUid, setLoadedDataUid] = useState(initialProfile?.uid || '');
   const [workerSchedule, setWorkerSchedule] = useState(null);
   const [loadingSchedule, setLoadingSchedule] = useState(false);
@@ -264,23 +266,25 @@ export default function ProfilePage({
   const avatarInputRef = useRef(null);
   const socialLinks = getNormalizedSocialLinks(profile);
   const seo = getProfilePageSeo(profile);
-  const canonicalUrl = uid ? absoluteUrl(`/profile/${uid}`) : absoluteUrl('/search');
+  const uid = profile?.uid || '';
+  const canonicalUrl = profile ? absoluteUrl(buildProfilePath(profile)) : absoluteUrl('/search');
 
   useEffect(() => {
-    if (!uid) return;
-    if (loadedProfileUid === uid) {
+    if (!profileRoute) return;
+    if (loadedProfileRoute === profileRoute) {
       setLoadingProfile(false);
       return;
     }
     setLoadingProfile(true);
-    getUserProfile(uid)
+    resolveUserProfile(profileRoute)
       .then((nextProfile) => {
         setProfile(nextProfile);
-        setLoadedProfileUid(uid);
+        setLoadedProfileRoute(profileRoute);
+        setLoadedDataUid('');
       })
       .catch(console.error)
       .finally(() => setLoadingProfile(false));
-  }, [uid, loadedProfileUid]);
+  }, [profileRoute, loadedProfileRoute]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1626,19 +1630,30 @@ function InfoRow({ label, value, icon }) {
 }
 
 export async function getServerSideProps({ params }) {
-  const uid = String(params?.uid || '').trim();
+  const profileRoute = String(params?.uid || '').trim();
 
-  if (!uid) {
+  if (!profileRoute) {
     return { notFound: true };
   }
 
   try {
-    const initialProfile = await getUserProfile(uid);
+    const initialProfile = await resolveUserProfile(profileRoute);
 
     if (!initialProfile) {
       return { notFound: true };
     }
 
+    const canonicalSlug = buildProfileSlug(initialProfile);
+    if (profileRoute !== canonicalSlug) {
+      return {
+        redirect: {
+          destination: `/profile/${canonicalSlug}`,
+          permanent: false,
+        },
+      };
+    }
+
+    const uid = initialProfile.uid;
     const [initialProjects, initialReviews] = await Promise.all([
       getWorkerProjects(uid),
       getWorkerReviews(uid),
@@ -1655,6 +1670,7 @@ export async function getServerSideProps({ params }) {
         initialProfile: profileWithCounts,
         initialProjects,
         initialReviews,
+        initialProfileRoute: profileRoute,
       }),
     };
   } catch (error) {

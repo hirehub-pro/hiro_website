@@ -11,8 +11,9 @@ import { useLanguage } from '../../contexts/LanguageContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { getCommunityPostSeo } from '../../lib/page-seo';
 import { absoluteUrl } from '../../lib/seo-locale';
+import { buildCommunityPostPath, buildCommunityPostSlug } from '../../lib/profile-routing';
 import {
-  getBlogPost,
+  resolveBlogPost,
   getBlogComments,
   createBlogComment,
   getUserProfile,
@@ -125,7 +126,7 @@ function getInitials(name) {
 
 export default function BlogPostPage() {
   const router = useRouter();
-  const { postId } = router.query;
+  const postRoute = typeof router.query.postId === 'string' ? router.query.postId : '';
   const { t, dir } = useLanguage();
   const { user, profile } = useAuth();
 
@@ -141,15 +142,13 @@ export default function BlogPostPage() {
   const mediaCarouselRef = useRef(null);
 
   useEffect(function () {
-    if (!postId) return;
+    if (!postRoute) return;
 
     async function loadData() {
       setLoading(true);
       try {
-        const [postData, commentData] = await Promise.all([
-          getBlogPost(postId),
-          getBlogComments(postId),
-        ]);
+        const postData = await resolveBlogPost(postRoute);
+        const commentData = postData ? await getBlogComments(postData.id) : [];
         const commentAuthorUids = Array.from(new Set(
           commentData
             .map(function (comment) { return comment.authorUid; })
@@ -168,6 +167,13 @@ export default function BlogPostPage() {
         setPost(postData);
         setComments(commentData);
         setCommentProfiles(Object.fromEntries(profileEntries));
+
+        if (postData) {
+          const canonicalSlug = buildCommunityPostSlug(postData);
+          if (canonicalSlug && canonicalSlug !== postRoute) {
+            router.replace(`/community/${canonicalSlug}`, undefined, { shallow: true });
+          }
+        }
       } catch (error) {
         toast.error('Failed to load post');
       } finally {
@@ -176,7 +182,7 @@ export default function BlogPostPage() {
     }
 
     loadData();
-  }, [postId]);
+  }, [postRoute, router]);
 
   const hasLiked = useMemo(function () {
     if (!user || !post) return false;
@@ -223,7 +229,7 @@ export default function BlogPostPage() {
     return [];
   }, [post]);
   const seo = getCommunityPostSeo(post);
-  const canonicalUrl = postId ? absoluteUrl(`/community/${postId}`) : absoluteUrl('/community');
+  const canonicalUrl = post ? absoluteUrl(buildCommunityPostPath(post)) : absoluteUrl('/community');
   const postDate = post ? normalizeDateValue(post.timestamp) : null;
   const postTimeLabel = postDate ? postDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
   const rawCategory = String(post?.rawCategory || '').trim().toLowerCase();
@@ -260,7 +266,7 @@ export default function BlogPostPage() {
     if (mediaCarouselRef.current) {
       mediaCarouselRef.current.scrollTo({ left: 0, behavior: 'auto' });
     }
-  }, [postId, mediaTypes.length]);
+  }, [postRoute, mediaTypes.length]);
 
   function scrollToMedia(index) {
     const container = mediaCarouselRef.current;

@@ -10,7 +10,7 @@ export default function LocalizedSearchCategoryPage({ locale, categorySlug, titl
   const alternateUrls = buildAlternateLanguageUrls(path);
   const canonicalUrl = absoluteUrl(locale === 'he' ? path : `/${locale}${path}`);
 
-  return (
+  return ( 
     <>
       <Head>
         <title>{title}</title>
