@@ -1,6 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import {
+  EmailAuthProvider,
+  linkWithCredential,
   onAuthStateChanged,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signInAnonymously,
@@ -63,6 +66,13 @@ function getFirebaseAuthMessage(error) {
       return 'Phone verification could not start. Refresh the page and try again.';
     case 'auth/operation-not-allowed':
       return 'This sign-in method is not enabled in Firebase Authentication.';
+    case 'auth/credential-already-in-use':
+    case 'auth/email-already-in-use':
+      return 'This email is already used by another account.';
+    case 'auth/invalid-email':
+      return 'Enter a valid email address.';
+    case 'auth/weak-password':
+      return 'Password should be at least 6 characters.';
     case 'auth/too-many-requests':
       return 'Too many attempts. Please wait a little before trying again.';
     case 'auth/invalid-verification-code':
@@ -72,6 +82,21 @@ function getFirebaseAuthMessage(error) {
     default:
       return error?.message || 'Authentication failed. Please try again.';
   }
+}
+
+function maskEmail(email) {
+  const normalizedEmail = String(email || '').trim();
+  const [localPart, domain] = normalizedEmail.split('@');
+
+  if (!localPart || !domain) {
+    return normalizedEmail;
+  }
+
+  if (localPart.length <= 2) {
+    return `${localPart[0] || ''}${'*'.repeat(Math.max(localPart.length - 1, 1))}@${domain}`;
+  }
+
+  return `${localPart[0]}${'*'.repeat(localPart.length - 2)}${localPart[localPart.length - 1]}@${domain}`;
 }
 
 export function AuthProvider({ children }) {
@@ -98,6 +123,69 @@ export function AuthProvider({ children }) {
   // Email / Password sign-in
   async function signInWithEmail(email, password) {
     return signInWithEmailAndPassword(auth, email, password);
+  }
+
+  async function verifyPhonePassword(phoneNumber, password) {
+    const userDoc = await getUserDocByPhone(phoneNumber);
+    const email = String(userDoc?.data()?.email || '').trim();
+
+    if (!userDoc || !email) {
+      throw new Error('No password sign-in account was found for this phone number.');
+    }
+
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      await signOut(auth);
+      return true;
+    } catch (error) {
+      try {
+        await signOut(auth);
+      } catch (signOutError) {
+        // Keep the original auth error below.
+      }
+
+      if (
+        error?.code === 'auth/invalid-credential' ||
+        error?.code === 'auth/wrong-password' ||
+        error?.code === 'auth/user-not-found'
+      ) {
+        throw new Error('The phone number or password is incorrect.');
+      }
+
+      throw new Error(getFirebaseAuthMessage(error));
+    }
+  }
+
+  async function getPasswordResetEmailHint(phoneNumber) {
+    const userDoc = await getUserDocByPhone(phoneNumber);
+    const email = String(userDoc?.data()?.email || '').trim();
+
+    if (!userDoc || !email) {
+      throw new Error('No password sign-in account was found for this phone number.');
+    }
+
+    return maskEmail(email);
+  }
+
+  async function sendPasswordResetForPhone(phoneNumber, emailInput) {
+    const userDoc = await getUserDocByPhone(phoneNumber);
+    const email = String(userDoc?.data()?.email || '').trim();
+    const submittedEmail = String(emailInput || '').trim().toLowerCase();
+
+    if (!userDoc || !email) {
+      throw new Error('No password sign-in account was found for this phone number.');
+    }
+
+    if (!submittedEmail || submittedEmail !== email.toLowerCase()) {
+      throw new Error('The phone number and email do not match.');
+    }
+
+    try {
+      await sendPasswordResetEmail(auth, email);
+      return email;
+    } catch (error) {
+      throw new Error(getFirebaseAuthMessage(error));
+    }
   }
 
   function normalizePhoneNumber(phoneNumber) {
@@ -265,6 +353,7 @@ export function AuthProvider({ children }) {
   async function completePhoneSignUp({
     name,
     email = '',
+    password = '',
     role,
     city,
     lat = null,
@@ -289,6 +378,22 @@ export function AuthProvider({ children }) {
 
     const userRef = doc(db, 'users', firebaseUser.uid);
     const existingUserSnap = await getDoc(userRef);
+    const normalizedEmail = String(email || '').trim();
+
+    if (normalizedEmail && password) {
+      const hasPasswordProvider = firebaseUser.providerData.some(
+        (provider) => provider.providerId === 'password'
+      );
+
+      if (!hasPasswordProvider) {
+        try {
+          const emailCredential = EmailAuthProvider.credential(normalizedEmail, password);
+          await linkWithCredential(firebaseUser, emailCredential);
+        } catch (error) {
+          throw new Error(getFirebaseAuthMessage(error));
+        }
+      }
+    }
 
     await updateProfile(firebaseUser, { displayName: name || firebaseUser.displayName || '' });
 
@@ -296,7 +401,7 @@ export function AuthProvider({ children }) {
       uid: firebaseUser.uid,
       name: name || firebaseUser.displayName || '',
       role,
-      email: email || '',
+      email: normalizedEmail,
       town: city || '',
       phone: normalizedPhone,
       optionalPhone: optionalPhone ? normalizePhoneNumber(optionalPhone) : '',
@@ -403,6 +508,9 @@ export function AuthProvider({ children }) {
         isWorker,
         isCustomer,
         signInWithEmail,
+        verifyPhonePassword,
+        getPasswordResetEmailHint,
+        sendPasswordResetForPhone,
         signUpWithEmail,
         checkPhoneAvailability,
         completePhoneSignUp,

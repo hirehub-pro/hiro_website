@@ -4,7 +4,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import toast from 'react-hot-toast';
-import { HiOutlineUser, HiBriefcase, HiOfficeBuilding, HiSparkles, HiDeviceMobile, HiKey, HiChevronDown, HiChevronUp, HiCheck, HiX, HiCreditCard, HiLocationMarker } from 'react-icons/hi';
+import { HiOutlineUser, HiBriefcase, HiOfficeBuilding, HiSparkles, HiDeviceMobile, HiKey, HiChevronDown, HiChevronUp, HiCheck, HiX, HiCreditCard, HiLocationMarker, HiLockClosed } from 'react-icons/hi';
 import clsx from 'clsx';
 import { doc, getDoc } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
@@ -31,6 +31,8 @@ export default function SignUpPage() {
   const [step, setStep] = useState('details');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [city, setCity] = useState('');
   const [selectedLat, setSelectedLat] = useState(null);
   const [selectedLng, setSelectedLng] = useState(null);
@@ -171,6 +173,10 @@ export default function SignUpPage() {
     e.preventDefault();
 
     if (!name.trim()) return toast.error('Please enter your full name');
+    if (!email.trim()) return toast.error('Please enter your email');
+    if (!password) return toast.error('Please enter your password');
+    if (password.length < 6) return toast.error('Password should be at least 6 characters');
+    if (password !== confirmPassword) return toast.error('Passwords do not match');
     if (!city.trim()) return toast.error('Please choose your city from the map');
     if (!Number.isFinite(selectedLat) || !Number.isFinite(selectedLng)) {
       return toast.error('Please confirm a city on the map');
@@ -238,6 +244,7 @@ export default function SignUpPage() {
       await completePhoneSignUp({
         name,
         email,
+        password,
         role,
         city,
         lat: selectedLat,
@@ -286,6 +293,7 @@ export default function SignUpPage() {
       await completePhoneSignUp({
         name,
         email,
+        password,
         role,
         city,
         lat: selectedLat,
@@ -383,8 +391,47 @@ export default function SignUpPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">{t.auth.email} (optional)</label>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input-field" />
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">{t.auth.email}</label>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="input-field"
+                    autoComplete="email"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">{t.auth.password}</label>
+                  <div className="relative">
+                    <HiLockClosed className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="input-field pl-12"
+                      autoComplete="new-password"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">{t.auth.confirmPassword}</label>
+                  <div className="relative">
+                    <HiLockClosed className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="input-field pl-12"
+                      autoComplete="new-password"
+                    />
+                  </div>
                 </div>
 
                 <div>

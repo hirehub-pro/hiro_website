@@ -337,8 +337,7 @@ export default function ProfileScheduleView({ uid, profile }) {
     const roomId = [user.uid, profile.uid].sort().join('_');
     const requestRef = doc(collection(db, 'users', user.uid, 'requests'));
     const requestId = requestRef.id;
-    const senderRequestToMeRef = doc(collection(db, 'users', user.uid, 'RequestToMe'));
-    const workerRequestRef = doc(collection(db, 'users', profile.uid, 'RequestToMe'));
+    const workerRequestRef = doc(db, 'users', profile.uid, 'RequestToMe', requestId);
     const workerNotificationRef = doc(db, 'users', profile.uid, 'notifications', requestId);
     const profession = Array.isArray(profile.professions) ? (profile.professions[0] || '') : '';
     const fromName = myProfile?.name || user.displayName || 'User';
@@ -422,10 +421,6 @@ export default function ProfileScheduleView({ uid, profile }) {
 
       await Promise.all([
         setDoc(requestRef, requestPayload),
-        setDoc(senderRequestToMeRef, {
-          ...requestPayload,
-          receivedAt: serverTimestamp(),
-        }),
         setDoc(workerRequestRef, {
           ...requestPayload,
           receivedAt: serverTimestamp(),

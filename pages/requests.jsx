@@ -200,10 +200,10 @@ export default function RequestsPage() {
 
         setSentRequests(sortByNewest(sentSnap.docs
           .map((requestDoc) => normalizeRequestDocument(requestDoc.id, requestDoc.data()))
-          .filter((request) => request.type === 'work_request')));
+          .filter((request) => request.type === 'work_request' && request.fromId === user.uid)));
         setReceivedRequests(sortByNewest(receivedSnap.docs
           .map((requestDoc) => normalizeRequestDocument(requestDoc.id, requestDoc.data()))
-          .filter((request) => request.type === 'work_request')));
+          .filter((request) => request.type === 'work_request' && request.workerId === user.uid)));
       } catch (loadError) {
         if (!cancelled) {
           console.error('Failed to load requests:', loadError);

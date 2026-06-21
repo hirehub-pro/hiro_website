@@ -1,6 +1,15 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  async rewrites() {
+    return [
+      {
+        source: '/sign/:path*',
+        destination:
+          'https://us-central1-hire-hub-fe6c4.cloudfunctions.net/publicDocumentSigning/sign/:path*',
+      },
+    ];
+  },
   async headers() {
     return [
       {

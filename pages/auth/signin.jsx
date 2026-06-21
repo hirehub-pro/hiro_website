@@ -4,7 +4,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { FaApple, FaGooglePlay } from 'react-icons/fa';
-import { HiDesktopComputer, HiDeviceMobile, HiKey, HiOutlineUser, HiShieldCheck, HiSparkles } from 'react-icons/hi';
+import { HiDesktopComputer, HiDeviceMobile, HiKey, HiLockClosed, HiMail, HiOutlineUser, HiShieldCheck, HiSparkles } from 'react-icons/hi';
 import clsx from 'clsx';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -15,6 +15,9 @@ SignInPage.showFooter = false;
 
 export default function SignInPage() {
   const {
+    verifyPhonePassword,
+    getPasswordResetEmailHint,
+    sendPasswordResetForPhone,
     sendPhoneVerification,
     confirmPhoneVerification,
     resetPhoneVerification,
@@ -23,6 +26,10 @@ export default function SignInPage() {
   const router = useRouter();
 
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [password, setPassword] = useState('');
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetEmailHint, setResetEmailHint] = useState('');
+  const [showPasswordReset, setShowPasswordReset] = useState(false);
   const [verificationCode, setVerificationCode] = useState('');
   const [verificationSent, setVerificationSent] = useState(false);
   const [sentToPhone, setSentToPhone] = useState('');
@@ -64,9 +71,15 @@ export default function SignInPage() {
       return;
     }
 
+    if (!password) {
+      toast.error('Please enter your password.');
+      return;
+    }
+
     setLoading(true);
 
     try {
+      await verifyPhonePassword(phoneNumber, password);
       const { formattedPhoneNumber } = await sendPhoneVerification(phoneNumber);
       setSentToPhone(formattedPhoneNumber);
       setVerificationSent(true);
@@ -99,9 +112,58 @@ export default function SignInPage() {
     }
   }
 
+  async function handleForgotPassword() {
+    if (!phoneNumber.trim()) {
+      toast.error('Please enter your phone number first.');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const emailHint = await getPasswordResetEmailHint(phoneNumber);
+      setResetEmailHint(emailHint);
+      setShowPasswordReset(true);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSendPasswordReset() {
+    if (!phoneNumber.trim()) {
+      toast.error('Please enter your phone number first.');
+      return;
+    }
+
+    if (!resetEmail.trim()) {
+      toast.error('Please enter your email address.');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      await sendPasswordResetForPhone(phoneNumber, resetEmail);
+      toast.success('Password reset email sent.');
+      setShowPasswordReset(false);
+      setResetEmail('');
+      setResetEmailHint('');
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function handleChangePhone() {
     resetPhoneVerification();
     setVerificationSent(false);
+    setPassword('');
+    setResetEmail('');
+    setResetEmailHint('');
+    setShowPasswordReset(false);
     setVerificationCode('');
     setSentToPhone('');
   }
@@ -206,7 +268,7 @@ export default function SignInPage() {
               </div>
               <h2 className="font-display text-2xl font-extrabold text-gray-950 sm:text-3xl">{t.auth.signIn}</h2>
               <p className="mt-2 text-sm text-gray-500">
-                {verificationSent ? 'Enter the code we sent to your phone.' : 'Use your phone number to continue in seconds.'}
+                {verificationSent ? 'Enter the code we sent to your phone.' : 'Use your phone number and password to continue.'}
               </p>
             </div>
 
@@ -222,10 +284,43 @@ export default function SignInPage() {
                       type="tel"
                       required
                       value={phoneNumber}
-                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      onChange={(e) => {
+                        setPhoneNumber(e.target.value);
+                        setShowPasswordReset(false);
+                        setResetEmail('');
+                        setResetEmailHint('');
+                      }}
                       placeholder={t.auth.phonePlaceholder}
                       className="input-field min-h-[52px] pl-12 text-base"
                       autoComplete="tel"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-1 flex items-center justify-between gap-3">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      {t.auth.password}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleForgotPassword}
+                      disabled={loading}
+                      className="text-sm font-semibold text-primary underline-offset-4 transition hover:underline disabled:cursor-not-allowed disabled:text-gray-400"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <HiLockClosed className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="password"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder={t.auth.password}
+                      className="input-field min-h-[52px] pl-12 text-base"
+                      autoComplete="current-password"
                     />
                   </div>
                 </div>
@@ -352,6 +447,86 @@ export default function SignInPage() {
           )}
         </div>
       </div>
+
+      {showPasswordReset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/50 px-4 py-6 backdrop-blur-sm">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="password-reset-title"
+            className="relative w-full max-w-md overflow-hidden rounded-[28px] border border-white/70 bg-white p-5 shadow-hero sm:p-6"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setShowPasswordReset(false);
+                setResetEmail('');
+                setResetEmailHint('');
+              }}
+              className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-500 transition hover:bg-slate-200 hover:text-slate-800"
+              aria-label="Close password reset"
+            >
+              X
+            </button>
+
+            <div className="pr-10">
+              <p id="password-reset-title" className="font-display text-2xl font-extrabold text-gray-950">
+                Reset password
+              </p>
+              <p className="mt-2 text-sm leading-6 text-gray-500">
+                Enter the email linked to this phone number before we send the reset link.
+              </p>
+            </div>
+
+            {resetEmailHint && (
+              <div className="mt-4 rounded-2xl border border-primary-100 bg-primary-50 px-4 py-3 text-sm text-primary-dark">
+                Email on this account: <span className="font-bold">{resetEmailHint}</span>
+              </div>
+            )}
+
+            <div className="mt-4">
+              <label className="mb-1 block text-sm font-semibold text-gray-700">
+                {t.auth.email}
+              </label>
+              <div className="relative">
+                <HiMail className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="email"
+                  required
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  placeholder={t.auth.email}
+                  className="input-field min-h-[52px] pl-12 text-base"
+                  autoComplete="email"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPasswordReset(false);
+                  setResetEmail('');
+                  setResetEmailHint('');
+                }}
+                className="btn-ghost min-h-[48px]"
+              >
+                {t.common.cancel}
+              </button>
+              <button
+                type="button"
+                onClick={handleSendPasswordReset}
+                disabled={loading}
+                className="btn-primary min-h-[48px]"
+              >
+                {loading ? t.common.loading : 'Send reset'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
