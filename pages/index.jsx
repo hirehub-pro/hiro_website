@@ -35,8 +35,8 @@ const SEO_KEYWORDS = [
   'local services',
   'home services',
 ].join(', ');
-const SITE_NAME = 'Hiro';
-const SITE_ALTERNATE_NAME = 'הירו';
+const SITE_NAME = 'הירו';
+const SITE_ALTERNATE_NAME = 'hiro';
 const HOMEPAGE_URL = 'https://hiro-services.com/';
 const LOGO_URL = 'https://hiro-services.com/web-app-manifest-512x512.png';
 const structuredData = {

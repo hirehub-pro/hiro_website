@@ -16,6 +16,10 @@ export default function LocalizedSearchCategoryPage({ locale, categorySlug, titl
         <title>{title}</title>
         <meta name="description" content={description} />
         {keywords ? <meta name="keywords" content={keywords} /> : null}
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={description} />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content={canonicalUrl} />
         <link rel="canonical" href={canonicalUrl} />
         {alternateUrls.map((alternate) => (
           <link

@@ -26,6 +26,7 @@ import { useLanguage } from '../../contexts/LanguageContext';
 import { getProfilePageSeo } from '../../lib/page-seo';
 import { absoluteUrl } from '../../lib/seo-locale';
 import { buildProfilePath, buildProfileSlug } from '../../lib/profile-routing';
+import { slugifyProfession } from '../../lib/search-routing';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
@@ -72,6 +73,32 @@ function createEmptySocialLink() {
     name: '',
     url: '',
   };
+}
+
+function getHebrewProfessionLabels(professions, professionItems) {
+  const items = Array.isArray(professionItems) ? professionItems : [];
+  const labelBySlug = items.reduce((acc, item) => {
+    const label = String(item?.he || item?.en || item?.logo || '').trim();
+    if (!label) return acc;
+
+    [item?.value, item?.en, item?.he, item?.ar, item?.logo]
+      .map(slugifyProfession)
+      .filter(Boolean)
+      .forEach((slug) => {
+        acc[slug] = label;
+      });
+
+    return acc;
+  }, {});
+
+  return (Array.isArray(professions) ? professions : [])
+    .map((profession) => {
+      const raw = String(profession || '').trim();
+      if (!raw) return '';
+      return labelBySlug[slugifyProfession(raw)] || raw;
+    })
+    .filter(Boolean)
+    .slice(0, 3);
 }
 
 function createContactDraft(profile) {
@@ -265,7 +292,6 @@ export default function ProfilePage({
   const [savingProfessions, setSavingProfessions] = useState(false);
   const avatarInputRef = useRef(null);
   const socialLinks = getNormalizedSocialLinks(profile);
-  const seo = getProfilePageSeo(profile);
   const uid = profile?.uid || '';
   const canonicalUrl = profile ? absoluteUrl(buildProfilePath(profile)) : absoluteUrl('/search');
 
@@ -303,6 +329,10 @@ export default function ProfilePage({
             return {
               id: String(item.id ?? index),
               label,
+              he: item.he || item.en || item.logo || label,
+              en: item.en || item.logo || label,
+              ar: item.ar || '',
+              logo: item.logo || '',
               value,
             };
           })
@@ -398,6 +428,10 @@ export default function ProfilePage({
       professionLabelMap[value] || value
     ))
   ), [profile?.professions, professionLabelMap]);
+  const seoProfessionLabels = professionOptions.length > 0
+    ? getHebrewProfessionLabels(profile?.professions, professionOptions)
+    : profile?.professionLabelsHe;
+  const seo = getProfilePageSeo(profile, { professionLabels: seoProfessionLabels });
 
   const filteredProfessionOptions = useMemo(() => {
     const searchValue = professionSearch.trim().toLowerCase();
@@ -885,6 +919,29 @@ export default function ProfilePage({
     if (!current) return false;
     return current >= vacation.start && current <= vacation.end;
   });
+  const profileImageUrl = String(profile?.profileImageUrl || '').trim();
+  const projectImageUrls = (Array.isArray(projects) ? projects : [])
+    .map((project) => String(project?.imageUrl || '').trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  const previewImageUrls = [
+    profileImageUrl,
+    ...projectImageUrls,
+  ].filter(Boolean);
+  const profileStructuredData = profile ? {
+    '@context': 'https://schema.org',
+    '@type': profile.role === 'worker' ? 'LocalBusiness' : 'Person',
+    name: profile.name || 'Hiro profile',
+    description: seo.description,
+    url: canonicalUrl,
+    ...(previewImageUrls.length > 0 ? { image: previewImageUrls } : {}),
+    ...(profile.role === 'worker' && displayProfessions.length > 0
+      ? { knowsAbout: displayProfessions.slice(0, 3) }
+      : {}),
+    ...(profile.town || profile.city
+      ? { areaServed: profile.town || profile.city }
+      : {}),
+  } : null;
 
   if (loadingProfile) {
     return (
@@ -925,8 +982,22 @@ export default function ProfilePage({
         <meta property="og:description" content={seo.description} />
         <meta property="og:type" content="profile" />
         <meta property="og:url" content={canonicalUrl} />
-        {profile.profileImageUrl ? <meta property="og:image" content={profile.profileImageUrl} /> : null}
+        {previewImageUrls.map((imageUrl, index) => (
+          <meta key={`og-image-${index}-${imageUrl}`} property="og:image" content={imageUrl} />
+        ))}
+        {previewImageUrls.map((imageUrl, index) => (
+          <meta key={`og-image-secure-${index}-${imageUrl}`} property="og:image:secure_url" content={imageUrl} />
+        ))}
+        {previewImageUrls.length > 0 ? <meta property="og:image:alt" content={profile.name || seo.title} /> : null}
+        {previewImageUrls.length > 0 ? <meta name="twitter:card" content="summary_large_image" /> : null}
+        {previewImageUrls[0] ? <meta name="twitter:image" content={previewImageUrls[0]} /> : null}
         <link rel="canonical" href={canonicalUrl} />
+        {profileStructuredData ? (
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(profileStructuredData) }}
+          />
+        ) : null}
       </Head>
 
       <ProfileHeader
@@ -1046,30 +1117,30 @@ export default function ProfilePage({
 
         {tab === 'about' && (
           <div className="space-y-5">
-            {(profile.description || isOwnProfile) && (
-              <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <h3 className="font-bold text-gray-900 flex items-center gap-2">
-                    <span className="w-7 h-7 rounded-xl bg-indigo-50 flex items-center justify-center text-base">📝</span>
-                    {t.profile.bio}
-                  </h3>
-                  {isOwnProfile && (
-                    <button
-                      type="button"
-                      onClick={handleOpenBioEditor}
-                      className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50"
-                    >
-                      Edit
-                    </button>
-                  )}
-                </div>
-                {profile.description ? (
-                  <p className="text-sm text-gray-600 leading-relaxed">{profile.description}</p>
-                ) : (
-                  <p className="text-sm text-gray-500">Add a short biography so people can learn more about you.</p>
+            <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                  <span className="w-7 h-7 rounded-xl bg-indigo-50 flex items-center justify-center text-base">📝</span>
+                  {t.profile.bio}
+                </h3>
+                {isOwnProfile && (
+                  <button
+                    type="button"
+                    onClick={handleOpenBioEditor}
+                    className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+                  >
+                    Edit
+                  </button>
                 )}
               </div>
-            )}
+              {profile.description ? (
+                <p className="text-sm text-gray-600 leading-relaxed">{profile.description}</p>
+              ) : (
+                <p className="text-sm text-gray-500">
+                  {isOwnProfile ? t.profile.addBioPrompt : t.profile.noBio}
+                </p>
+              )}
+            </div>
 
             {socialLinks.length > 0 && (
               <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
@@ -1654,13 +1725,19 @@ export async function getServerSideProps({ params }) {
     }
 
     const uid = initialProfile.uid;
-    const [initialProjects, initialReviews] = await Promise.all([
+    const [initialProjects, initialReviews, professionsSnap] = await Promise.all([
       getWorkerProjects(uid),
       getWorkerReviews(uid),
+      getDoc(doc(db, 'metadata', 'professions')).catch(() => null),
     ]);
+    const professionLabelsHe = getHebrewProfessionLabels(
+      initialProfile.professions,
+      professionsSnap?.data()?.items
+    );
 
     const profileWithCounts = {
       ...initialProfile,
+      professionLabelsHe,
       projectCount: initialProjects.length,
       reviewCount: initialProfile.reviewCount ?? initialReviews.length,
     };

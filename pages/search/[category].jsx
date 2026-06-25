@@ -21,6 +21,10 @@ export default function SearchCategoryPage({
         <title>{categoryTitle}</title>
         <meta name="description" content={pageDescription} />
         {pageKeywords ? <meta name="keywords" content={pageKeywords} /> : null}
+        <meta property="og:title" content={categoryTitle} />
+        <meta property="og:description" content={pageDescription} />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content={absoluteUrl(path)} />
         {categorySlug ? <link rel="canonical" href={absoluteUrl(path)} /> : null}
         {alternateUrls.map((alternate) => (
           <link
