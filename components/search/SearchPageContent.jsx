@@ -34,6 +34,10 @@ function getProfessionLabel(profession, locale) {
   return profession[locale] || profession.en || profession.he || profession.ar || profession.logo || 'Profession';
 }
 
+function getProfessionSearchValue(profession, fallback = '') {
+  return profession?.value || profession?.en || profession?.logo || fallback;
+}
+
 const professionLogoIcons = {
   ac: FaSnowflake,
   air_conditioning: FaSnowflake,
@@ -227,11 +231,15 @@ export default function SearchPageContent({ categorySlug = '' }) {
 
     if (categorySlug && professions.length > 0) {
       const matchedProfession = findProfessionBySlug(professions, categorySlug);
-      const resolvedValue = matchedProfession?.value
-        || matchedProfession?.en
-        || String(categorySlug).replace(/-/g, ' ');
+      const resolvedValue = getProfessionSearchValue(
+        matchedProfession,
+        String(categorySlug).replace(/-/g, ' ')
+      );
+      const resolvedLabel = matchedProfession
+        ? getProfessionLabel(matchedProfession, locale)
+        : resolvedValue;
 
-      setQuery(resolvedValue);
+      setQuery(resolvedLabel);
       doSearch(resolvedValue, userLat, userLng);
       return;
     }
@@ -246,7 +254,7 @@ export default function SearchPageContent({ categorySlug = '' }) {
     setWorkers([]);
     setHasSearched(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categorySlug, professions, router.isReady, router.query.q]);
+  }, [categorySlug, locale, professions, router.isReady, router.query.q]);
 
   useEffect(() => {
     if (!hasSearched || !String(query || '').trim()) return;
@@ -313,14 +321,22 @@ export default function SearchPageContent({ categorySlug = '' }) {
     if (!normalizedQuery) return;
 
     const matchedProfession = professions.find((profession) => {
-      const candidates = [profession.value, profession.en, profession.he, profession.ar, profession.logo];
+      const candidates = [
+        profession.value,
+        profession.en,
+        profession.he,
+        profession.ar,
+        profession.am,
+        profession.ru,
+        profession.logo,
+      ];
       return candidates.some((value) => (
         String(value || '').trim().toLowerCase() === normalizedQuery.toLowerCase()
       ));
     });
 
     if (matchedProfession) {
-      const professionValue = matchedProfession.value || matchedProfession.en || normalizedQuery;
+      const professionValue = getProfessionSearchValue(matchedProfession, normalizedQuery);
       router.push(buildLocalizedSearchPath({
         categorySlug: slugifyProfession(professionValue),
         locale: routeLocale,
@@ -332,7 +348,7 @@ export default function SearchPageContent({ categorySlug = '' }) {
   }
 
   function chooseProfession(profession) {
-    const value = profession.value || profession.en || getProfessionLabel(profession, locale);
+    const value = getProfessionSearchValue(profession, getProfessionLabel(profession, locale));
     router.push(buildLocalizedSearchPath({
       categorySlug: slugifyProfession(value),
       locale: routeLocale,
@@ -342,6 +358,9 @@ export default function SearchPageContent({ categorySlug = '' }) {
   const matchedProfession = useMemo(() => (
     categorySlug ? findProfessionBySlug(professions, categorySlug) : null
   ), [categorySlug, professions]);
+  const matchedProfessionLabel = matchedProfession
+    ? getProfessionLabel(matchedProfession, locale)
+    : '';
   const matchedProfessionTerms = useMemo(() => {
     if (!matchedProfession) return [];
 
@@ -412,11 +431,12 @@ export default function SearchPageContent({ categorySlug = '' }) {
   const categorySeo = useMemo(() => {
     if (!categorySlug) return null;
     const professionSlug = matchedProfession
-      ? slugifyProfession(matchedProfession.value || matchedProfession.en || matchedProfession.logo || categorySlug)
+      ? slugifyProfession(getProfessionSearchValue(matchedProfession, categorySlug))
       : categorySlug;
-    return getProfessionSeoData(professionSlug, locale);
-  }, [categorySlug, locale, matchedProfession]);
-  const pageTitle = categorySeo?.title || (query ? `"${query}" – Hiro` : 'Search – Hiro');
+    return getProfessionSeoData(professionSlug, locale, matchedProfessionLabel);
+  }, [categorySlug, locale, matchedProfession, matchedProfessionLabel]);
+  const searchDisplayLabel = matchedProfessionLabel || query;
+  const pageTitle = categorySeo?.title || (searchDisplayLabel ? `"${searchDisplayLabel}" – Hiro` : 'Search – Hiro');
   const pageDescription = categorySeo?.description || 'Find trusted professionals near you on Hiro.';
   const pageKeywords = categorySeo?.keywords?.join(', ') || '';
 
@@ -550,8 +570,8 @@ export default function SearchPageContent({ categorySlug = '' }) {
                 </span>
                 <span className="text-xs font-medium text-gray-500">
                   {displayedWorkers.length === 1
-                    ? `result for "${query}"`
-                    : `results for "${query}"`}
+                    ? `result for "${searchDisplayLabel}"`
+                    : `results for "${searchDisplayLabel}"`}
                 </span>
               </div>
 
@@ -588,7 +608,7 @@ export default function SearchPageContent({ categorySlug = '' }) {
           <section className="mb-5 rounded-[26px] border border-primary/10 bg-primary-50/60 px-4 py-4">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary/70">Hiro</p>
             <h1 className="mt-2 text-xl font-extrabold tracking-tight text-slate-900 sm:text-2xl">
-              {matchedProfession ? getProfessionLabel(matchedProfession, locale) : query}
+              {searchDisplayLabel}
             </h1>
             <p className="mt-2 text-sm leading-6 text-slate-600">
               {categorySeo.intro}
