@@ -27,6 +27,7 @@ import { getProfilePageSeo } from '../../lib/page-seo';
 import { absoluteUrl } from '../../lib/seo-locale';
 import { buildProfilePath, buildProfileSlug } from '../../lib/profile-routing';
 import { slugifyProfession } from '../../lib/search-routing';
+import { createTaxAuthorityAuthorizationUrl } from '../../lib/taxAuthority';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
@@ -290,6 +291,7 @@ export default function ProfilePage({
   const [editingProfessions, setEditingProfessions] = useState([]);
   const [professionSearch, setProfessionSearch] = useState('');
   const [savingProfessions, setSavingProfessions] = useState(false);
+  const [taxAuthorityConnecting, setTaxAuthorityConnecting] = useState(false);
   const avatarInputRef = useRef(null);
   const socialLinks = getNormalizedSocialLinks(profile);
   const uid = profile?.uid || '';
@@ -734,6 +736,24 @@ export default function ProfilePage({
     }
   }
 
+  async function handleConnectTaxAuthority() {
+    if (!isOwnProfile || taxAuthorityConnecting) return;
+
+    try {
+      setTaxAuthorityConnecting(true);
+      const { authorizationUrl } = await createTaxAuthorityAuthorizationUrl();
+      if (!authorizationUrl) {
+        throw new Error('Tax Authority authorization URL was not returned.');
+      }
+      window.open(authorizationUrl, '_blank', 'noopener,noreferrer');
+      toast.success(t.profile.taxAuthorityOpened);
+    } catch (error) {
+      toast.error(error?.message || 'Could not open Tax Authority authorization.');
+    } finally {
+      setTaxAuthorityConnecting(false);
+    }
+  }
+
   async function updateSelectedDayStatus(status) {
     if (!user || user.uid !== uid || profile?.role !== 'worker') {
       toast.error('Only the worker can update this schedule');
@@ -1007,6 +1027,8 @@ export default function ProfilePage({
         onMessageClick={handleOpenMessage}
         onAvatarClick={handleAvatarClick}
         onProfessionsClick={isOwnProfile ? handleOpenProfessionEditor : null}
+        onTaxAuthorityConnectClick={isOwnProfile ? handleConnectTaxAuthority : null}
+        taxAuthorityConnecting={taxAuthorityConnecting}
       />
 
       <div className="mt-4 border-t border-gray-100" />

@@ -12,7 +12,6 @@ import {
   FiLayers,
   FiPlus,
   FiPrinter,
-  FiSave,
   FiSearch,
   FiTrash2,
   FiUser,
@@ -83,6 +82,10 @@ function documentTypeUsesCounter(value) {
 
 function isTaxInvoiceDocumentType(value) {
   return value === 'tax_invoice' || value === 'tax_invoice_receipt';
+}
+
+function normalizeNineDigitInput(value) {
+  return String(value || '').replace(/\D/g, '').slice(0, 9);
 }
 
 function documentTypeConfig(value) {
@@ -168,6 +171,7 @@ export default function WorkerInvoicesPage() {
   const appliedClientPrefillRef = useRef('');
   const [verificationChecked, setVerificationChecked] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState('');
+  const [businessVerificationInfo, setBusinessVerificationInfo] = useState(null);
   const { showDueDate, showPaymentDetails, showPaymentType } = useMemo(
     () => documentTypeConfig(documentType),
     [documentType]
@@ -203,10 +207,12 @@ export default function WorkerInvoicesPage() {
           verificationInfo?.status || profile?.businessVerificationStatus || ''
         ).trim().toLowerCase();
 
+        setBusinessVerificationInfo(verificationInfo);
         setVerificationStatus(verificationInfo ? (verificationStatus || 'pending') : 'not_submitted');
         setVerificationChecked(true);
       } catch (error) {
         if (!cancelled) {
+          setBusinessVerificationInfo(null);
           setVerificationStatus('not_submitted');
           setVerificationChecked(true);
         }
@@ -233,7 +239,7 @@ export default function WorkerInvoicesPage() {
       setIssueDate(parsed.issueDate || todayKey());
       setDueDate(parsed.dueDate || dueDateKey());
       setClientName(parsed.clientName || '');
-      setClientId(parsed.clientId || '');
+      setClientId(normalizeNineDigitInput(parsed.clientId || ''));
       setClientEmail(parsed.clientEmail || '');
       setClientPhone(parsed.clientPhone || '');
       setClientCity(parsed.clientCity || '');
@@ -347,7 +353,7 @@ export default function WorkerInvoicesPage() {
       if (cancelled) return;
 
       setClientName(clientProfile?.name || rawClientName || '');
-      setClientId(clientBusinessId || '');
+      setClientId(normalizeNineDigitInput(clientBusinessId || ''));
       setClientEmail(clientProfile?.email || rawClientEmail || '');
       setClientPhone(clientProfile?.phone || clientProfile?.optionalPhone || rawClientPhone || '');
       setClientCity(clientProfile?.town || clientProfile?.city || rawClientCity || '');
@@ -580,31 +586,6 @@ export default function WorkerInvoicesPage() {
     });
   }
 
-  function saveDraft() {
-    if (typeof window === 'undefined') return;
-
-    const nextDraft = {
-      invoiceNumber,
-      issueDate,
-      dueDate,
-      clientName,
-      clientId,
-      clientEmail,
-      clientPhone,
-      clientCity,
-      documentType,
-      documentDescription,
-      vatRate,
-      paymentTerms,
-      notes,
-      lineItems,
-      payments,
-    };
-
-    window.localStorage.setItem(draftStorageKey, JSON.stringify(nextDraft));
-    toast.success(copy.draftSaved);
-  }
-
   function buildInvoicePayload() {
     return {
       invoiceNumber,
@@ -627,6 +608,7 @@ export default function WorkerInvoicesPage() {
       amountDue,
       locale,
       createdBy: {
+        id: businessVerificationInfo?.businessId || profile?.businessId || user?.uid || '',
         name: profile?.name || 'Hiro Pro',
         phone: profile?.phone || '',
         email: profile?.email || user?.email || '',
@@ -640,6 +622,11 @@ export default function WorkerInvoicesPage() {
   function validateInvoiceBeforePreview() {
     if (!clientName.trim()) {
       toast.error(copy.clientNameRequired);
+      return false;
+    }
+
+    if (!/^\d{9}$/.test(clientId)) {
+      toast.error(copy.clientIdInvalid);
       return false;
     }
 
@@ -745,7 +732,14 @@ export default function WorkerInvoicesPage() {
                     <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.clientId}</span>
                     <div className="relative">
                       <FiSearch className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 rtl:left-auto rtl:right-4" />
-                      <input value={clientId} onChange={(event) => setClientId(event.target.value)} className="input-field pl-12 rtl:pl-4 rtl:pr-12" />
+                      <input
+                        value={clientId}
+                        onChange={(event) => setClientId(normalizeNineDigitInput(event.target.value))}
+                        inputMode="numeric"
+                        pattern="[0-9]{9}"
+                        maxLength={9}
+                        className="input-field pl-12 rtl:pl-4 rtl:pr-12"
+                      />
                     </div>
                   </label>
                   <label className="block">
@@ -1100,10 +1094,6 @@ export default function WorkerInvoicesPage() {
                     <p className="mt-2 text-lg font-bold text-gray-950">{formatCurrency(total, locale)}</p>
                   </div>
                   <div className="flex flex-col gap-3 sm:flex-row">
-                    <button type="button" onClick={saveDraft} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-5 py-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50">
-                      <FiSave className="h-4.5 w-4.5" />
-                      {copy.saveDraft}
-                    </button>
                     <button
                       type="button"
                       onClick={openPdfPreview}

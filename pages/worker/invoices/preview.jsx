@@ -2,7 +2,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
-import { FiArrowLeft, FiDownload, FiPrinter, FiSend, FiShare2 } from 'react-icons/fi';
+import { FiArrowLeft, FiCheckCircle, FiDownload, FiExternalLink, FiPrinter, FiRefreshCw, FiSend, FiShare2 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import html2canvas from 'html2canvas';
@@ -12,6 +12,11 @@ import { useLanguage } from '../../../contexts/LanguageContext';
 import { storage } from '../../../lib/firebase';
 import { saveUserInvoice } from '../../../lib/firestore';
 import { formatCurrency, getInvoicePreviewStorageKey } from '../../../lib/invoices';
+import {
+  createTaxAuthorityAuthorizationUrl,
+  getTaxAuthorityConnectionStatus,
+  requestTaxInvoiceAllocation,
+} from '../../../lib/taxAuthority';
 
 function DetailCard({ title, lines, tint = 'white', align = 'right' }) {
   const tone = tint === 'blue'
@@ -32,6 +37,11 @@ function DetailCard({ title, lines, tint = 'white', align = 'right' }) {
       </div>
     </div>
   );
+}
+
+function detailLine(label, value) {
+  const normalizedValue = String(value || '').trim();
+  return normalizedValue ? `${label}: ${normalizedValue}` : '';
 }
 
 async function buildInvoicePdfBlob(element) {
@@ -67,11 +77,16 @@ export default function InvoicePreviewPage() {
   const [invoice, setInvoice] = useState(null);
   const [saving, setSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [taxStatus, setTaxStatus] = useState(null);
+  const [taxStatusLoading, setTaxStatusLoading] = useState(false);
+  const [taxActionLoading, setTaxActionLoading] = useState(false);
+  const [taxAllocation, setTaxAllocation] = useState(null);
   const invoiceContentRef = useRef(null);
   const savedInvoiceUrl = invoice?.savedInvoiceUrl || '';
   const savedInvoiceFileName = invoice?.savedFileName || `${invoice?.invoiceNumber || 'invoice'}.pdf`;
   const shouldUseStoredPdf = Boolean(savedInvoiceUrl);
   const docType = invoice?.documentType || invoice?.docType || 'receipt';
+  const canRequestTaxAllocation = docType === 'tax_invoice' || docType === 'tax_invoice_receipt';
   const docTypeLabel = (
     docType === 'tax_invoice'
       ? copy.taxInvoiceDoc
@@ -115,6 +130,39 @@ export default function InvoicePreviewPage() {
     setIsSaved(openedFromSaved);
   }, [openedFromSaved]);
 
+  useEffect(() => {
+    if (!user?.uid || !canRequestTaxAllocation) return undefined;
+
+    let active = true;
+
+    async function loadTaxStatus() {
+      setTaxStatusLoading(true);
+      try {
+        const status = await getTaxAuthorityConnectionStatus();
+        if (active) {
+          setTaxStatus(status);
+        }
+      } catch (error) {
+        if (active) {
+          setTaxStatus({
+            connected: false,
+            error: error?.message || 'Tax Authority connection status could not be loaded.',
+          });
+        }
+      } finally {
+        if (active) {
+          setTaxStatusLoading(false);
+        }
+      }
+    }
+
+    loadTaxStatus();
+
+    return () => {
+      active = false;
+    };
+  }, [canRequestTaxAllocation, user?.uid]);
+
   const lineItems = invoice?.lineItems || [];
   const payments = invoice?.payments || [];
   const subtotal = useMemo(() => Number(invoice?.subtotal) || 0, [invoice?.subtotal]);
@@ -123,45 +171,183 @@ export default function InvoicePreviewPage() {
   const paidTotal = useMemo(() => Number(invoice?.paidTotal) || 0, [invoice?.paidTotal]);
   const amountDue = useMemo(() => Number(invoice?.amountDue) || 0, [invoice?.amountDue]);
 
+  async function saveInvoiceRecord() {
+    if (!user?.uid || !invoice || shouldUseStoredPdf) return null;
+
+    if (invoice?.savedInvoiceUrl && invoice?.invoiceDocId) {
+      return invoice;
+    }
+
+    if (!invoiceContentRef.current) {
+      throw new Error('Missing invoice preview content');
+    }
+
+    const createdAtMs = Date.now();
+    const fileName = `invoice_${user.uid}_${createdAtMs}.pdf`;
+    const storagePath = `invoices/${user.uid}/${fileName}`;
+    const pdfBlob = await buildInvoicePdfBlob(invoiceContentRef.current);
+    const uploadedSnapshot = await uploadBytes(
+      storageRef(storage, storagePath),
+      pdfBlob,
+      { contentType: 'application/pdf' }
+    );
+    const url = await getDownloadURL(uploadedSnapshot.ref);
+
+    const savedRecord = await saveUserInvoice(user.uid, {
+      ...invoice,
+      docType,
+      savedFileName: fileName,
+      savedInvoiceUrl: url,
+      savedStoragePath: storagePath,
+    });
+    const nextInvoice = {
+      ...invoice,
+      invoiceDocId: savedRecord.invoiceDocId,
+      savedFirestoreId: savedRecord.id,
+      savedFileName: fileName,
+      savedInvoiceUrl: url,
+      savedStoragePath: storagePath,
+    };
+    setInvoice(nextInvoice);
+    setIsSaved(true);
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(getInvoicePreviewStorageKey(user.uid), JSON.stringify(nextInvoice));
+    }
+
+    return nextInvoice;
+  }
+
   async function handleSaveInvoice() {
     if (!user?.uid || !invoice || saving || isSaved || shouldUseStoredPdf) return;
 
     setSaving(true);
     try {
-      if (!invoiceContentRef.current) {
-        throw new Error('Missing invoice preview content');
-      }
-
-      const createdAtMs = Date.now();
-      const fileName = `invoice_${user.uid}_${createdAtMs}.pdf`;
-      const storagePath = `invoices/${user.uid}/${fileName}`;
-      const pdfBlob = await buildInvoicePdfBlob(invoiceContentRef.current);
-      const uploadedSnapshot = await uploadBytes(
-        storageRef(storage, storagePath),
-        pdfBlob,
-        { contentType: 'application/pdf' }
-      );
-      const url = await getDownloadURL(uploadedSnapshot.ref);
-
-      await saveUserInvoice(user.uid, {
-        ...invoice,
-        docType,
-        savedFileName: fileName,
-        savedInvoiceUrl: url,
-        savedStoragePath: storagePath,
-      });
-      setInvoice((current) => (current ? {
-        ...current,
-        savedFileName: fileName,
-        savedInvoiceUrl: url,
-        savedStoragePath: storagePath,
-      } : current));
-      setIsSaved(true);
+      await saveInvoiceRecord();
       toast.success(copy.savedInvoiceStored);
     } catch (error) {
       toast.error(t.common.error);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function refreshTaxStatus() {
+    setTaxStatusLoading(true);
+    try {
+      const status = await getTaxAuthorityConnectionStatus();
+      setTaxStatus(status);
+    } catch (error) {
+      setTaxStatus({
+        connected: false,
+        error: error?.message || 'Tax Authority connection status could not be loaded.',
+      });
+      toast.error(error?.message || t.common.error);
+    } finally {
+      setTaxStatusLoading(false);
+    }
+  }
+
+  async function handleConnectTaxAuthority() {
+    if (taxActionLoading) return;
+
+    setTaxActionLoading(true);
+    try {
+      const { authorizationUrl } = await createTaxAuthorityAuthorizationUrl();
+      if (!authorizationUrl) {
+        throw new Error('Tax Authority authorization URL was not returned.');
+      }
+      window.open(authorizationUrl, '_blank', 'noopener,noreferrer');
+      toast.success('Tax Authority authorization opened.');
+    } catch (error) {
+      toast.error(error?.message || t.common.error);
+    } finally {
+      setTaxActionLoading(false);
+    }
+  }
+
+  function buildTaxAuthorityInvoicePayload(savedInvoice) {
+    const businessId = String(taxStatus?.businessId || '').replace(/\D/g, '');
+    const customerVatNumber = String(invoice?.clientId || '').replace(/\D/g, '');
+    const invoiceDocId = savedInvoice?.invoiceDocId || savedInvoice?.savedFirestoreId || `${docType}_${invoice?.invoiceNumber || Date.now()}`;
+    const paymentAmount = Number(invoice?.subtotal) || Math.max((Number(invoice?.total) || 0) - (Number(invoice?.vatAmount) || 0), 0);
+    const invoiceVatAmount = Number(invoice?.vatAmount) || 0;
+    const paymentAmountIncludingVat = Number(invoice?.total) || paymentAmount + invoiceVatAmount;
+
+    return {
+      invoiceDocId,
+      invoice: {
+        invoice_id: invoiceDocId,
+        invoice_type: 305,
+        vat_number: Number(businessId),
+        user_name: invoice?.createdBy?.name || 'Hiro Pro',
+        invoice_reference_number: String(invoice?.invoiceNumber || invoiceDocId),
+        customer_vat_number: customerVatNumber ? Number(customerVatNumber) : 0,
+        customer_name: invoice?.clientName || '',
+        invoice_date: invoice?.issueDate || new Date().toISOString().slice(0, 10),
+        invoice_issuance_date: invoice?.issueDate || new Date().toISOString().slice(0, 10),
+        accounting_software_number: Number(process.env.NEXT_PUBLIC_TAX_ACCOUNTING_SOFTWARE_NUMBER || 987654321),
+        amount_before_discount: paymentAmount,
+        discount: 0,
+        payment_amount: paymentAmount,
+        vat_amount: invoiceVatAmount,
+        payment_amount_including_vat: paymentAmountIncludingVat,
+        invoice_note: invoice?.notes || '',
+        action: 0,
+        items: lineItems.map((item, index) => {
+          const quantity = Number(item?.quantity) || 0;
+          const pricePerUnit = Number(item?.unitPrice) || 0;
+          const totalAmount = quantity * pricePerUnit;
+          return {
+            index: index + 1,
+            description: item?.description || 'Service',
+            quantity,
+            price_per_unit: pricePerUnit,
+            discount: 0,
+            total_amount: totalAmount,
+            vat_rate: Number(invoice?.vatRate) || 0,
+            vat_amount: totalAmount * ((Number(invoice?.vatRate) || 0) / 100),
+          };
+        }),
+      },
+    };
+  }
+
+  async function handleRequestTaxAllocation() {
+    if (!canRequestTaxAllocation || taxActionLoading) return;
+
+    setTaxActionLoading(true);
+    try {
+      const latestStatus = taxStatus?.connected ? taxStatus : await getTaxAuthorityConnectionStatus();
+      setTaxStatus(latestStatus);
+      if (!latestStatus?.connected) {
+        throw new Error('Connect your Tax Authority account before requesting an allocation number.');
+      }
+
+      const savedInvoice = shouldUseStoredPdf ? invoice : await saveInvoiceRecord();
+      const allocation = await requestTaxInvoiceAllocation(buildTaxAuthorityInvoicePayload(savedInvoice));
+      setTaxAllocation(allocation);
+      const nextInvoice = invoice ? {
+        ...invoice,
+        ...(savedInvoice || {}),
+        taxAuthorityAllocation: allocation,
+        allocationNumber: allocation.confirmationNumber || '',
+        taxAuthorityAllocationNumber: allocation.confirmationNumber || '',
+      } : null;
+      setInvoice((current) => (current ? {
+        ...current,
+        taxAuthorityAllocation: allocation,
+        allocationNumber: allocation.confirmationNumber || '',
+        taxAuthorityAllocationNumber: allocation.confirmationNumber || '',
+      } : current));
+      if (nextInvoice && typeof window !== 'undefined') {
+        window.localStorage.setItem(getInvoicePreviewStorageKey(user.uid), JSON.stringify(nextInvoice));
+      }
+      toast.success('Tax Authority allocation number received.');
+    } catch (error) {
+      toast.error(error?.message || t.common.error);
+    } finally {
+      setTaxActionLoading(false);
     }
   }
 
@@ -343,6 +529,8 @@ export default function InvoicePreviewPage() {
                   title={copy.clientDetails}
                   lines={[
                     invoice.clientName || copy.emptyClient,
+                    detailLine(copy.clientId, invoice.clientId),
+                    detailLine(copy.clientEmail, invoice.clientEmail),
                     invoice.clientPhone || '',
                     invoice.clientCity || '',
                   ]}
@@ -352,6 +540,8 @@ export default function InvoicePreviewPage() {
                   title={copy.businessDetails}
                   lines={[
                     invoice.createdBy?.name || 'Hiro Pro',
+                    detailLine(copy.businessId, invoice.createdBy?.id),
+                    detailLine(copy.businessEmail, invoice.createdBy?.email),
                     invoice.createdBy?.phone || '',
                     invoice.createdBy?.city || '',
                   ]}
@@ -430,6 +620,62 @@ export default function InvoicePreviewPage() {
 
         <div className="sticky bottom-0 border-t border-[#d8dce3] bg-[#eef0f4]/95 px-4 py-3 backdrop-blur print:hidden sm:px-8">
           <div className="mx-auto max-w-[980px]">
+            {canRequestTaxAllocation ? (
+              <div className="mb-3 rounded-[18px] border border-[#cfe4d8] bg-white/95 px-4 py-3 shadow-sm">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-700/70">
+                      Israel Tax Authority
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-slate-700 sm:text-base">
+                      {taxStatusLoading
+                        ? 'Checking connection...'
+                        : taxStatus?.connected
+                          ? `Connected${taxStatus?.businessId ? ` - ${taxStatus.businessId}` : ''}`
+                          : taxStatus?.error || 'Not connected'}
+                    </p>
+                    {(taxAllocation?.confirmationNumber || invoice?.allocationNumber || invoice?.taxAuthorityAllocationNumber) ? (
+                      <p className="mt-1 text-sm font-bold text-emerald-700">
+                        Allocation: {taxAllocation?.confirmationNumber || invoice?.allocationNumber || invoice?.taxAuthorityAllocationNumber}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={refreshTaxStatus}
+                      disabled={taxStatusLoading || taxActionLoading}
+                      className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-50 disabled:text-slate-400"
+                    >
+                      <FiRefreshCw className={`h-4 w-4 ${taxStatusLoading ? 'animate-spin' : ''}`} />
+                      Status
+                    </button>
+                    {!taxStatus?.connected ? (
+                      <button
+                        type="button"
+                        onClick={handleConnectTaxAuthority}
+                        disabled={taxActionLoading}
+                        className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2c78d0] px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-[#246bb9] disabled:bg-slate-300"
+                      >
+                        <FiExternalLink className="h-4 w-4" />
+                        Connect
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleRequestTaxAllocation}
+                        disabled={taxActionLoading || Boolean(taxAllocation?.confirmationNumber || invoice?.allocationNumber || invoice?.taxAuthorityAllocationNumber)}
+                        className="inline-flex items-center justify-center gap-2 rounded-full bg-[#0f8074] px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-[#0d7066] disabled:bg-slate-300"
+                      >
+                        <FiCheckCircle className="h-4 w-4" />
+                        {taxActionLoading ? t.common.loading : 'Request allocation'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : null}
             <div className="mb-3 flex items-center justify-between gap-3 rounded-[18px] border border-[#d8e6f7] bg-white/90 px-4 py-3 shadow-sm">
               <div className="min-w-0">
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">

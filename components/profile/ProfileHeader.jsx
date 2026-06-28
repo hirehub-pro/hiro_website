@@ -1,6 +1,6 @@
 import Image from 'next/image';
 import { HiBadgeCheck, HiStar, HiLocationMarker } from 'react-icons/hi';
-import { FiPhone, FiMessageSquare, FiShare2, FiFlag } from 'react-icons/fi';
+import { FiExternalLink, FiPhone, FiMessageSquare, FiShare2, FiFlag } from 'react-icons/fi';
 import { useLanguage } from '../../contexts/LanguageContext';
 
 const badgeConfig = {
@@ -25,6 +25,8 @@ export default function ProfileHeader({
   onMessageClick = null,
   onAvatarClick = null,
   onProfessionsClick = null,
+  onTaxAuthorityConnectClick = null,
+  taxAuthorityConnecting = false,
 }) {
   const { t } = useLanguage();
 
@@ -165,6 +167,17 @@ export default function ProfileHeader({
                   </span>
                 );
               })}
+              {onTaxAuthorityConnectClick && profile.badges.includes('business') ? (
+                <button
+                  type="button"
+                  onClick={onTaxAuthorityConnectClick}
+                  disabled={taxAuthorityConnecting}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-sky-500 to-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:opacity-90 active:scale-95 disabled:opacity-60"
+                >
+                  <FiExternalLink className="h-3.5 w-3.5" />
+                  {taxAuthorityConnecting ? t.common.loading : t.profile.connectTaxAuthority}
+                </button>
+              ) : null}
             </div>
           )}
 

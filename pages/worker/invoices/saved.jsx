@@ -81,12 +81,13 @@ function buildPreviewPayloadFromSavedInvoice(item) {
 
   return {
     id: item?.id || '',
+    invoiceDocId: item?.invoiceDocId || item?.id || '',
     invoiceNumber: item?.invoiceNumber || '',
     issueDate,
     dueDate: issueDate,
     clientName: item?.clientName || '',
     clientId: item?.clientTaxId || '',
-    clientEmail: '',
+    clientEmail: item?.clientEmail || '',
     clientPhone: item?.clientPhone || '',
     clientCity: item?.clientAddress || '',
     documentType: item?.type || item?.docType || 'receipt',
@@ -102,16 +103,20 @@ function buildPreviewPayloadFromSavedInvoice(item) {
     paidTotal: Number(item?.paidAmount ?? item?.paymentAmountTotal) || 0,
     amountDue: Math.max((Number(item?.amount) || 0) - (Number(item?.paidAmount ?? item?.paymentAmountTotal) || 0), 0),
     createdBy: {
-      name: '',
-      phone: '',
-      email: '',
-      city: '',
+      id: item?.createdBy?.id || '',
+      name: item?.createdBy?.name || '',
+      phone: item?.createdBy?.phone || '',
+      email: item?.createdBy?.email || '',
+      city: item?.createdBy?.city || '',
     },
     lineItems: storedItems,
     payments: storedPayments,
     savedFileName: item?.fileName || '',
     savedInvoiceUrl: item?.url || '',
     savedStoragePath: item?.storagePath || '',
+    taxAuthorityAllocation: item?.taxAuthorityAllocation || null,
+    allocationNumber: item?.allocationNumber || '',
+    taxAuthorityAllocationNumber: item?.taxAuthorityAllocationNumber || '',
   };
 }
 
