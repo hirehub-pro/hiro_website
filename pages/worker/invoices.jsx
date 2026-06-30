@@ -88,6 +88,11 @@ function normalizeNineDigitInput(value) {
   return String(value || '').replace(/\D/g, '').slice(0, 9);
 }
 
+function isValidClientTaxId(value) {
+  const normalizedValue = String(value || '').trim();
+  return normalizedValue === '' || normalizedValue === '0' || /^\d{9}$/.test(normalizedValue);
+}
+
 function documentTypeConfig(value) {
   switch (value) {
     case 'quote':
@@ -157,6 +162,7 @@ export default function WorkerInvoicesPage() {
   const [clientEmail, setClientEmail] = useState('');
   const [clientPhone, setClientPhone] = useState('');
   const [clientCity, setClientCity] = useState('');
+  const [clientUid, setClientUid] = useState('');
   const [documentType, setDocumentType] = useState('receipt');
   const [documentDescription, setDocumentDescription] = useState('');
   const [vatRate, setVatRate] = useState(18);
@@ -243,6 +249,7 @@ export default function WorkerInvoicesPage() {
       setClientEmail(parsed.clientEmail || '');
       setClientPhone(parsed.clientPhone || '');
       setClientCity(parsed.clientCity || '');
+      setClientUid(parsed.clientUid || '');
       setDocumentType(parsed.documentType || 'receipt');
       setDocumentDescription(parsed.documentDescription || '');
       setPaymentTerms(parsed.paymentTerms || '');
@@ -353,6 +360,7 @@ export default function WorkerInvoicesPage() {
       if (cancelled) return;
 
       setClientName(clientProfile?.name || rawClientName || '');
+      setClientUid(rawClientUid);
       setClientId(normalizeNineDigitInput(clientBusinessId || ''));
       setClientEmail(clientProfile?.email || rawClientEmail || '');
       setClientPhone(clientProfile?.phone || clientProfile?.optionalPhone || rawClientPhone || '');
@@ -592,6 +600,7 @@ export default function WorkerInvoicesPage() {
       issueDate,
       dueDate,
       clientName,
+      clientUid,
       clientId,
       clientEmail,
       clientPhone,
@@ -625,7 +634,7 @@ export default function WorkerInvoicesPage() {
       return false;
     }
 
-    if (!/^\d{9}$/.test(clientId)) {
+    if (!isValidClientTaxId(clientId)) {
       toast.error(copy.clientIdInvalid);
       return false;
     }
@@ -736,7 +745,7 @@ export default function WorkerInvoicesPage() {
                         value={clientId}
                         onChange={(event) => setClientId(normalizeNineDigitInput(event.target.value))}
                         inputMode="numeric"
-                        pattern="[0-9]{9}"
+                        pattern="0|[0-9]{9}"
                         maxLength={9}
                         className="input-field pl-12 rtl:pl-4 rtl:pr-12"
                       />

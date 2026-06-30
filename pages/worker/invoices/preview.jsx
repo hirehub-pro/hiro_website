@@ -2,7 +2,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
-import { FiArrowLeft, FiCheckCircle, FiDownload, FiExternalLink, FiPrinter, FiRefreshCw, FiSend, FiShare2 } from 'react-icons/fi';
+import { FiArrowLeft, FiDownload, FiEdit3, FiExternalLink, FiPrinter, FiRefreshCw, FiSend, FiShare2 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import html2canvas from 'html2canvas';
@@ -10,7 +10,8 @@ import { jsPDF } from 'jspdf';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useLanguage } from '../../../contexts/LanguageContext';
 import { storage } from '../../../lib/firebase';
-import { saveUserInvoice } from '../../../lib/firestore';
+import { createDocumentSigningLink } from '../../../lib/documentSigning';
+import { getAllocationNumberMinAmountBeforeVat, saveUserInvoice } from '../../../lib/firestore';
 import { formatCurrency, getInvoicePreviewStorageKey } from '../../../lib/invoices';
 import {
   createTaxAuthorityAuthorizationUrl,
@@ -24,12 +25,12 @@ function DetailCard({ title, lines, tint = 'white', align = 'right' }) {
     : 'bg-[#f6f6f7]';
 
   return (
-    <div className={`rounded-[18px] ${tone} px-4 py-4 sm:px-5`}>
-      <p className={`text-xs sm:text-sm text-[#3f73ba] ${align === 'right' ? 'text-right' : 'text-left'}`}>{title}</p>
-      <div className={`mt-2 space-y-1 text-[#2f3441] ${align === 'right' ? 'text-right' : 'text-left'}`}>
+    <div className={`rounded-[11px] ${tone} p-[13px]`}>
+      <p className={`text-[17px] leading-[20px] text-[#3f73ba] ${align === 'right' ? 'text-right' : 'text-left'}`}>{title}</p>
+      <div className={`mt-2 space-y-0.5 text-[#2f3441] ${align === 'right' ? 'text-right' : 'text-left'}`}>
         {lines.map((line, index) => (
           line ? (
-            <p key={`${title}_${index}`} className={index === 0 ? 'text-base font-medium leading-5 sm:text-[18px] sm:leading-6' : 'text-xs leading-5 sm:text-sm'}>
+            <p key={`${title}_${index}`} className={index === 0 ? 'text-[20px] font-medium leading-[24px]' : 'text-[15px] leading-[18px]'}>
               {line}
             </p>
           ) : null
@@ -44,6 +45,23 @@ function detailLine(label, value) {
   return normalizedValue ? `${label}: ${normalizedValue}` : '';
 }
 
+function getPdfFilePrefix(docType) {
+  if (docType === 'quote') return 'quote';
+  if (docType === 'work_order') return 'work_order';
+  return 'invoice';
+}
+
+function formatFooterGeneratedAt(value) {
+  return new Intl.DateTimeFormat('he-IL', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(value).replace(',', '');
+}
+
 async function buildInvoicePdfBlob(element) {
   const canvas = await html2canvas(element, {
     backgroundColor: '#ffffff',
@@ -52,12 +70,12 @@ async function buildInvoicePdfBlob(element) {
     logging: false,
   });
 
-  const pdfWidth = Math.max(595.28, Math.round(canvas.width * 0.75));
-  const pdfHeight = Math.max(841.89, Math.round(canvas.height * 0.75));
+  const pdfWidth = 595.28;
+  const pdfHeight = 841.89;
   const pdf = new jsPDF({
     compress: true,
-    format: [pdfWidth, pdfHeight],
-    orientation: pdfWidth >= pdfHeight ? 'landscape' : 'portrait',
+    format: 'a4',
+    orientation: 'portrait',
     unit: 'pt',
   });
 
@@ -81,12 +99,16 @@ export default function InvoicePreviewPage() {
   const [taxStatusLoading, setTaxStatusLoading] = useState(false);
   const [taxActionLoading, setTaxActionLoading] = useState(false);
   const [taxAllocation, setTaxAllocation] = useState(null);
+  const [allocationConnectionPrompt, setAllocationConnectionPrompt] = useState(null);
+  const [signingLinkLoading, setSigningLinkLoading] = useState(false);
   const invoiceContentRef = useRef(null);
   const savedInvoiceUrl = invoice?.savedInvoiceUrl || '';
   const savedInvoiceFileName = invoice?.savedFileName || `${invoice?.invoiceNumber || 'invoice'}.pdf`;
-  const shouldUseStoredPdf = Boolean(savedInvoiceUrl);
+  const shouldUseStoredPdf = openedFromSaved && Boolean(savedInvoiceUrl);
   const docType = invoice?.documentType || invoice?.docType || 'receipt';
   const canRequestTaxAllocation = docType === 'tax_invoice' || docType === 'tax_invoice_receipt';
+  const canRequestSignature = docType === 'quote' || docType === 'work_order';
+  const allocationNumber = taxAllocation?.confirmationNumber || invoice?.allocationNumber || invoice?.taxAuthorityAllocationNumber || '';
   const docTypeLabel = (
     docType === 'tax_invoice'
       ? copy.taxInvoiceDoc
@@ -170,6 +192,7 @@ export default function InvoicePreviewPage() {
   const total = useMemo(() => Number(invoice?.total) || 0, [invoice?.total]);
   const paidTotal = useMemo(() => Number(invoice?.paidTotal) || 0, [invoice?.paidTotal]);
   const amountDue = useMemo(() => Number(invoice?.amountDue) || 0, [invoice?.amountDue]);
+  const generatedAt = useMemo(() => new Date(), []);
 
   async function saveInvoiceRecord() {
     if (!user?.uid || !invoice || shouldUseStoredPdf) return null;
@@ -183,7 +206,7 @@ export default function InvoicePreviewPage() {
     }
 
     const createdAtMs = Date.now();
-    const fileName = `invoice_${user.uid}_${createdAtMs}.pdf`;
+    const fileName = `${getPdfFilePrefix(docType)}_${user.uid}_${createdAtMs}.pdf`;
     const storagePath = `invoices/${user.uid}/${fileName}`;
     const pdfBlob = await buildInvoicePdfBlob(invoiceContentRef.current);
     const uploadedSnapshot = await uploadBytes(
@@ -218,18 +241,46 @@ export default function InvoicePreviewPage() {
     return nextInvoice;
   }
 
-  async function handleSaveInvoice() {
-    if (!user?.uid || !invoice || saving || isSaved || shouldUseStoredPdf) return;
+  function waitForPaint() {
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    });
+  }
 
-    setSaving(true);
-    try {
-      await saveInvoiceRecord();
-      toast.success(copy.savedInvoiceStored);
-    } catch (error) {
-      toast.error(t.common.error);
-    } finally {
-      setSaving(false);
-    }
+  async function refreshSavedInvoicePdf(nextInvoice) {
+    if (!user?.uid || !nextInvoice || !invoiceContentRef.current) return nextInvoice;
+
+    await waitForPaint();
+
+    const createdAtMs = Date.now();
+    const fileName = nextInvoice.savedFileName || `invoice_${user.uid}_${createdAtMs}.pdf`;
+    const storagePath = nextInvoice.savedStoragePath || `invoices/${user.uid}/${fileName}`;
+    const pdfBlob = await buildInvoicePdfBlob(invoiceContentRef.current);
+    const uploadedSnapshot = await uploadBytes(
+      storageRef(storage, storagePath),
+      pdfBlob,
+      { contentType: 'application/pdf' }
+    );
+    const url = await getDownloadURL(uploadedSnapshot.ref);
+    const refreshedInvoice = {
+      ...nextInvoice,
+      savedFileName: fileName,
+      savedInvoiceUrl: url,
+      savedStoragePath: storagePath,
+    };
+
+    await saveUserInvoice(user.uid, {
+      ...refreshedInvoice,
+      docType,
+      savedFileName: fileName,
+      savedInvoiceUrl: url,
+      savedStoragePath: storagePath,
+    });
+
+    setInvoice(refreshedInvoice);
+    window.localStorage.setItem(getInvoicePreviewStorageKey(user.uid), JSON.stringify(refreshedInvoice));
+
+    return refreshedInvoice;
   }
 
   async function refreshTaxStatus() {
@@ -313,41 +364,219 @@ export default function InvoicePreviewPage() {
     };
   }
 
-  async function handleRequestTaxAllocation() {
-    if (!canRequestTaxAllocation || taxActionLoading) return;
+  async function requestAllocationForInvoice(savedInvoice) {
+    const allocation = await requestTaxInvoiceAllocation(buildTaxAuthorityInvoicePayload(savedInvoice));
+    const nextInvoice = invoice ? {
+      ...invoice,
+      ...(savedInvoice || {}),
+      taxAuthorityAllocation: allocation,
+      allocationNumber: allocation.confirmationNumber || '',
+      taxAuthorityAllocationNumber: allocation.confirmationNumber || '',
+    } : null;
 
-    setTaxActionLoading(true);
+    setTaxAllocation(allocation);
+    setInvoice((current) => (current ? {
+      ...current,
+      ...(savedInvoice || {}),
+      taxAuthorityAllocation: allocation,
+      allocationNumber: allocation.confirmationNumber || '',
+      taxAuthorityAllocationNumber: allocation.confirmationNumber || '',
+    } : current));
+
+    if (nextInvoice && typeof window !== 'undefined') {
+      window.localStorage.setItem(getInvoicePreviewStorageKey(user.uid), JSON.stringify(nextInvoice));
+    }
+
+    if (!shouldUseStoredPdf && nextInvoice) {
+      await refreshSavedInvoicePdf(nextInvoice);
+    }
+
+    return nextInvoice;
+  }
+
+  async function shouldAttemptAllocation() {
+    if (!canRequestTaxAllocation || allocationNumber) {
+      return { shouldAttempt: false, minAmountBeforeVat: 0, amountBeforeVat: Number(invoice?.subtotal) || 0 };
+    }
+
+    const minAmountBeforeVat = await getAllocationNumberMinAmountBeforeVat();
+    const amountBeforeVat = Number(invoice?.subtotal) || 0;
+    return {
+      shouldAttempt: amountBeforeVat > minAmountBeforeVat,
+      minAmountBeforeVat,
+      amountBeforeVat,
+    };
+  }
+
+  async function saveInvoiceWithAllocation({ continueWithoutAllocation = false } = {}) {
+    if (!user?.uid || !invoice || shouldUseStoredPdf) return;
+
+    const allocationCheck = await shouldAttemptAllocation();
+    if (!allocationCheck.shouldAttempt || continueWithoutAllocation) {
+      await saveInvoiceRecord();
+      toast.success(copy.savedInvoiceStored);
+      return;
+    }
+
+    let savedInvoice = null;
+
     try {
       const latestStatus = taxStatus?.connected ? taxStatus : await getTaxAuthorityConnectionStatus();
       setTaxStatus(latestStatus);
       if (!latestStatus?.connected) {
-        throw new Error('Connect your Tax Authority account before requesting an allocation number.');
+        setAllocationConnectionPrompt(allocationCheck);
+        return;
       }
 
-      const savedInvoice = shouldUseStoredPdf ? invoice : await saveInvoiceRecord();
-      const allocation = await requestTaxInvoiceAllocation(buildTaxAuthorityInvoicePayload(savedInvoice));
-      setTaxAllocation(allocation);
-      const nextInvoice = invoice ? {
-        ...invoice,
-        ...(savedInvoice || {}),
-        taxAuthorityAllocation: allocation,
-        allocationNumber: allocation.confirmationNumber || '',
-        taxAuthorityAllocationNumber: allocation.confirmationNumber || '',
-      } : null;
-      setInvoice((current) => (current ? {
-        ...current,
-        taxAuthorityAllocation: allocation,
-        allocationNumber: allocation.confirmationNumber || '',
-        taxAuthorityAllocationNumber: allocation.confirmationNumber || '',
-      } : current));
-      if (nextInvoice && typeof window !== 'undefined') {
-        window.localStorage.setItem(getInvoicePreviewStorageKey(user.uid), JSON.stringify(nextInvoice));
-      }
+      savedInvoice = await saveInvoiceRecord();
+      await requestAllocationForInvoice(savedInvoice);
       toast.success('Tax Authority allocation number received.');
     } catch (error) {
       toast.error(error?.message || t.common.error);
+      if (savedInvoice) {
+        toast.success(copy.savedInvoiceStored);
+      }
+    }
+  }
+
+  async function handleSaveInvoice() {
+    if (!user?.uid || !invoice || saving || isSaved || shouldUseStoredPdf) return;
+
+    setSaving(true);
+    setTaxActionLoading(true);
+    try {
+      await saveInvoiceWithAllocation();
+    } catch (error) {
+      toast.error(error?.message || t.common.error);
     } finally {
+      setSaving(false);
       setTaxActionLoading(false);
+    }
+  }
+
+  async function handleConnectFromAllocationPrompt() {
+    setAllocationConnectionPrompt(null);
+    await handleConnectTaxAuthority();
+  }
+
+  async function handleContinueWithoutAllocation() {
+    setAllocationConnectionPrompt(null);
+    if (!isSaved) {
+      setSaving(true);
+      try {
+        await saveInvoiceWithAllocation({ continueWithoutAllocation: true });
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    toast.success(copy.savedInvoiceStored);
+  }
+
+  function isLikelyMobileShareDevice() {
+    if (typeof navigator === 'undefined') return false;
+
+    const userAgent = navigator.userAgent || '';
+    const hasTouch = typeof window !== 'undefined' && (
+      navigator.maxTouchPoints > 1 || window.matchMedia?.('(pointer: coarse)').matches
+    );
+
+    return /Android|iPhone|iPad|iPod/i.test(userAgent) || hasTouch;
+  }
+
+  function buildSigningShareText(url) {
+    return [
+      `${docTypeLabel} ${invoice?.invoiceNumber || ''}`.trim(),
+      url,
+    ].filter(Boolean).join('\n');
+  }
+
+  async function copySigningUrl(url) {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(url);
+      toast.success('Signing link copied.');
+      return true;
+    }
+
+    return false;
+  }
+
+  function openSigningEmail(url) {
+    const subject = `${docTypeLabel} ${invoice?.invoiceNumber || ''} - signature`.trim();
+    const body = [
+      'Please sign this document:',
+      '',
+      url,
+    ].join('\n');
+
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  }
+
+  async function shareSigningUrl(url) {
+    const shareText = buildSigningShareText(url);
+
+    if (isLikelyMobileShareDevice() && typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Document signing link',
+          text: shareText,
+          url,
+        });
+        return;
+      } catch (error) {
+        if (error?.name === 'AbortError') {
+          return;
+        }
+      }
+    }
+
+    await copySigningUrl(url);
+    openSigningEmail(url);
+  }
+
+  async function createOrReuseSigningUrl() {
+    const savedInvoice = invoice;
+    const invoiceDocId = savedInvoice?.invoiceDocId || savedInvoice?.savedFirestoreId || '';
+    const readySigningUrl = savedInvoice?.signingUrl || '';
+
+    if (readySigningUrl) {
+      return readySigningUrl;
+    }
+
+    if (!invoiceDocId) {
+      throw new Error('The saved document is missing an invoice id.');
+    }
+
+    const receiverId = String(savedInvoice?.clientUid || invoice?.clientUid || '').trim();
+    const result = await createDocumentSigningLink(invoiceDocId, receiverId);
+    const nextInvoice = {
+      ...invoice,
+      ...savedInvoice,
+      signatureStatus: 'pending',
+      signingUrl: result.url,
+      signingExpiresAt: result.expiresAt,
+    };
+    setInvoice(nextInvoice);
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(getInvoicePreviewStorageKey(user.uid), JSON.stringify(nextInvoice));
+    }
+
+    return result.url;
+  }
+
+  async function handleCreateSigningLink() {
+    if (signingLinkLoading) return;
+
+    setSigningLinkLoading(true);
+    try {
+      const signingUrl = await createOrReuseSigningUrl();
+      await shareSigningUrl(signingUrl);
+    } catch (error) {
+      toast.error(error?.message || t.common.error);
+    } finally {
+      setSigningLinkLoading(false);
     }
   }
 
@@ -493,7 +722,7 @@ export default function InvoicePreviewPage() {
         </header>
 
         <div className="px-3 py-6 print:px-0 print:py-0 sm:px-8 sm:py-16">
-          <section ref={invoiceContentRef} className="mx-auto max-w-[980px] rounded-[2px] bg-white shadow-[0_14px_40px_rgba(15,23,42,0.35)] print:max-w-none print:shadow-none">
+          <section ref={invoiceContentRef} className="mx-auto min-h-[1123px] w-full max-w-[794px] rounded-[2px] bg-white shadow-[0_14px_40px_rgba(15,23,42,0.35)] print:h-[297mm] print:min-h-0 print:w-[210mm] print:max-w-none print:shadow-none">
             {shouldUseStoredPdf ? (
               <div className="px-4 py-5 sm:px-14 sm:py-14">
                 <div className="rounded-[22px] bg-[#dcebfa] px-5 py-5 sm:px-7 sm:py-6">
@@ -501,6 +730,7 @@ export default function InvoicePreviewPage() {
                   <p className="mt-1 text-xl font-light text-[#485a71] sm:text-2xl">{copy.originalCopy}</p>
                   <div className="mt-4 text-sm leading-6 text-[#55677d] sm:text-[15px]">
                     <p>{`${copy.documentNo}: ${invoice.invoiceNumber || '-'}`}</p>
+                    {allocationNumber ? <p>{`${copy.taxAuthorityAllocationNumber}: ${allocationNumber}`}</p> : null}
                     <p>{`${copy.issueDate}: ${invoice.issueDate || '-'}`}</p>
                   </div>
                 </div>
@@ -514,47 +744,52 @@ export default function InvoicePreviewPage() {
                 </div>
               </div>
             ) : (
-            <div className="px-4 py-5 sm:px-14 sm:py-14">
-              <div className="rounded-[22px] bg-[#dcebfa] px-5 py-5 sm:px-7 sm:py-6">
-                <h2 className="text-2xl font-light text-[#2e63b2] sm:text-4xl">{docTypeLabel}</h2>
-                <p className="mt-1 text-xl font-light text-[#485a71] sm:text-2xl">{copy.originalCopy}</p>
-                <div className="mt-4 text-sm leading-6 text-[#55677d] sm:text-[15px]">
-                  <p>{`${copy.documentNo}: ${invoice.invoiceNumber}`}</p>
-                  <p>{`${copy.issueDate}: ${invoice.issueDate}`}</p>
+            <div className="relative flex min-h-[1123px] flex-col px-[57px] py-[57px] print:h-[297mm] print:min-h-0">
+              <div className="rounded-2xl bg-[#dcebfa] px-[21px] py-4 text-left">
+                <h2 className="text-[37px] font-light leading-[42px] text-[#1454b2]">{docTypeLabel}</h2>
+                <p className="mt-1 text-[21px] font-light leading-[25px] text-[#485a71]">{copy.originalCopy}</p>
+                <div className="mt-3 leading-[21px] text-[#3f4d5f]">
+                  <p className="text-[19px]">{`${copy.documentNo}: ${invoice.invoiceNumber}`}</p>
+                  {allocationNumber ? <p>{`${copy.taxAuthorityAllocationNumber}: ${allocationNumber}`}</p> : null}
+                  <p className="text-base">{`${copy.issueDate}: ${invoice.issueDate}`}</p>
                 </div>
               </div>
 
-              <div className="mt-7 grid grid-cols-2 gap-3 sm:gap-4">
-                <DetailCard
-                  title={copy.clientDetails}
-                  lines={[
-                    invoice.clientName || copy.emptyClient,
-                    detailLine(copy.clientId, invoice.clientId),
-                    detailLine(copy.clientEmail, invoice.clientEmail),
-                    invoice.clientPhone || '',
-                    invoice.clientCity || '',
-                  ]}
-                  tint="white"
-                />
-                <DetailCard
-                  title={copy.businessDetails}
-                  lines={[
-                    invoice.createdBy?.name || 'Hiro Pro',
-                    detailLine(copy.businessId, invoice.createdBy?.id),
-                    detailLine(copy.businessEmail, invoice.createdBy?.email),
-                    invoice.createdBy?.phone || '',
-                    invoice.createdBy?.city || '',
-                  ]}
-                  tint="blue"
-                />
+              <div className="mt-6 grid grid-cols-2 gap-8" dir="ltr">
+                <div dir="rtl">
+                  <DetailCard
+                    title={copy.clientDetails}
+                    lines={[
+                      invoice.clientName || copy.emptyClient,
+                      detailLine(copy.clientId, invoice.clientId),
+                      detailLine(copy.clientEmail, invoice.clientEmail),
+                      invoice.clientPhone || '',
+                      invoice.clientCity || '',
+                    ]}
+                    tint="white"
+                  />
+                </div>
+                <div dir="rtl">
+                  <DetailCard
+                    title={copy.businessDetails}
+                    lines={[
+                      invoice.createdBy?.name || 'Hiro Pro',
+                      detailLine(copy.businessId, invoice.createdBy?.id),
+                      detailLine(copy.businessEmail, invoice.createdBy?.email),
+                      invoice.createdBy?.phone || '',
+                      invoice.createdBy?.city || '',
+                    ]}
+                    tint="blue"
+                  />
+                </div>
               </div>
 
-              <div className="mt-8 overflow-hidden rounded-[2px] border border-[#d7dee8]">
-                <div className="grid grid-cols-[1.65fr_0.42fr_0.65fr_0.72fr] bg-[#2c92e5] text-center text-[11px] text-white sm:text-[18px]">
-                  <div className="border-white/20 px-2 py-3 sm:border-r sm:px-3">{copy.description}</div>
-                  <div className="border-white/20 px-2 py-3 sm:border-r sm:px-3">{copy.quantity}</div>
-                  <div className="border-white/20 px-2 py-3 sm:border-r sm:px-3">{copy.unitPrice}</div>
-                  <div className="px-3 py-3">{copy.total}</div>
+              <div className="mt-[37px] overflow-hidden rounded-[2px] border border-[#d7dee8]" dir="ltr">
+                <div className="grid grid-cols-[1fr_80px_133px_133px] bg-[#2c92e5] text-center text-base leading-5 text-white">
+                  <div className="border-white/20 px-2 py-2 sm:border-r sm:px-3" dir="rtl">{copy.description}</div>
+                  <div className="border-white/20 px-2 py-2 sm:border-r sm:px-3" dir="rtl">{copy.quantity}</div>
+                  <div className="border-white/20 px-2 py-2 sm:border-r sm:px-3" dir="rtl">{copy.unitPrice}</div>
+                  <div className="px-3 py-2" dir="rtl">{copy.total}</div>
                 </div>
 
                 <div className="divide-y divide-[#e6edf7]">
@@ -562,57 +797,61 @@ export default function InvoicePreviewPage() {
                     const lineTotal = (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
 
                     return (
-                      <div key={item.id || `${item.description}_${index}`} className="grid grid-cols-[1.65fr_0.42fr_0.65fr_0.72fr] items-center text-right text-[#40434d]">
-                        <div className="border-[#d7dee8] px-2 py-3 text-xs sm:border-r sm:px-3 sm:text-[18px]">{item.description || `${copy.emptyDescription} ${index + 1}`}</div>
-                        <div className="border-[#d7dee8] px-2 py-3 text-xs sm:border-r sm:px-3 sm:text-[18px]">{item.quantity}</div>
-                        <div className="border-[#d7dee8] px-2 py-3 text-xs sm:border-r sm:px-3 sm:text-[18px]">{formatCurrency(item.unitPrice, locale)}</div>
-                        <div className="px-2 py-3 text-xs sm:px-3 sm:text-[18px]">{formatCurrency(lineTotal, locale)}</div>
+                      <div key={item.id || `${item.description}_${index}`} className="grid grid-cols-[1fr_80px_133px_133px] items-center text-right text-[15px] leading-[18px] text-[#40434d]">
+                        <div className="border-[#d7dee8] px-2 py-2 sm:border-r sm:px-3" dir="rtl">{item.description || `${copy.emptyDescription} ${index + 1}`}</div>
+                        <div className="border-[#d7dee8] px-2 py-2 sm:border-r sm:px-3" dir="rtl">{item.quantity}</div>
+                        <div className="border-[#d7dee8] px-2 py-2 sm:border-r sm:px-3" dir="rtl">{formatCurrency(item.unitPrice, locale)}</div>
+                        <div className="px-2 py-2 sm:px-3" dir="rtl">{formatCurrency(lineTotal, locale)}</div>
                       </div>
                     );
                   })}
                 </div>
               </div>
 
-              <div className="mt-7 flex justify-end">
-                <div className="flex min-w-[210px] items-center justify-between gap-4 rounded-[18px] border border-[#abd1f2] bg-[#dcebfa] px-5 py-3 text-[#2e63b2] sm:min-w-[390px] sm:px-6 sm:py-4">
-                  <span className="text-xl font-normal sm:text-2xl">{formatCurrency(total, locale)}</span>
-                  <span className="text-xl font-normal sm:text-2xl">{copy.total}</span>
+              <div className="mt-6 flex justify-end" dir="ltr">
+                <div className="w-[347px] rounded-[13px] border border-[#abd1f2] bg-[#dcebfa] p-[19px] text-[#0f172a]" dir="rtl">
+                  <div className="space-y-1 text-[15px] leading-[18px]">
+                    <div className="flex items-center justify-between gap-4">
+                      <span>{formatCurrency(subtotal, locale)}</span>
+                      <span>{copy.subtotal}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span>{formatCurrency(vatAmount, locale)}</span>
+                      <span>{copy.vatAmount}</span>
+                    </div>
+                    <div className="border-t border-[#9eb7ce] pt-2">
+                      <div className="flex items-center justify-between gap-4 text-xl font-bold leading-6 text-[#1454b2]">
+                        <span>{formatCurrency(total, locale)}</span>
+                        <span>{copy.total}</span>
+                      </div>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-4 text-[15px] leading-[18px] text-[#536170]">
+                      <span>{invoice.dueDate || invoice.issueDate || ''}</span>
+                      <span>{copy.paymentDueDate || copy.dueDate || ''}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="mt-9">
-                <p className="text-right text-sm text-[#3f73ba] sm:text-[15px]">{copy.paymentType}</p>
-                <div className="mt-2 rounded-[10px] border border-[#d9dfe8] bg-white px-4 py-3 text-right text-sm text-[#40434d] sm:text-base">
-                  {payments.length > 0
-                    ? payments.map((payment, index) => `${payment.type} | ${copy.paymentAmount}: ${formatCurrency(payment.amount, locale)}`).join(' , ')
-                    : copy.noPayments}
+              <footer className="absolute bottom-[57px] left-[57px] right-[57px] min-h-[213px] px-[11px] pt-8 text-[#26313b]" dir="rtl">
+                <div className="mb-6 flex items-center justify-center gap-4 text-[13px] leading-4">
+                  <span>חתימה:</span>
+                  <span className="block h-[1px] w-[307px] bg-[#26313b]" />
                 </div>
-              </div>
 
-              <div className="mt-12 border-t border-[#8ea1b6] pt-6 text-center text-[#6d7d8f] sm:mt-72">
-                <p className="text-sm">{invoice.footerNotes || copy.generatedViaHiro}</p>
-                <p className="mt-4 text-[20px] font-light text-[#52b6ef]">{invoice.bottomNotes || copy.thankYouMessage}</p>
-              </div>
-
-              <div className="mt-8 text-[#6d7d8f]">
-                <p className="text-[16px]">{copy.signature}: ________________________</p>
-              </div>
-
-              <div className="mt-10 grid grid-cols-2 gap-3 text-xs text-[#6d7d8f] sm:text-sm">
-                <div className="rounded-[14px] border border-[#e4e7ec] bg-[#fafbfc] px-4 py-3">
-                  <p className="font-semibold text-[#3f73ba]">{copy.summary}</p>
-                  <p className="mt-2">{`${copy.subtotal}: ${formatCurrency(subtotal, locale)}`}</p>
-                  <p>{`${copy.vatAmount}: ${formatCurrency(vatAmount, locale)}`}</p>
-                  <p>{`${copy.paymentAmount}: ${formatCurrency(paidTotal, locale)}`}</p>
-                  <p className="font-semibold text-slate-900">{`${copy.amountDue}: ${formatCurrency(amountDue, locale)}`}</p>
+                <div className="border-t border-[#26313b] pt-[13px]">
+                  <div className="grid grid-cols-2 items-start gap-6">
+                    <div className="text-right">
+                      <p className="text-[21px] font-normal leading-6 text-black">חתימה דיגיטלית מאובטחת</p>
+                      <p className="mt-[7px] text-[11px] leading-4">מסמך זה מיועד לחתימה דיגיטלית באמצעות מערכת הירו</p>
+                    </div>
+                    <div className="self-end text-left text-[11px] leading-4 text-[#26313b]">
+                      <p>{`הופק ב ${formatFooterGeneratedAt(generatedAt)} | ${docTypeLabel}`}</p>
+                      <p className="text-[13px] leading-5">1 / 1</p>
+                    </div>
+                  </div>
                 </div>
-                <div className="rounded-[14px] border border-[#e4e7ec] bg-[#fafbfc] px-4 py-3">
-                  <p className="font-semibold text-[#3f73ba]">{copy.notes}</p>
-                  <p className="mt-2">{invoice.notes || copy.notesPlaceholder}</p>
-                  <p className="mt-3 font-semibold text-[#3f73ba]">{copy.paymentTerms}</p>
-                  <p className="mt-2">{invoice.paymentTerms || copy.paymentTermsPlaceholder}</p>
-                </div>
-              </div>
+              </footer>
             </div>
             )}
           </section>
@@ -634,9 +873,9 @@ export default function InvoicePreviewPage() {
                           ? `Connected${taxStatus?.businessId ? ` - ${taxStatus.businessId}` : ''}`
                           : taxStatus?.error || 'Not connected'}
                     </p>
-                    {(taxAllocation?.confirmationNumber || invoice?.allocationNumber || invoice?.taxAuthorityAllocationNumber) ? (
+                    {allocationNumber ? (
                       <p className="mt-1 text-sm font-bold text-emerald-700">
-                        Allocation: {taxAllocation?.confirmationNumber || invoice?.allocationNumber || invoice?.taxAuthorityAllocationNumber}
+                        Allocation: {allocationNumber}
                       </p>
                     ) : null}
                   </div>
@@ -661,17 +900,7 @@ export default function InvoicePreviewPage() {
                         <FiExternalLink className="h-4 w-4" />
                         Connect
                       </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={handleRequestTaxAllocation}
-                        disabled={taxActionLoading || Boolean(taxAllocation?.confirmationNumber || invoice?.allocationNumber || invoice?.taxAuthorityAllocationNumber)}
-                        className="inline-flex items-center justify-center gap-2 rounded-full bg-[#0f8074] px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-[#0d7066] disabled:bg-slate-300"
-                      >
-                        <FiCheckCircle className="h-4 w-4" />
-                        {taxActionLoading ? t.common.loading : 'Request allocation'}
-                      </button>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -707,7 +936,18 @@ export default function InvoicePreviewPage() {
             </div>
 
             {(isSaved || shouldUseStoredPdf) ? (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className={`grid grid-cols-1 gap-3 ${canRequestSignature ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
+                {canRequestSignature ? (
+                  <button
+                    type="button"
+                    onClick={handleCreateSigningLink}
+                    disabled={signingLinkLoading}
+                    className="flex items-center justify-center gap-2.5 rounded-[18px] bg-[#7c3aed] px-4 py-3.5 text-base font-bold text-white transition-colors hover:bg-[#6d28d9] disabled:bg-slate-300 sm:text-lg"
+                  >
+                    <FiEdit3 className="h-5 w-5" />
+                    {signingLinkLoading ? t.common.loading : 'Send for signature'}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={handleSendInvoice}
@@ -736,6 +976,44 @@ export default function InvoicePreviewPage() {
             ) : null}
           </div>
         </div>
+
+        {allocationConnectionPrompt ? (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 px-4 py-6 backdrop-blur-sm sm:items-center">
+            <div className="w-full max-w-md rounded-[24px] bg-white p-5 shadow-[0_24px_70px_rgba(15,23,42,0.35)] sm:p-6">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-primary/70">
+                Israel Tax Authority
+              </p>
+              <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-950">
+                {copy.allocationConnectionPromptTitle}
+              </h2>
+              <p className="mt-3 text-sm leading-6 text-slate-600">
+                {copy.allocationConnectionPromptBody.replace(
+                  '{amount}',
+                  formatCurrency(allocationConnectionPrompt.minAmountBeforeVat, locale)
+                )}
+              </p>
+              <div className="mt-5 grid gap-3">
+                <button
+                  type="button"
+                  onClick={handleConnectFromAllocationPrompt}
+                  disabled={taxActionLoading}
+                  className="inline-flex items-center justify-center gap-2 rounded-[18px] bg-[#2c78d0] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-[#246bb9] disabled:bg-slate-300"
+                >
+                  <FiExternalLink className="h-4.5 w-4.5" />
+                  {copy.connectThenTryAgain}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleContinueWithoutAllocation}
+                  disabled={saving}
+                  className="inline-flex items-center justify-center rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:text-slate-400"
+                >
+                  {copy.continueWithoutAllocation}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </main>
     </>
   );

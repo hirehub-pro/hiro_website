@@ -161,6 +161,15 @@ async function findInvoiceRef(uid, invoiceDocId) {
   return directRef;
 }
 
+async function getAllocationNumberMinAmountBeforeVat() {
+  const systemSnap = await admin.firestore().doc('metadata/system').get();
+  const minAmount = Number(systemSnap.data()?.allocationNumberMinAmountBeforeVat);
+  if (!Number.isFinite(minAmount) || minAmount < 0) {
+    return 0;
+  }
+  return minAmount;
+}
+
 function getAllocationNumber(data) {
   return String(
     data?.confirmationNumber ||
@@ -168,8 +177,125 @@ function getAllocationNumber(data) {
     data?.allocationNumber ||
     data?.AllocationNumber ||
     data?.taxAuthorityAllocationNumber ||
+    data?.confirmation_number ||
+    data?.message?.success?.[0]?.confirmation_number ||
+    data?.message?.errors?.[0]?.confirmation_number ||
     ''
   ).trim();
+}
+
+function findTaxAuthorityResultItem(responseData, allocationRequest) {
+  const invoiceId = allocationRequest?.invoices_list?.[0]?.invoice_id || null;
+  const successItems = Array.isArray(responseData?.message?.success) ? responseData.message.success : [];
+  const errorItems = Array.isArray(responseData?.message?.errors) ? responseData.message.errors : [];
+  const successItem = successItems.find((item) => item?.invoice_id === invoiceId) || successItems[0] || null;
+  const errorItem = errorItems.find((item) => item?.invoice_id === invoiceId) || errorItems[0] || null;
+
+  return { invoiceId, successItem, errorItem };
+}
+
+function summarizeTaxAuthorityInvoiceError(errorItem) {
+  const errors = Array.isArray(errorItem?.message?.errors) ? errorItem.message.errors : [];
+  const messages = errors
+    .map((error) => [error?.param, error?.message].filter(Boolean).join(': '))
+    .filter(Boolean);
+
+  return messages[0] || 'Tax Authority did not approve this invoice.';
+}
+
+function roundMoney(value) {
+  const numberValue = Number(value) || 0;
+  return Math.round(numberValue * 100) / 100;
+}
+
+function intOrNull(value) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  const numberValue = Number(value);
+  return Number.isInteger(numberValue) ? numberValue : null;
+}
+
+function stringOrNull(value, maxLength) {
+  const stringValue = String(value || '').trim();
+  if (!stringValue) {
+    return null;
+  }
+
+  return maxLength ? stringValue.slice(0, maxLength) : stringValue;
+}
+
+function omitNullish(value) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== null && item !== undefined)
+  );
+}
+
+function normalizeTaxAuthorityItem(item, index) {
+  const quantity = Number(item?.quantity) || 1;
+  const pricePerUnit = Number(item?.price_per_unit ?? item?.pricePerUnit ?? 0);
+  const totalAmount = Number(item?.total_amount ?? item?.totalAmount ?? quantity * pricePerUnit);
+  const vatRate = Number(item?.vat_rate ?? item?.vatRate ?? 0);
+  const vatAmount = Number(item?.vat_amount ?? item?.vatAmount ?? totalAmount * (vatRate / 100));
+
+  return omitNullish({
+    index: Number.isInteger(Number(item?.index)) ? Number(item.index) : index + 1,
+    catalog_id: stringOrNull(item?.catalog_id || item?.catalogId, 13),
+    category: Number.isInteger(Number(item?.category)) ? Number(item.category) : 200000,
+    description: stringOrNull(item?.description || 'Service', 30),
+    measure_unit_description: stringOrNull(item?.measure_unit_description || item?.measureUnitDescription, 20),
+    quantity: roundMoney(quantity),
+    price_per_unit: roundMoney(pricePerUnit),
+    discount: roundMoney(item?.discount),
+    total_amount: roundMoney(totalAmount),
+    vat_rate: roundMoney(vatRate),
+    vat_amount: roundMoney(vatAmount),
+  });
+}
+
+function normalizeTaxAuthorityAllocationRequest(invoice) {
+  const vatNumber = Number(invoice?.vat_number);
+  const paymentAmount = roundMoney(invoice?.payment_amount);
+  const vatAmount = roundMoney(invoice?.vat_amount);
+  const invoiceRequest = omitNullish({
+    invoice_id: String(invoice?.invoice_id || '').trim(),
+    invoice_type: Number(invoice?.invoice_type) || 305,
+    vat_number: vatNumber,
+    union_vat_number: intOrNull(invoice?.union_vat_number),
+    authorized_company: intOrNull(invoice?.authorized_company),
+    user_id: intOrNull(invoice?.user_id),
+    user_name: stringOrNull(invoice?.user_name, 25),
+    invoice_reference_number: String(invoice?.invoice_reference_number || invoice?.invoice_id || '').trim().slice(0, 20),
+    customer_vat_number: Number(invoice?.customer_vat_number),
+    customer_name: stringOrNull(invoice?.customer_name, 25),
+    customer_country_code: stringOrNull(invoice?.customer_country_code, 3),
+    invoice_date: String(invoice?.invoice_date || '').trim(),
+    invoice_issuance_date: String(invoice?.invoice_issuance_date || invoice?.invoice_date || '').trim(),
+    branch_id: stringOrNull(invoice?.branch_id, 7),
+    accounting_software_number: Number(invoice?.accounting_software_number),
+    client_software_key: stringOrNull(invoice?.client_software_key, 50),
+    amount_before_discount: roundMoney(invoice?.amount_before_discount ?? paymentAmount),
+    discount: roundMoney(invoice?.discount),
+    payment_amount: paymentAmount,
+    vat_amount: vatAmount,
+    payment_amount_including_vat: roundMoney(invoice?.payment_amount_including_vat ?? paymentAmount + vatAmount),
+    invoice_note: stringOrNull(invoice?.invoice_note, 100),
+    action: Number.isInteger(Number(invoice?.action)) ? Number(invoice.action) : 0,
+    delivery_address: stringOrNull(invoice?.delivery_address, 60),
+    items: Array.isArray(invoice?.items)
+      ? invoice.items.map((item, index) => normalizeTaxAuthorityItem(item, index))
+      : undefined,
+  });
+
+  return {
+    vat_number: vatNumber,
+    union_vat_number: intOrNull(invoice?.union_vat_number),
+    invoices_amount: 1,
+    invoices_payment_amount: paymentAmount,
+    invoices_vat_amount: vatAmount,
+    invoices_list: [invoiceRequest],
+  };
 }
 
 exports.createTaxAuthorityAuthorizationUrl = onCall({
@@ -230,7 +356,18 @@ exports.requestTaxInvoiceAllocation = onCall({
     throw new HttpsError('failed-precondition', 'Invoice VAT number must match your verified business ID.');
   }
 
+  const amountBeforeVat = Number(invoice.payment_amount ?? invoice.amount_before_discount ?? 0);
+  const minAmountBeforeVat = await getAllocationNumberMinAmountBeforeVat();
+  if (amountBeforeVat <= minAmountBeforeVat) {
+    throw new HttpsError(
+      'failed-precondition',
+      `Tax Authority allocation is available only when the invoice total before VAT is greater than ${minAmountBeforeVat}.`,
+      { amountBeforeVat, minAmountBeforeVat }
+    );
+  }
+
   const accessToken = await getValidTaxAuthorityAccessToken(uid);
+  const allocationRequest = normalizeTaxAuthorityAllocationRequest(invoice);
   const response = await fetch(TAX_AUTH_ALLOCATION_URL, {
     method: 'POST',
     headers: {
@@ -238,7 +375,7 @@ exports.requestTaxInvoiceAllocation = onCall({
       'Content-Type': 'application/json',
       Accept: 'application/json',
     },
-    body: JSON.stringify(invoice),
+    body: JSON.stringify(allocationRequest),
   });
 
   const text = await response.text();
@@ -254,11 +391,21 @@ exports.requestTaxInvoiceAllocation = onCall({
     throw new HttpsError('internal', 'Tax Authority invoice allocation failed.', responseData);
   }
 
-  const confirmationNumber = getAllocationNumber(responseData);
+  const { invoiceId, successItem, errorItem } = findTaxAuthorityResultItem(responseData, allocationRequest);
+  if (!successItem || successItem.approved !== true) {
+    console.error('Tax Authority allocation logical error', { uid, invoiceDocId, responseData });
+    throw new HttpsError(
+      'failed-precondition',
+      summarizeTaxAuthorityInvoiceError(errorItem),
+      responseData
+    );
+  }
+
+  const confirmationNumber = getAllocationNumber(successItem) || getAllocationNumber(responseData);
   const result = {
     approved: true,
     confirmationNumber,
-    invoiceId: responseData.invoiceId || responseData.invoice_id || invoice.invoice_id || invoiceDocId,
+    invoiceId: successItem.invoice_id || responseData.invoiceId || responseData.invoice_id || invoiceId || invoiceDocId,
     transactionId: responseData.transactionId || responseData.transaction_id || '',
     response: responseData,
   };
