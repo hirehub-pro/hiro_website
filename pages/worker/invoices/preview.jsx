@@ -2,7 +2,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
-import { FiArrowLeft, FiDownload, FiEdit3, FiExternalLink, FiPrinter, FiRefreshCw, FiSend, FiShare2 } from 'react-icons/fi';
+import { FiArrowLeft, FiDownload, FiEdit3, FiExternalLink, FiPrinter, FiSend, FiShare2 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import html2canvas from 'html2canvas';
@@ -96,7 +96,6 @@ export default function InvoicePreviewPage() {
   const [saving, setSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [taxStatus, setTaxStatus] = useState(null);
-  const [taxStatusLoading, setTaxStatusLoading] = useState(false);
   const [taxActionLoading, setTaxActionLoading] = useState(false);
   const [taxAllocation, setTaxAllocation] = useState(null);
   const [allocationConnectionPrompt, setAllocationConnectionPrompt] = useState(null);
@@ -158,7 +157,6 @@ export default function InvoicePreviewPage() {
     let active = true;
 
     async function loadTaxStatus() {
-      setTaxStatusLoading(true);
       try {
         const status = await getTaxAuthorityConnectionStatus();
         if (active) {
@@ -170,10 +168,6 @@ export default function InvoicePreviewPage() {
             connected: false,
             error: error?.message || 'Tax Authority connection status could not be loaded.',
           });
-        }
-      } finally {
-        if (active) {
-          setTaxStatusLoading(false);
         }
       }
     }
@@ -283,22 +277,6 @@ export default function InvoicePreviewPage() {
     return refreshedInvoice;
   }
 
-  async function refreshTaxStatus() {
-    setTaxStatusLoading(true);
-    try {
-      const status = await getTaxAuthorityConnectionStatus();
-      setTaxStatus(status);
-    } catch (error) {
-      setTaxStatus({
-        connected: false,
-        error: error?.message || 'Tax Authority connection status could not be loaded.',
-      });
-      toast.error(error?.message || t.common.error);
-    } finally {
-      setTaxStatusLoading(false);
-    }
-  }
-
   async function handleConnectTaxAuthority() {
     if (taxActionLoading) return;
 
@@ -395,7 +373,10 @@ export default function InvoicePreviewPage() {
   }
 
   async function shouldAttemptAllocation() {
-    if (!canRequestTaxAllocation || allocationNumber) {
+    const customerVatNumber = String(invoice?.clientId || '').replace(/\D/g, '');
+    const hasCustomerVatNumber = Boolean(customerVatNumber) && customerVatNumber !== '0';
+
+    if (!canRequestTaxAllocation || allocationNumber || !hasCustomerVatNumber) {
       return { shouldAttempt: false, minAmountBeforeVat: 0, amountBeforeVat: Number(invoice?.subtotal) || 0 };
     }
 
@@ -859,52 +840,6 @@ export default function InvoicePreviewPage() {
 
         <div className="sticky bottom-0 border-t border-[#d8dce3] bg-[#eef0f4]/95 px-4 py-3 backdrop-blur print:hidden sm:px-8">
           <div className="mx-auto max-w-[980px]">
-            {canRequestTaxAllocation ? (
-              <div className="mb-3 rounded-[18px] border border-[#cfe4d8] bg-white/95 px-4 py-3 shadow-sm">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-700/70">
-                      Israel Tax Authority
-                    </p>
-                    <p className="mt-1 text-sm font-semibold text-slate-700 sm:text-base">
-                      {taxStatusLoading
-                        ? 'Checking connection...'
-                        : taxStatus?.connected
-                          ? `Connected${taxStatus?.businessId ? ` - ${taxStatus.businessId}` : ''}`
-                          : taxStatus?.error || 'Not connected'}
-                    </p>
-                    {allocationNumber ? (
-                      <p className="mt-1 text-sm font-bold text-emerald-700">
-                        Allocation: {allocationNumber}
-                      </p>
-                    ) : null}
-                  </div>
-
-                  <div className="flex shrink-0 flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={refreshTaxStatus}
-                      disabled={taxStatusLoading || taxActionLoading}
-                      className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-50 disabled:text-slate-400"
-                    >
-                      <FiRefreshCw className={`h-4 w-4 ${taxStatusLoading ? 'animate-spin' : ''}`} />
-                      Status
-                    </button>
-                    {!taxStatus?.connected ? (
-                      <button
-                        type="button"
-                        onClick={handleConnectTaxAuthority}
-                        disabled={taxActionLoading}
-                        className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2c78d0] px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-[#246bb9] disabled:bg-slate-300"
-                      >
-                        <FiExternalLink className="h-4 w-4" />
-                        Connect
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            ) : null}
             <div className="mb-3 flex items-center justify-between gap-3 rounded-[18px] border border-[#d8e6f7] bg-white/90 px-4 py-3 shadow-sm">
               <div className="min-w-0">
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">

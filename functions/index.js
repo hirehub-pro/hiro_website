@@ -366,6 +366,15 @@ exports.requestTaxInvoiceAllocation = onCall({
     );
   }
 
+  const customerVatNumber = Number(invoice.customer_vat_number || 0);
+  if (!Number.isInteger(customerVatNumber) || customerVatNumber <= 0) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Client ID is required before requesting a Tax Authority allocation number.',
+      { customerVatNumber }
+    );
+  }
+
   const accessToken = await getValidTaxAuthorityAccessToken(uid);
   const allocationRequest = normalizeTaxAuthorityAllocationRequest(invoice);
   const response = await fetch(TAX_AUTH_ALLOCATION_URL, {
