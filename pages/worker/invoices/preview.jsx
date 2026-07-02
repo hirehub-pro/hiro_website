@@ -116,6 +116,10 @@ async function buildInvoicePdfBlob(element) {
   captureElement.style.maxWidth = 'none';
   captureElement.style.transform = 'none';
   captureElement.style.transformOrigin = 'top left';
+  captureElement.style.gap = '0';
+  captureElement.querySelectorAll('.invoice-preview-page').forEach((page) => {
+    page.style.boxShadow = 'none';
+  });
   document.body.appendChild(captureElement);
 
   let canvas;
@@ -877,135 +881,166 @@ export default function InvoicePreviewPage() {
                 </div>
               </div>
             ) : (
-            <div className="relative flex min-h-[1123px] flex-col px-[57px] py-[57px] print:h-[297mm] print:min-h-0">
-              <div className="rounded-2xl bg-[#dcebfa] px-[21px] py-4 text-left">
-                <h2 className="text-[37px] font-light leading-[42px] text-[#1454b2]">{docTypeLabel}</h2>
-                <p className="mt-1 text-[21px] font-light leading-[25px] text-[#485a71]">{copy.originalCopy}</p>
-                <div className="mt-3 leading-[21px] text-[#3f4d5f]">
-                  <p className="text-[19px]">{`${copy.documentNo}: ${invoice.invoiceNumber}`}</p>
-                  {allocationNumber ? <p>{`${copy.taxAuthorityAllocationNumber}: ${allocationNumber}`}</p> : null}
-                  <p className="text-base">{`${copy.issueDate}: ${invoice.issueDate}`}</p>
-                </div>
-              </div>
+            invoiceItemPages.map((page, pageIndex) => {
+              const isFirstPage = pageIndex === 0;
+              const isFinalPage = pageIndex === invoiceItemPages.length - 1;
 
-              <div className="mt-6 grid grid-cols-2 gap-8" dir="ltr">
-                <div dir="rtl">
-                  <DetailCard
-                    title={copy.clientDetails}
-                    lines={[
-                      invoice.clientName || copy.emptyClient,
-                      detailLine(copy.clientId, invoice.clientId),
-                      detailLine(copy.clientEmail, invoice.clientEmail),
-                      invoice.clientPhone || '',
-                      invoice.clientCity || '',
-                    ]}
-                    tint="white"
-                  />
-                </div>
-                <div dir="rtl">
-                  <DetailCard
-                    title={copy.businessDetails}
-                    lines={[
-                      invoice.createdBy?.name || 'Hiro Pro',
-                      detailLine(copy.businessId, invoice.createdBy?.id),
-                      detailLine(copy.businessEmail, invoice.createdBy?.email),
-                      invoice.createdBy?.phone || '',
-                      invoice.createdBy?.city || '',
-                    ]}
-                    tint="blue"
-                  />
-                </div>
-              </div>
-
-              <div className="mt-[37px] overflow-hidden rounded-[2px] border border-[#d7dee8]" dir="ltr">
-                <div className="grid grid-cols-[1fr_80px_133px_133px] bg-[#2c92e5] text-center text-base leading-5 text-white">
-                  <div className="border-white/20 px-2 py-2 sm:border-r sm:px-3" dir="rtl">{copy.description}</div>
-                  <div className="border-white/20 px-2 py-2 sm:border-r sm:px-3" dir="rtl">{copy.quantity}</div>
-                  <div className="border-white/20 px-2 py-2 sm:border-r sm:px-3" dir="rtl">{copy.unitPrice}</div>
-                  <div className="px-3 py-2" dir="rtl">{copy.total}</div>
-                </div>
-
-                <div className="divide-y divide-[#e6edf7]">
-                  {lineItems.map((item, index) => {
-                    const lineTotal = Number(item.lineSubtotal ?? (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0));
-
-                    return (
-                      <div key={item.id || `${item.description}_${index}`} className="grid grid-cols-[1fr_80px_133px_133px] items-center text-right text-[15px] leading-[18px] text-[#40434d]">
-                        <div className="border-[#d7dee8] px-2 py-2 sm:border-r sm:px-3" dir="rtl">{item.description || `${copy.emptyDescription} ${index + 1}`}</div>
-                        <div className="border-[#d7dee8] px-2 py-2 sm:border-r sm:px-3" dir="rtl">{item.quantity}</div>
-                        <div className="border-[#d7dee8] px-2 py-2 sm:border-r sm:px-3" dir="rtl">{formatCurrency(item.unitPrice, locale)}</div>
-                        <div className="px-2 py-2 sm:px-3" dir="rtl">{formatCurrency(lineTotal, locale)}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="mt-6 flex justify-end" dir="ltr">
-                <div className="w-[347px]" dir="rtl">
-                  <div className="rounded-[13px] border border-[#abd1f2] bg-[#dcebfa] p-[19px] text-[#0f172a]">
-                    <div className="space-y-1 text-[15px] leading-[18px]">
-                      <div className="flex items-center justify-between gap-4">
-                        <span>{formatCurrency(subtotalBeforeDiscount, locale)}</span>
-                        <span>{copy.subtotal}</span>
-                      </div>
-                      {invoiceDiscountAmount > 0 ? (
-                        <div className="flex items-center justify-between gap-4">
-                          <span>-{formatCurrency(invoiceDiscountAmount, locale)}</span>
-                          <span>{copy.discountType}</span>
-                        </div>
-                      ) : null}
-                      <div className="flex items-center justify-between gap-4">
-                        <span>{formatCurrency(vatAmount, locale)}</span>
-                        <span>{copy.vatAmount}</span>
-                      </div>
-                      {invoice?.roundTotalEnabled && Math.abs(roundingAdjustment) >= 0.01 ? (
-                        <div className="flex items-center justify-between gap-4">
-                          <span>{formatCurrency(roundingAdjustment, locale)}</span>
-                          <span>{copy.roundingAdjustment}</span>
-                        </div>
-                      ) : null}
-                      <div className="border-t border-[#9eb7ce] pt-2">
-                        <div className="flex items-center justify-between gap-4 text-xl font-bold leading-6 text-[#1454b2]">
-                          <span>{formatCurrency(total, locale)}</span>
-                          <span>{copy.total}</span>
+              return (
+                <div
+                  key={`invoice_page_${pageIndex}`}
+                  className={`invoice-preview-page relative flex h-[1123px] flex-col rounded-[2px] bg-white px-[57px] py-[57px] shadow-[0_14px_40px_rgba(15,23,42,0.35)] print:h-[297mm] print:rounded-none print:shadow-none ${isFinalPage ? '' : 'print:break-after-page'}`}
+                >
+                  {isFirstPage ? (
+                    <>
+                      <div className="rounded-2xl bg-[#dcebfa] px-[21px] py-4 text-left">
+                        <h2 className="text-[37px] font-light leading-[42px] text-[#1454b2]">{docTypeLabel}</h2>
+                        <p className="mt-1 text-[21px] font-light leading-[25px] text-[#485a71]">{copy.originalCopy}</p>
+                        <div className="mt-3 leading-[21px] text-[#3f4d5f]">
+                          <p className="text-[19px]">{`${copy.documentNo}: ${invoice.invoiceNumber}`}</p>
+                          {allocationNumber ? <p>{`${copy.taxAuthorityAllocationNumber}: ${allocationNumber}`}</p> : null}
+                          <p className="text-base">{`${copy.issueDate}: ${invoice.issueDate}`}</p>
                         </div>
                       </div>
-                      <div className="mt-2 flex items-center justify-between gap-4 text-[15px] leading-[18px] text-[#536170]">
-                        <span>{invoice.dueDate || invoice.issueDate || ''}</span>
-                        <span>{copy.paymentDueDate || copy.dueDate || ''}</span>
+
+                      <div className="mt-6 grid grid-cols-2 gap-8" dir="ltr">
+                        <div dir="rtl">
+                          <DetailCard
+                            title={copy.clientDetails}
+                            lines={[
+                              invoice.clientName || copy.emptyClient,
+                              detailLine(copy.clientId, invoice.clientId),
+                              detailLine(copy.clientEmail, invoice.clientEmail),
+                              invoice.clientPhone || '',
+                              invoice.clientCity || '',
+                            ]}
+                            tint="white"
+                          />
+                        </div>
+                        <div dir="rtl">
+                          <DetailCard
+                            title={copy.businessDetails}
+                            lines={[
+                              invoice.createdBy?.name || 'Hiro Pro',
+                              detailLine(copy.businessId, invoice.createdBy?.id),
+                              detailLine(copy.businessEmail, invoice.createdBy?.email),
+                              invoice.createdBy?.phone || '',
+                              invoice.createdBy?.city || '',
+                            ]}
+                            tint="blue"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="rounded-2xl bg-[#dcebfa] px-[21px] py-4 text-left">
+                      <h2 className="text-[30px] font-light leading-[36px] text-[#1454b2]">{docTypeLabel}</h2>
+                      <div className="mt-2 flex items-center justify-between gap-6 text-[16px] leading-5 text-[#3f4d5f]" dir="rtl">
+                        <span>{`${copy.documentNo}: ${invoice.invoiceNumber || '-'}`}</span>
+                        <span>{invoice.clientName || copy.emptyClient}</span>
                       </div>
                     </div>
+                  )}
+
+                  <div className={`${isFirstPage ? 'mt-[37px]' : 'mt-8'} overflow-hidden rounded-[2px] border border-[#d7dee8]`} dir="ltr">
+                    <div className="grid grid-cols-[1fr_80px_133px_133px] bg-[#2c92e5] text-center text-base leading-5 text-white">
+                      <div className="border-white/20 px-2 py-2 sm:border-r sm:px-3" dir="rtl">{copy.description}</div>
+                      <div className="border-white/20 px-2 py-2 sm:border-r sm:px-3" dir="rtl">{copy.quantity}</div>
+                      <div className="border-white/20 px-2 py-2 sm:border-r sm:px-3" dir="rtl">{copy.unitPrice}</div>
+                      <div className="px-3 py-2" dir="rtl">{copy.total}</div>
+                    </div>
+
+                    <div className="divide-y divide-[#e6edf7]">
+                      {page.items.map((item, itemIndex) => {
+                        const globalIndex = page.startIndex + itemIndex;
+                        const lineTotal = Number(item.lineSubtotal ?? (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0));
+
+                        return (
+                          <div key={item.id || `${item.description}_${globalIndex}`} className="grid grid-cols-[1fr_80px_133px_133px] items-center text-right text-[15px] leading-[18px] text-[#40434d]">
+                            <div className="border-[#d7dee8] px-2 py-2 sm:border-r sm:px-3" dir="rtl">{item.description || `${copy.emptyDescription} ${globalIndex + 1}`}</div>
+                            <div className="border-[#d7dee8] px-2 py-2 sm:border-r sm:px-3" dir="rtl">{item.quantity}</div>
+                            <div className="border-[#d7dee8] px-2 py-2 sm:border-r sm:px-3" dir="rtl">{formatCurrency(item.unitPrice, locale)}</div>
+                            <div className="px-2 py-2 sm:px-3" dir="rtl">{formatCurrency(lineTotal, locale)}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                  {invoiceNotes ? (
-                    <div className="mt-3 text-right text-[13px] leading-5 text-[#3f4d5f]">
-                      <p className="font-semibold text-[#26313b]">{copy.notes}</p>
-                      <p className="mt-1 whitespace-pre-line">{invoiceNotes}</p>
+
+                  {isFinalPage ? (
+                    <div className="mt-6 flex justify-end" dir="ltr">
+                      <div className="w-[347px]" dir="rtl">
+                        <div className="rounded-[13px] border border-[#abd1f2] bg-[#dcebfa] p-[19px] text-[#0f172a]">
+                          <div className="space-y-1 text-[15px] leading-[18px]">
+                            <div className="flex items-center justify-between gap-4">
+                              <span>{formatCurrency(subtotalBeforeDiscount, locale)}</span>
+                              <span>{copy.subtotal}</span>
+                            </div>
+                            {invoiceDiscountAmount > 0 ? (
+                              <div className="flex items-center justify-between gap-4">
+                                <span>-{formatCurrency(invoiceDiscountAmount, locale)}</span>
+                                <span>{copy.discountType}</span>
+                              </div>
+                            ) : null}
+                            <div className="flex items-center justify-between gap-4">
+                              <span>{formatCurrency(vatAmount, locale)}</span>
+                              <span>{copy.vatAmount}</span>
+                            </div>
+                            {invoice?.roundTotalEnabled && Math.abs(roundingAdjustment) >= 0.01 ? (
+                              <div className="flex items-center justify-between gap-4">
+                                <span>{formatCurrency(roundingAdjustment, locale)}</span>
+                                <span>{copy.roundingAdjustment}</span>
+                              </div>
+                            ) : null}
+                            <div className="border-t border-[#9eb7ce] pt-2">
+                              <div className="flex items-center justify-between gap-4 text-xl font-bold leading-6 text-[#1454b2]">
+                                <span>{formatCurrency(total, locale)}</span>
+                                <span>{copy.total}</span>
+                              </div>
+                            </div>
+                            <div className="mt-2 flex items-center justify-between gap-4 text-[15px] leading-[18px] text-[#536170]">
+                              <span>{invoice.dueDate || invoice.issueDate || ''}</span>
+                              <span>{copy.paymentDueDate || copy.dueDate || ''}</span>
+                            </div>
+                          </div>
+                        </div>
+                        {invoiceNotes ? (
+                          <div className="mt-3 text-right text-[13px] leading-5 text-[#3f4d5f]">
+                            <p className="font-semibold text-[#26313b]">{copy.notes}</p>
+                            <p className="mt-1 whitespace-pre-line">{invoiceNotes}</p>
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   ) : null}
-                </div>
-              </div>
 
-              <footer className="absolute bottom-[57px] left-[57px] right-[57px] min-h-[213px] px-[11px] pt-8 text-[#26313b]" dir="rtl">
-                <div className="mb-6 flex items-center justify-center gap-4 text-[13px] leading-4">
-                  <span>חתימה:</span>
-                  <span className="block h-[1px] w-[307px] bg-[#26313b]" />
-                </div>
+                  <footer className="absolute bottom-[57px] left-[57px] right-[57px] px-[11px] pt-8 text-[#26313b]" dir="rtl">
+                    {isFinalPage ? (
+                      <div className="mb-6 flex items-center justify-center gap-4 text-[13px] leading-4">
+                        <span>חתימה:</span>
+                        <span className="block h-[1px] w-[307px] bg-[#26313b]" />
+                      </div>
+                    ) : null}
 
-                <div className="border-t border-[#26313b] pt-[13px]">
-                  <div className="grid grid-cols-2 items-start gap-6">
-                    <div className="text-right">
-                      <p className="text-[21px] font-normal leading-6 text-black">חתימה דיגיטלית מאובטחת</p>
-                      <p className="mt-[7px] text-[11px] leading-4">מסמך זה מיועד לחתימה דיגיטלית באמצעות מערכת הירו</p>
+                    <div className="border-t border-[#26313b] pt-[13px]">
+                      <div className="grid grid-cols-2 items-start gap-6">
+                        <div className="text-right">
+                          {isFinalPage ? (
+                            <>
+                              <p className="text-[21px] font-normal leading-6 text-black">חתימה דיגיטלית מאובטחת</p>
+                              <p className="mt-[7px] text-[11px] leading-4">מסמך זה מיועד לחתימה דיגיטלית באמצעות מערכת הירו</p>
+                            </>
+                          ) : null}
+                        </div>
+                        <div className="self-end text-left text-[11px] leading-4 text-[#26313b]">
+                          <p>{`הופק ב ${formatFooterGeneratedAt(generatedAt)} | ${docTypeLabel}`}</p>
+                          <p className="text-[13px] leading-5">{`${pageIndex + 1} / ${invoiceItemPages.length}`}</p>
+                        </div>
+                      </div>
                     </div>
-                    <div className="self-end text-left text-[11px] leading-4 text-[#26313b]">
-                      <p>{`הופק ב ${formatFooterGeneratedAt(generatedAt)} | ${docTypeLabel}`}</p>
-                      <p className="text-[13px] leading-5">1 / 1</p>
-                    </div>
-                  </div>
+                  </footer>
                 </div>
-              </footer>
-            </div>
+              );
+            })
             )}
             </section>
           </div>
