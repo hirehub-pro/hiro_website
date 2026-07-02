@@ -8,7 +8,6 @@ import {
   FiCalendar,
   FiCheckCircle,
   FiChevronDown,
-  FiChevronUp,
   FiLayers,
   FiPlus,
   FiPrinter,
@@ -42,6 +41,7 @@ function buildLineItem(index, description, currency) {
     quantity: 1,
     unitPrice: 0,
     currency,
+    vatMode: 'before_vat',
   };
 }
 
@@ -93,6 +93,76 @@ function isValidClientTaxId(value) {
   return normalizedValue === '' || normalizedValue === '0' || /^\d{9}$/.test(normalizedValue);
 }
 
+function requiredPlaceholder(label) {
+  return `${label} *`;
+}
+
+function hasFieldValue(value) {
+  return value !== undefined && value !== null && String(value).length > 0;
+}
+
+function floatingFieldClass(value, extraClassName = '') {
+  return clsx('floating-field', hasFieldValue(value) && 'is-filled', extraClassName);
+}
+
+function normalizeLineItem(item, fallbackIndex = 0) {
+  const normalizedVatMode = ['before_vat', 'after_vat', 'no_vat'].includes(item?.vatMode)
+    ? item.vatMode
+    : 'before_vat';
+
+  return {
+    id: item?.id || `${Date.now()}_${fallbackIndex}_${Math.random().toString(36).slice(2, 7)}`,
+    sku: String(item?.sku || ''),
+    description: String(item?.description || ''),
+    quantity: Number(item?.quantity ?? 1),
+    unitPrice: Number(item?.unitPrice ?? 0),
+    currency: String(item?.currency || 'ILS'),
+    vatMode: normalizedVatMode,
+  };
+}
+
+function calculateLineAmounts(item, vatRate) {
+  const quantity = Number(item?.quantity) || 0;
+  const unitPrice = Number(item?.unitPrice) || 0;
+  const rate = Math.max(Number(vatRate) || 0, 0) / 100;
+  const rawLineAmount = quantity * unitPrice;
+
+  if (item?.vatMode === 'after_vat') {
+    const total = rawLineAmount;
+    const subtotal = rate > 0 ? total / (1 + rate) : total;
+    return {
+      subtotal,
+      vatAmount: Math.max(total - subtotal, 0),
+      total,
+    };
+  }
+
+  if (item?.vatMode === 'no_vat') {
+    return {
+      subtotal: rawLineAmount,
+      vatAmount: 0,
+      total: rawLineAmount,
+    };
+  }
+
+  const vatAmount = rawLineAmount * rate;
+  return {
+    subtotal: rawLineAmount,
+    vatAmount,
+    total: rawLineAmount + vatAmount,
+  };
+}
+
+function calculateInvoiceDiscount(subtotal, discountType, discountAmount) {
+  const normalizedSubtotal = Math.max(Number(subtotal) || 0, 0);
+  const normalizedDiscount = Math.max(Number(discountAmount) || 0, 0);
+  const rawDiscount = discountType === 'fixed'
+    ? normalizedDiscount
+    : normalizedSubtotal * (Math.min(normalizedDiscount, 100) / 100);
+
+  return Math.min(rawDiscount, normalizedSubtotal);
+}
+
 function documentTypeConfig(value) {
   switch (value) {
     case 'quote':
@@ -124,6 +194,15 @@ export default function WorkerInvoicesPage() {
   const [dealerTypeLoaded, setDealerTypeLoaded] = useState(profileDealerType === 'exempt');
 
   const currencyOptions = useMemo(() => ['ILS', 'USD', 'EUR'], []);
+  const vatModeOptions = useMemo(() => ([
+    { value: 'before_vat', label: copy.beforeVat },
+    { value: 'after_vat', label: copy.afterVat },
+    { value: 'no_vat', label: copy.noVat },
+  ]), [copy.afterVat, copy.beforeVat, copy.noVat]);
+  const discountTypeOptions = useMemo(() => ([
+    { value: 'percent', label: '%' },
+    { value: 'fixed', label: '₪' },
+  ]), []);
   const paymentTypeOptions = useMemo(() => ([
     copy.bankTransfer,
     copy.cash,
@@ -166,8 +245,10 @@ export default function WorkerInvoicesPage() {
   const [documentType, setDocumentType] = useState('receipt');
   const [documentDescription, setDocumentDescription] = useState('');
   const [vatRate, setVatRate] = useState(18);
-  const [paymentTerms, setPaymentTerms] = useState('');
   const [notes, setNotes] = useState('');
+  const [discountType, setDiscountType] = useState('percent');
+  const [discountAmount, setDiscountAmount] = useState(0);
+  const [roundTotalEnabled, setRoundTotalEnabled] = useState(true);
   const [lineItems, setLineItems] = useState(defaultLineItems);
   const [payments, setPayments] = useState(defaultPayments);
   const [expandedLineItemId, setExpandedLineItemId] = useState(defaultLineItems[0]?.id || null);
@@ -252,10 +333,12 @@ export default function WorkerInvoicesPage() {
       setClientUid(parsed.clientUid || '');
       setDocumentType(parsed.documentType || 'receipt');
       setDocumentDescription(parsed.documentDescription || '');
-      setPaymentTerms(parsed.paymentTerms || '');
-      setNotes(parsed.notes || '');
+      setNotes(parsed.notes || parsed.paymentTerms || '');
+      setDiscountType(parsed.discountType === 'fixed' ? 'fixed' : 'percent');
+      setDiscountAmount(Number(parsed.discountInputAmount ?? parsed.discountAmount) || 0);
+      setRoundTotalEnabled(parsed.roundTotalEnabled !== false);
       const nextLineItems = Array.isArray(parsed.lineItems) && parsed.lineItems.length > 0
-        ? parsed.lineItems
+        ? parsed.lineItems.map((item, index) => normalizeLineItem(item, index))
         : defaultLineItems;
       const nextPayments = Array.isArray(parsed.payments) && parsed.payments.length > 0
         ? parsed.payments
@@ -465,20 +548,39 @@ export default function WorkerInvoicesPage() {
     };
   }, [canUseInvoiceBuilder, documentType, user?.uid]);
 
-  const subtotal = useMemo(
-    () => lineItems.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0), 0),
-    [lineItems]
+  const lineAmounts = useMemo(
+    () => lineItems.map((item) => calculateLineAmounts(item, vatRate)),
+    [lineItems, vatRate]
   );
-  const vatAmount = subtotal * ((Number(vatRate) || 0) / 100);
-  const total = subtotal + vatAmount;
+  const subtotalBeforeDiscount = useMemo(
+    () => lineAmounts.reduce((sum, item) => sum + item.subtotal, 0),
+    [lineAmounts]
+  );
+  const vatAmountBeforeDiscount = useMemo(
+    () => lineAmounts.reduce((sum, item) => sum + item.vatAmount, 0),
+    [lineAmounts]
+  );
+  const invoiceDiscountAmount = useMemo(
+    () => calculateInvoiceDiscount(subtotalBeforeDiscount, discountType, discountAmount),
+    [discountAmount, discountType, subtotalBeforeDiscount]
+  );
+  const discountRatio = subtotalBeforeDiscount > 0 ? invoiceDiscountAmount / subtotalBeforeDiscount : 0;
+  const subtotal = Math.max(subtotalBeforeDiscount - invoiceDiscountAmount, 0);
+  const vatAmount = Math.max(vatAmountBeforeDiscount * (1 - discountRatio), 0);
+  const total = useMemo(
+    () => subtotal + vatAmount,
+    [subtotal, vatAmount]
+  );
+  const roundedTotal = useMemo(() => Math.round(total), [total]);
+  const displayTotal = roundTotalEnabled ? roundedTotal : total;
+  const roundingAdjustment = displayTotal - total;
   const paidTotal = useMemo(
     () => payments.reduce((sum, item) => sum + (Number(item.amount) || 0), 0),
     [payments]
   );
-  const amountDue = Math.max(total - paidTotal, 0);
-  const paymentCoverage = total > 0 ? Math.min((paidTotal / total) * 100, 100) : 0;
+  const amountDue = Math.max(displayTotal - paidTotal, 0);
+  const paymentCoverage = displayTotal > 0 ? Math.min((paidTotal / displayTotal) * 100, 100) : 0;
   const clientCompletion = [clientName, clientId, clientEmail, clientPhone, clientCity].filter(Boolean).length;
-  const readyServiceLines = lineItems.filter((item) => item.description && Number(item.quantity) > 0 && Number(item.unitPrice) > 0).length;
   const readyPayments = payments.filter((item) => item.type && Number(item.amount) > 0).length;
 
   if (loading || (user && isWorker && !verificationChecked)) {
@@ -547,7 +649,7 @@ export default function WorkerInvoicesPage() {
   function updateLineItem(id, field, value) {
     setLineItems((current) => current.map((item) => (
       item.id === id
-        ? { ...item, [field]: field === 'description' || field === 'sku' || field === 'currency' ? value : Number(value) }
+        ? { ...item, [field]: field === 'description' || field === 'sku' || field === 'currency' || field === 'vatMode' ? value : Number(value) }
         : item
     )));
   }
@@ -608,11 +710,18 @@ export default function WorkerInvoicesPage() {
       documentType,
       documentDescription,
       vatRate: Number(vatRate) || 0,
-      paymentTerms,
       notes,
+      discountType,
+      discountAmount: invoiceDiscountAmount,
+      discountInputAmount: Number(discountAmount) || 0,
       subtotal,
+      subtotalBeforeDiscount,
       vatAmount,
-      total,
+      vatAmountBeforeDiscount,
+      total: displayTotal,
+      calculatedTotal: total,
+      roundingAdjustment,
+      roundTotalEnabled,
       paidTotal,
       amountDue,
       locale,
@@ -623,7 +732,13 @@ export default function WorkerInvoicesPage() {
         email: profile?.email || user?.email || '',
         city: profile?.town || profile?.city || '',
       },
-      lineItems,
+      lineItems: lineItems.map((item, index) => ({
+        ...item,
+        vatMode: item.vatMode || 'before_vat',
+        lineSubtotal: lineAmounts[index]?.subtotal || 0,
+        lineVatAmount: lineAmounts[index]?.vatAmount || 0,
+        lineTotal: lineAmounts[index]?.total || 0,
+      })),
       payments,
     };
   }
@@ -665,7 +780,7 @@ export default function WorkerInvoicesPage() {
         return false;
       }
 
-      const roundedTotal = Math.round(total * 100);
+      const roundedTotal = Math.round(displayTotal * 100);
       const roundedPaidTotal = Math.round(paidTotal * 100);
       if (roundedTotal !== roundedPaidTotal) {
         toast.error(copy.paymentTotalMustMatch);
@@ -728,22 +843,28 @@ export default function WorkerInvoicesPage() {
                   </button>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
-                  <label className="block">
-                    <span className="mb-2 block text-sm font-semibold text-gray-700">
-                      {copy.clientName} <span className="text-red-500">*</span>
-                    </span>
+                  <label className={floatingFieldClass(clientName, 'floating-field--icon')}>
                     <div className="relative">
+                      <span className="floating-field__label">{requiredPlaceholder(copy.clientName)}</span>
                       <FiUser className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 rtl:left-auto rtl:right-4" />
-                      <input value={clientName} onChange={(event) => setClientName(event.target.value)} className="input-field pl-12 rtl:pl-4 rtl:pr-12" />
+                      <input
+                        value={clientName}
+                        onChange={(event) => setClientName(event.target.value)}
+                        placeholder=" "
+                        aria-label={copy.clientName}
+                        className="input-field pl-12 rtl:pl-4 rtl:pr-12"
+                      />
                     </div>
                   </label>
-                  <label className="block">
-                    <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.clientId}</span>
+                  <label className={floatingFieldClass(clientId, 'floating-field--icon')}>
                     <div className="relative">
+                      <span className="floating-field__label">{copy.clientId}</span>
                       <FiSearch className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 rtl:left-auto rtl:right-4" />
                       <input
                         value={clientId}
                         onChange={(event) => setClientId(normalizeNineDigitInput(event.target.value))}
+                        placeholder=" "
+                        aria-label={copy.clientId}
                         inputMode="numeric"
                         pattern="0|[0-9]{9}"
                         maxLength={9}
@@ -751,17 +872,36 @@ export default function WorkerInvoicesPage() {
                       />
                     </div>
                   </label>
-                  <label className="block">
-                    <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.clientEmail}</span>
-                    <input type="email" value={clientEmail} onChange={(event) => setClientEmail(event.target.value)} className="input-field" />
+                  <label className={floatingFieldClass(clientEmail)}>
+                    <span className="floating-field__label">{copy.clientEmail}</span>
+                    <input
+                      type="email"
+                      value={clientEmail}
+                      onChange={(event) => setClientEmail(event.target.value)}
+                      placeholder=" "
+                      aria-label={copy.clientEmail}
+                      className="input-field"
+                    />
                   </label>
-                  <label className="block">
-                    <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.clientPhone}</span>
-                    <input value={clientPhone} onChange={(event) => setClientPhone(event.target.value)} className="input-field" />
+                  <label className={floatingFieldClass(clientPhone)}>
+                    <span className="floating-field__label">{copy.clientPhone}</span>
+                    <input
+                      value={clientPhone}
+                      onChange={(event) => setClientPhone(event.target.value)}
+                      placeholder=" "
+                      aria-label={copy.clientPhone}
+                      className="input-field"
+                    />
                   </label>
-                  <label className="block md:col-span-2">
-                    <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.city}</span>
-                    <input value={clientCity} onChange={(event) => setClientCity(event.target.value)} className="input-field" />
+                  <label className={floatingFieldClass(clientCity, 'md:col-span-2')}>
+                    <span className="floating-field__label">{copy.city}</span>
+                    <input
+                      value={clientCity}
+                      onChange={(event) => setClientCity(event.target.value)}
+                      placeholder=" "
+                      aria-label={copy.city}
+                      className="input-field"
+                    />
                   </label>
                 </div>
               </Panel>
@@ -769,29 +909,42 @@ export default function WorkerInvoicesPage() {
               <Panel>
                 <SectionTitle eyebrow={copy.invoiceProfile} title={copy.invoiceDetails} />
                 <div className="grid gap-4 md:grid-cols-2">
-                  <label className="block">
-                    <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.issueDate}</span>
+                  <label className={floatingFieldClass(issueDate, 'floating-field--icon')}>
                     <div className="relative">
+                      <span className="floating-field__label">{copy.issueDate}</span>
                       <FiCalendar className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 rtl:left-auto rtl:right-4" />
-                      <input type="date" value={issueDate} onChange={(event) => setIssueDate(event.target.value)} className="input-field pl-12 rtl:pl-4 rtl:pr-12" />
+                      <input
+                        type="date"
+                        value={issueDate}
+                        onChange={(event) => setIssueDate(event.target.value)}
+                        aria-label={copy.issueDate}
+                        className="input-field pl-12 rtl:pl-4 rtl:pr-12"
+                      />
                     </div>
                   </label>
                   {showDueDate ? (
-                    <label className="block">
-                      <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.dueDate}</span>
+                    <label className={floatingFieldClass(dueDate, 'floating-field--icon')}>
                       <div className="relative">
+                        <span className="floating-field__label">{copy.dueDate}</span>
                         <FiCalendar className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 rtl:left-auto rtl:right-4" />
-                        <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="input-field pl-12 rtl:pl-4 rtl:pr-12" />
+                        <input
+                          type="date"
+                          value={dueDate}
+                          onChange={(event) => setDueDate(event.target.value)}
+                          aria-label={copy.dueDate}
+                          className="input-field pl-12 rtl:pl-4 rtl:pr-12"
+                        />
                       </div>
                     </label>
                   ) : null}
-                  <label className="block">
-                    <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.documentType}</span>
+                  <label className={floatingFieldClass(documentType)}>
                     <div className="relative">
+                      <span className="floating-field__label">{copy.documentType}</span>
                       <select
                         value={documentType}
                         onChange={(event) => setDocumentType(event.target.value)}
                         disabled={!dealerTypeLoaded}
+                        aria-label={copy.documentType}
                         className="input-field appearance-none pr-10 disabled:cursor-not-allowed disabled:opacity-60 rtl:pr-4 rtl:pl-10"
                       >
                         {documentTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -805,13 +958,14 @@ export default function WorkerInvoicesPage() {
                       <p className="mt-2 text-xs font-medium text-amber-700">Exempt businesses cannot use tax invoice document types.</p>
                     ) : null}
                   </label>
-                  <label className="block md:col-span-2">
-                    <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.documentDescription}</span>
+                  <label className={floatingFieldClass(documentDescription, 'floating-field--textarea md:col-span-2')}>
+                    <span className="floating-field__label">{copy.documentDescription}</span>
                     <textarea
                       rows={3}
                       value={documentDescription}
                       onChange={(event) => setDocumentDescription(event.target.value)}
-                      placeholder={copy.documentDescriptionPlaceholder}
+                      placeholder=" "
+                      aria-label={copy.documentDescription}
                       className="input-field resize-none"
                     />
                   </label>
@@ -820,27 +974,26 @@ export default function WorkerInvoicesPage() {
 
               <Panel>
                 <SectionTitle eyebrow={copy.serviceLines} title={copy.serviceLines} />
-                <div className="mb-5 grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-[24px] border border-emerald-100 bg-emerald-50/80 p-4">
-                    <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-700/75">{copy.serviceLines}</p>
-                    <p className="mt-2 text-2xl font-extrabold text-emerald-950">{lineItems.length}</p>
-                  </div>
-                  <div className="rounded-[24px] border border-sky-100 bg-sky-50/80 p-4">
-                    <p className="text-xs font-black uppercase tracking-[0.16em] text-sky-700/75">{copy.subtotal}</p>
-                    <p className="mt-2 text-2xl font-extrabold text-sky-950">{formatCurrency(subtotal, locale)}</p>
-                  </div>
-                  <div className="rounded-[24px] border border-violet-100 bg-violet-50/80 p-4">
-                    <p className="text-xs font-black uppercase tracking-[0.16em] text-violet-700/75">{copy.ready || copy.total}</p>
-                    <p className="mt-2 text-2xl font-extrabold text-violet-950">{readyServiceLines}/{lineItems.length}</p>
-                  </div>
-                </div>
                 <div className="space-y-4">
                   {lineItems.map((item, index) => {
-                    const lineTotal = (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
+                    const lineAmount = lineAmounts[index] || calculateLineAmounts(item, vatRate);
+                    const lineTotal = lineAmount.total;
                     const isExpanded = expandedLineItemId === item.id;
                     return (
-                      <div key={item.id} className="rounded-[30px] border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-emerald-50/30 p-4 shadow-sm sm:p-5">
-                        <div className="mb-4 flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div key={item.id} className="rounded-[30px] border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-emerald-50/30 p-4 shadow-sm transition-colors hover:border-emerald-200 sm:p-5">
+                        <div
+                          className="mb-4 flex cursor-pointer flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between"
+                          onClick={() => setExpandedLineItemId(isExpanded ? null : item.id)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              setExpandedLineItemId(isExpanded ? null : item.id);
+                            }
+                          }}
+                          role="button"
+                          tabIndex={0}
+                          aria-expanded={isExpanded}
+                        >
                           <div className="flex items-start gap-3">
                             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-sm font-black text-emerald-700 shadow-inner">
                               {index + 1}
@@ -858,58 +1011,94 @@ export default function WorkerInvoicesPage() {
                             <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 shadow-sm">
                               {`${Number(item.quantity) || 0} × ${formatCurrency(item.unitPrice, locale)}`}
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => setExpandedLineItemId(isExpanded ? null : item.id)}
-                              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-gray-600 transition-colors hover:bg-slate-50"
-                            >
-                              {isExpanded ? <FiChevronUp className="h-4 w-4" /> : <FiChevronDown className="h-4 w-4" />}
-                              {isExpanded ? copy.collapse : copy.expand}
-                            </button>
+                            <FiChevronDown className={clsx('h-5 w-5 self-center text-gray-400 transition-transform', isExpanded && 'rotate-180')} />
                           </div>
                         </div>
 
                         {isExpanded ? (
-                        <>
-                        <div className="grid gap-4">
-                          <label className="block">
-                            <span className="mb-2 block text-sm font-semibold text-gray-700">
-                              {copy.description} <span className="text-red-500">*</span>
-                            </span>
+                        <div onClick={(event) => event.stopPropagation()}>
+                        <div className="grid gap-4 md:grid-cols-[minmax(150px,0.45fr)_minmax(260px,1fr)]">
+                          <label className={floatingFieldClass(item.sku)}>
+                            <span className="floating-field__label">{copy.sku}</span>
+                            <input
+                              value={item.sku}
+                              onChange={(event) => updateLineItem(item.id, 'sku', event.target.value)}
+                              placeholder=" "
+                              aria-label={copy.sku}
+                              className="input-field"
+                            />
+                          </label>
+                          <label className={floatingFieldClass(item.description, 'floating-field--icon')}>
                             <div className="relative">
+                              <span className="floating-field__label">{requiredPlaceholder(copy.description)}</span>
                               <FiSearch className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 rtl:left-auto rtl:right-4" />
-                              <input value={item.description} onChange={(event) => updateLineItem(item.id, 'description', event.target.value)} className="input-field pl-12 rtl:pl-4 rtl:pr-12" />
+                              <input
+                                value={item.description}
+                                onChange={(event) => updateLineItem(item.id, 'description', event.target.value)}
+                                placeholder=" "
+                                aria-label={copy.description}
+                                className="input-field pl-12 rtl:pl-4 rtl:pr-12"
+                              />
                             </div>
                           </label>
                         </div>
 
-                        <div className="mt-4 grid gap-4 md:grid-cols-[minmax(150px,0.95fr)_minmax(100px,0.58fr)_minmax(150px,0.95fr)_minmax(78px,0.42fr)_auto]">
-                          <label className="block">
-                            <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.sku}</span>
-                            <input value={item.sku} onChange={(event) => updateLineItem(item.id, 'sku', event.target.value)} className="input-field" />
+                        <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-[minmax(86px,0.45fr)_minmax(130px,0.7fr)_minmax(130px,0.7fr)_minmax(78px,0.42fr)_auto]">
+                          <label className={floatingFieldClass(item.quantity)}>
+                            <span className="floating-field__label">{requiredPlaceholder(copy.quantity)}</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={item.quantity}
+                              onChange={(event) => updateLineItem(item.id, 'quantity', event.target.value)}
+                              placeholder=" "
+                              aria-label={copy.quantity}
+                              className="input-field"
+                            />
                           </label>
-                          <label className="block">
-                            <span className="mb-2 block text-sm font-semibold text-gray-700">
-                              {copy.quantity} <span className="text-red-500">*</span>
-                            </span>
-                            <input type="number" min="0" step="1" value={item.quantity} onChange={(event) => updateLineItem(item.id, 'quantity', event.target.value)} className="input-field" />
+                          <label className={floatingFieldClass(item.unitPrice)}>
+                            <span className="floating-field__label">{requiredPlaceholder(copy.unitPrice)}</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.unitPrice}
+                              onChange={(event) => updateLineItem(item.id, 'unitPrice', event.target.value)}
+                              placeholder=" "
+                              aria-label={copy.unitPrice}
+                              className="input-field"
+                            />
                           </label>
-                          <label className="block">
-                            <span className="mb-2 block text-sm font-semibold text-gray-700">
-                              {copy.unitPrice} <span className="text-red-500">*</span>
-                            </span>
-                            <input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(event) => updateLineItem(item.id, 'unitPrice', event.target.value)} className="input-field" />
-                          </label>
-                          <label className="block">
-                            <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.currency}</span>
+                          <label className={floatingFieldClass(item.vatMode)}>
                             <div className="relative">
-                              <select value={item.currency} onChange={(event) => updateLineItem(item.id, 'currency', event.target.value)} className="input-field min-w-0 appearance-none px-3 pr-9 text-sm">
+                              <span className="floating-field__label">{copy.vatMode}</span>
+                              <select
+                                value={item.vatMode || 'before_vat'}
+                                onChange={(event) => updateLineItem(item.id, 'vatMode', event.target.value)}
+                                aria-label={copy.vatMode}
+                                className="input-field min-w-0 appearance-none px-3 pr-9 text-sm"
+                              >
+                                {vatModeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                              </select>
+                              <FiChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 rtl:right-auto rtl:left-3" />
+                            </div>
+                          </label>
+                          <label className={floatingFieldClass(item.currency)}>
+                            <div className="relative">
+                              <span className="floating-field__label">{copy.currency}</span>
+                              <select
+                                value={item.currency}
+                                onChange={(event) => updateLineItem(item.id, 'currency', event.target.value)}
+                                aria-label={copy.currency}
+                                className="input-field min-w-0 appearance-none px-3 pr-9 text-sm"
+                              >
                                 {currencyOptions.map((option) => <option key={option} value={option}>{option}</option>)}
                               </select>
                               <FiChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 rtl:right-auto rtl:left-3" />
                             </div>
                           </label>
-                          <div className="flex items-end">
+                          <div className="col-span-2 flex items-end md:col-span-1">
                             <button
                               type="button"
                               onClick={() => removeLineItem(item.id)}
@@ -921,7 +1110,7 @@ export default function WorkerInvoicesPage() {
                             </button>
                           </div>
                         </div>
-                        </>
+                        </div>
                         ) : null}
                       </div>
                     );
@@ -955,7 +1144,7 @@ export default function WorkerInvoicesPage() {
                   </div>
                   <div className="rounded-[24px] border border-emerald-100 bg-emerald-50/80 p-4">
                     <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-700/75">{copy.total}</p>
-                    <p className="mt-2 text-2xl font-extrabold text-emerald-950">{formatCurrency(total, locale)}</p>
+                    <p className="mt-2 text-2xl font-extrabold text-emerald-950">{formatCurrency(displayTotal, locale)}</p>
                   </div>
                   <div className="rounded-[24px] border border-amber-100 bg-amber-50/80 p-4">
                     <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-700/75">{copy.amountDue}</p>
@@ -967,8 +1156,20 @@ export default function WorkerInvoicesPage() {
                     const showBankFields = showPaymentType && (payment.type === copy.bankTransfer || payment.type === copy.check);
                     const isExpanded = expandedPaymentId === payment.id;
                     return (
-                      <div key={payment.id} className="rounded-[30px] border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-primary/5 p-4 shadow-sm sm:p-5">
-                        <div className="mb-4 flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div key={payment.id} className="rounded-[30px] border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-primary/5 p-4 shadow-sm transition-colors hover:border-primary/20 sm:p-5">
+                        <div
+                          className="mb-4 flex cursor-pointer flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between"
+                          onClick={() => setExpandedPaymentId(isExpanded ? null : payment.id)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              setExpandedPaymentId(isExpanded ? null : payment.id);
+                            }
+                          }}
+                          role="button"
+                          tabIndex={0}
+                          aria-expanded={isExpanded}
+                        >
                           <div className="flex items-start gap-3">
                             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-sm font-black text-primary shadow-inner">
                               {index + 1}
@@ -983,17 +1184,13 @@ export default function WorkerInvoicesPage() {
                               <p className="text-[11px] font-black uppercase tracking-[0.16em] text-primary/65">{copy.paymentAmount}</p>
                               <p className="mt-1 text-base font-extrabold text-gray-950">{formatCurrency(payment.amount, locale)}</p>
                             </div>
+                            <FiChevronDown className={clsx('h-5 w-5 self-center text-gray-400 transition-transform', isExpanded && 'rotate-180')} />
                             <button
                               type="button"
-                              onClick={() => setExpandedPaymentId(isExpanded ? null : payment.id)}
-                              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-gray-600 transition-colors hover:bg-slate-50"
-                            >
-                              {isExpanded ? <FiChevronUp className="h-4 w-4" /> : <FiChevronDown className="h-4 w-4" />}
-                              {isExpanded ? copy.collapse : copy.expand}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => removePaymentRow(payment.id)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                removePaymentRow(payment.id);
+                              }}
                               disabled={payments.length === 1}
                               className="inline-flex items-center gap-2 rounded-2xl border border-red-100 bg-red-50 px-3 py-3 text-sm font-semibold text-red-500 transition-colors hover:bg-red-100 disabled:opacity-50"
                             >
@@ -1004,33 +1201,56 @@ export default function WorkerInvoicesPage() {
                         </div>
  
                         {isExpanded ? (
-                        <>                           
+                        <div onClick={(event) => event.stopPropagation()}>
                         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                           {showPaymentType ? (
-                            <label className="block">
-                              <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.paymentType}</span>
+                            <label className={floatingFieldClass(payment.type)}>
                               <div className="relative">
-                                <select value={payment.type} onChange={(event) => updatePayment(payment.id, 'type', event.target.value)} className="input-field appearance-none pr-10 rtl:pr-4 rtl:pl-10">
+                                <span className="floating-field__label">{copy.paymentType}</span>
+                                <select
+                                  value={payment.type}
+                                  onChange={(event) => updatePayment(payment.id, 'type', event.target.value)}
+                                  aria-label={copy.paymentType}
+                                  className="input-field appearance-none pr-10 rtl:pr-4 rtl:pl-10"
+                                >
                                   {paymentTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
                                 </select>
                                 <FiChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 rtl:right-auto rtl:left-3" />
                               </div>
                             </label>
                           ) : null}
-                          <label className="block">
-                            <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.paymentDate}</span>
-                            <input type="date" value={payment.date} onChange={(event) => updatePayment(payment.id, 'date', event.target.value)} className="input-field" />
+                          <label className={floatingFieldClass(payment.date)}>
+                            <span className="floating-field__label">{copy.paymentDate}</span>
+                            <input
+                              type="date"
+                              value={payment.date}
+                              onChange={(event) => updatePayment(payment.id, 'date', event.target.value)}
+                              aria-label={copy.paymentDate}
+                              className="input-field"
+                            />
                           </label>
-                          <label className="block">
-                            <span className="mb-2 block text-sm font-semibold text-gray-700">
-                              {copy.paymentAmount} <span className="text-red-500">*</span>
-                            </span>
-                            <input type="number" min="0" step="0.01" value={payment.amount} onChange={(event) => updatePayment(payment.id, 'amount', event.target.value)} className="input-field" />
+                          <label className={floatingFieldClass(payment.amount)}>
+                            <span className="floating-field__label">{requiredPlaceholder(copy.paymentAmount)}</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={payment.amount}
+                              onChange={(event) => updatePayment(payment.id, 'amount', event.target.value)}
+                              placeholder=" "
+                              aria-label={copy.paymentAmount}
+                              className="input-field"
+                            />
                           </label>
-                          <label className="block">
-                            <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.currency}</span>
+                          <label className={floatingFieldClass(payment.currency)}>
                             <div className="relative">
-                              <select value={payment.currency} onChange={(event) => updatePayment(payment.id, 'currency', event.target.value)} className="input-field appearance-none pr-10 rtl:pr-4 rtl:pl-10">
+                              <span className="floating-field__label">{copy.currency}</span>
+                              <select
+                                value={payment.currency}
+                                onChange={(event) => updatePayment(payment.id, 'currency', event.target.value)}
+                                aria-label={copy.currency}
+                                className="input-field appearance-none pr-10 rtl:pr-4 rtl:pl-10"
+                              >
                                 {currencyOptions.map((option) => <option key={option} value={option}>{option}</option>)}
                               </select>
                               <FiChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 rtl:right-auto rtl:left-3" />
@@ -1041,22 +1261,40 @@ export default function WorkerInvoicesPage() {
                         {showBankFields ? (
                           <div className="mt-4 rounded-[24px] border border-slate-100 bg-white/80 p-4">
                             <div className="grid gap-4 lg:grid-cols-3">
-                              <label className="block lg:col-span-3 xl:col-span-1">
-                                <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.bankName}</span>
-                                <input value={payment.bankName} onChange={(event) => updatePayment(payment.id, 'bankName', event.target.value)} className="input-field" />
+                              <label className={floatingFieldClass(payment.bankName, 'lg:col-span-3 xl:col-span-1')}>
+                                <span className="floating-field__label">{copy.bankName}</span>
+                                <input
+                                  value={payment.bankName}
+                                  onChange={(event) => updatePayment(payment.id, 'bankName', event.target.value)}
+                                  placeholder=" "
+                                  aria-label={copy.bankName}
+                                  className="input-field"
+                                />
                               </label>
-                              <label className="block">
-                                <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.branch}</span>
-                                <input value={payment.branch} onChange={(event) => updatePayment(payment.id, 'branch', event.target.value)} className="input-field" />
+                              <label className={floatingFieldClass(payment.branch)}>
+                                <span className="floating-field__label">{copy.branch}</span>
+                                <input
+                                  value={payment.branch}
+                                  onChange={(event) => updatePayment(payment.id, 'branch', event.target.value)}
+                                  placeholder=" "
+                                  aria-label={copy.branch}
+                                  className="input-field"
+                                />
                               </label>
-                              <label className="block">
-                                <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.accountNumber}</span>
-                                <input value={payment.accountNumber} onChange={(event) => updatePayment(payment.id, 'accountNumber', event.target.value)} className="input-field" />
+                              <label className={floatingFieldClass(payment.accountNumber)}>
+                                <span className="floating-field__label">{copy.accountNumber}</span>
+                                <input
+                                  value={payment.accountNumber}
+                                  onChange={(event) => updatePayment(payment.id, 'accountNumber', event.target.value)}
+                                  placeholder=" "
+                                  aria-label={copy.accountNumber}
+                                  className="input-field"
+                                />
                               </label>
                             </div>
                           </div>
                         ) : null}
-                        </>
+                        </div>                           
                         ) : null}
                       </div>
                     );
@@ -1071,36 +1309,81 @@ export default function WorkerInvoicesPage() {
               ) : null}
 
               <Panel>
-                <SectionTitle title={copy.notes} subtitle={copy.paymentTerms} />
-                <div className="grid gap-6 lg:grid-cols-2">
-                  <label className="block">
-                    <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.paymentTerms}</span>
-                    <textarea
-                      rows={6}
-                      value={paymentTerms}
-                      onChange={(event) => setPaymentTerms(event.target.value)}
-                      placeholder={copy.paymentTermsPlaceholder}
-                      className="input-field resize-none"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="mb-2 block text-sm font-semibold text-gray-700">{copy.notes}</span>
-                    <textarea
-                      rows={6}
-                      value={notes}
-                      onChange={(event) => setNotes(event.target.value)}
-                      placeholder={copy.notesPlaceholder}
-                      className="input-field resize-none"
-                    />
-                  </label>
-                </div>
+                <SectionTitle title={copy.notes} />
+                <label className={floatingFieldClass(notes, 'floating-field--textarea')}>
+                  <span className="floating-field__label">{copy.notes}</span>
+                  <textarea
+                    rows={6}
+                    value={notes}
+                    onChange={(event) => setNotes(event.target.value)}
+                    placeholder=" "
+                    aria-label={copy.notes}
+                    className="input-field resize-none"
+                  />
+                </label>
               </Panel>
 
               <Panel className="shadow-soft">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
+                  <div className="flex flex-col gap-4">
                     <p className="text-xs font-black uppercase tracking-[0.16em] text-gray-400">{copy.summary}</p>
-                    <p className="mt-2 text-lg font-bold text-gray-950">{formatCurrency(total, locale)}</p>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div>
+                        <p className="text-lg font-bold text-gray-950">{formatCurrency(displayTotal, locale)}</p>
+                        {invoiceDiscountAmount > 0 ? (
+                          <p className="mt-1 text-xs font-medium text-gray-400">
+                            {copy.discountType}: -{formatCurrency(invoiceDiscountAmount, locale)}
+                          </p>
+                        ) : null}
+                        {roundTotalEnabled && Math.abs(roundingAdjustment) >= 0.01 ? (
+                          <p className="mt-1 text-xs font-medium text-gray-400">
+                            {copy.roundingAdjustment}: {formatCurrency(roundingAdjustment, locale)}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setRoundTotalEnabled((current) => !current)}
+                          aria-pressed={roundTotalEnabled}
+                          className={`inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-xs font-bold transition-colors ${
+                            roundTotalEnabled
+                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                              : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                          }`}
+                        >
+                          {roundTotalEnabled ? copy.roundTotalOn : copy.roundTotalOff}
+                        </button>
+                        <label className={floatingFieldClass(discountType, 'w-24')}>
+                          <div className="relative">
+                            <span className="floating-field__label">{copy.discountType}</span>
+                            <select
+                              value={discountType}
+                              onChange={(event) => setDiscountType(event.target.value)}
+                              aria-label={copy.discountType}
+                              className="input-field min-w-0 appearance-none px-3 pr-9 text-sm"
+                            >
+                              {discountTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </select>
+                            <FiChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 rtl:right-auto rtl:left-3" />
+                          </div>
+                        </label>
+                        <label className={floatingFieldClass(discountAmount, 'w-36')}>
+                          <span className="floating-field__label">{copy.discountAmount}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max={discountType === 'percent' ? '100' : undefined}
+                            step="0.01"
+                            value={discountAmount}
+                            onChange={(event) => setDiscountAmount(Number(event.target.value))}
+                            placeholder=" "
+                            aria-label={copy.discountAmount}
+                            className="input-field"
+                          />
+                        </label>
+                      </div>
+                    </div>
                   </div>
                   <div className="flex flex-col gap-3 sm:flex-row">
                     <button

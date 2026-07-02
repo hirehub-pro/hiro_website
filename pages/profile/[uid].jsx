@@ -27,7 +27,7 @@ import { getProfilePageSeo } from '../../lib/page-seo';
 import { absoluteUrl } from '../../lib/seo-locale';
 import { buildProfilePath, buildProfileSlug } from '../../lib/profile-routing';
 import { slugifyProfession } from '../../lib/search-routing';
-import { createTaxAuthorityAuthorizationUrl } from '../../lib/taxAuthority';
+import { createTaxAuthorityAuthorizationUrl, getTaxAuthorityConnectionStatus } from '../../lib/taxAuthority';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
@@ -292,9 +292,11 @@ export default function ProfilePage({
   const [professionSearch, setProfessionSearch] = useState('');
   const [savingProfessions, setSavingProfessions] = useState(false);
   const [taxAuthorityConnecting, setTaxAuthorityConnecting] = useState(false);
+  const [taxAuthorityConnected, setTaxAuthorityConnected] = useState(null);
   const avatarInputRef = useRef(null);
   const socialLinks = getNormalizedSocialLinks(profile);
   const uid = profile?.uid || '';
+  const isOwnProfile = user?.uid === profile?.uid;
   const canonicalUrl = profile ? absoluteUrl(buildProfilePath(profile)) : absoluteUrl('/search');
 
   useEffect(() => {
@@ -313,6 +315,34 @@ export default function ProfilePage({
       .catch(console.error)
       .finally(() => setLoadingProfile(false));
   }, [profileRoute, loadedProfileRoute]);
+
+  useEffect(() => {
+    if (!isOwnProfile || profile?.role !== 'worker') {
+      setTaxAuthorityConnected(null);
+      return undefined;
+    }
+
+    let active = true;
+
+    async function loadTaxAuthorityStatus() {
+      try {
+        const status = await getTaxAuthorityConnectionStatus();
+        if (active) {
+          setTaxAuthorityConnected(Boolean(status?.connected));
+        }
+      } catch (error) {
+        if (active) {
+          setTaxAuthorityConnected(false);
+        }
+      }
+    }
+
+    loadTaxAuthorityStatus();
+
+    return () => {
+      active = false;
+    };
+  }, [isOwnProfile, profile?.role]);
 
   useEffect(() => {
     let isMounted = true;
@@ -871,7 +901,6 @@ export default function ProfilePage({
     ...(profile?.role === 'worker' ? [{ key: 'schedule', label: t.profile.scheduleSection }] : []),
   ];
 
-  const isOwnProfile = user?.uid === profile?.uid;
   const shouldShowWorkerActions = profile?.role === 'worker' && !isOwnProfile;
   const canEditSchedule = user?.uid === uid && profile?.role === 'worker';
   const avatarUrl = buildProfileAvatarUrl(profile);
@@ -1027,7 +1056,7 @@ export default function ProfilePage({
         onMessageClick={handleOpenMessage}
         onAvatarClick={handleAvatarClick}
         onProfessionsClick={isOwnProfile ? handleOpenProfessionEditor : null}
-        onTaxAuthorityConnectClick={isOwnProfile ? handleConnectTaxAuthority : null}
+        onTaxAuthorityConnectClick={isOwnProfile && taxAuthorityConnected === false ? handleConnectTaxAuthority : null}
         taxAuthorityConnecting={taxAuthorityConnecting}
       />
 

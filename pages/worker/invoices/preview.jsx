@@ -19,6 +19,13 @@ import {
   requestTaxInvoiceAllocation,
 } from '../../../lib/taxAuthority';
 
+const INVOICE_PREVIEW_WIDTH = 794;
+const INVOICE_PREVIEW_HEIGHT = 1123;
+const INVOICE_PREVIEW_PAGE_GAP = 24;
+const FIRST_INVOICE_PAGE_ITEM_LIMIT = 8;
+const CONTINUATION_INVOICE_PAGE_ITEM_LIMIT = 18;
+const FINAL_INVOICE_PAGE_ITEM_LIMIT = 8;
+
 function DetailCard({ title, lines, tint = 'white', align = 'right' }) {
   const tone = tint === 'blue'
     ? 'bg-[#dcebfa]'
@@ -62,13 +69,76 @@ function formatFooterGeneratedAt(value) {
   }).format(value).replace(',', '');
 }
 
-async function buildInvoicePdfBlob(element) {
-  const canvas = await html2canvas(element, {
-    backgroundColor: '#ffffff',
-    scale: Math.min(1.5, Math.max(1.15, window.devicePixelRatio || 1)),
-    useCORS: true,
-    logging: false,
+function buildInvoiceItemPages(items) {
+  const normalizedItems = Array.isArray(items) ? items : [];
+  if (normalizedItems.length <= FIRST_INVOICE_PAGE_ITEM_LIMIT) {
+    return [{ items: normalizedItems, startIndex: 0 }];
+  }
+
+  const pages = [{
+    items: normalizedItems.slice(0, FIRST_INVOICE_PAGE_ITEM_LIMIT),
+    startIndex: 0,
+  }];
+  let nextIndex = FIRST_INVOICE_PAGE_ITEM_LIMIT;
+
+  while (normalizedItems.length - nextIndex > FINAL_INVOICE_PAGE_ITEM_LIMIT) {
+    const remainingAfterContinuation = normalizedItems.length - nextIndex - CONTINUATION_INVOICE_PAGE_ITEM_LIMIT;
+    const pageSize = remainingAfterContinuation > 0
+      ? CONTINUATION_INVOICE_PAGE_ITEM_LIMIT
+      : Math.max(
+        FINAL_INVOICE_PAGE_ITEM_LIMIT,
+        normalizedItems.length - nextIndex - FINAL_INVOICE_PAGE_ITEM_LIMIT
+      );
+
+    pages.push({
+      items: normalizedItems.slice(nextIndex, nextIndex + pageSize),
+      startIndex: nextIndex,
+    });
+    nextIndex += pageSize;
+  }
+
+  pages.push({
+    items: normalizedItems.slice(nextIndex),
+    startIndex: nextIndex,
   });
+
+  return pages;
+}
+
+async function buildInvoicePdfBlob(element) {
+  const captureElement = element.cloneNode(true);
+  captureElement.style.position = 'fixed';
+  captureElement.style.left = '-10000px';
+  captureElement.style.top = '0';
+  captureElement.style.width = `${INVOICE_PREVIEW_WIDTH}px`;
+  captureElement.style.minHeight = `${INVOICE_PREVIEW_HEIGHT}px`;
+  captureElement.style.height = 'auto';
+  captureElement.style.maxWidth = 'none';
+  captureElement.style.transform = 'none';
+  captureElement.style.transformOrigin = 'top left';
+  document.body.appendChild(captureElement);
+
+  let canvas;
+  try {
+    const captureHeight = Math.max(
+      INVOICE_PREVIEW_HEIGHT,
+      captureElement.scrollHeight,
+      captureElement.getBoundingClientRect().height
+    );
+
+    canvas = await html2canvas(captureElement, {
+      backgroundColor: '#ffffff',
+      scale: Math.min(1.5, Math.max(1.15, window.devicePixelRatio || 1)),
+      useCORS: true,
+      logging: false,
+      width: INVOICE_PREVIEW_WIDTH,
+      height: captureHeight,
+      windowWidth: INVOICE_PREVIEW_WIDTH,
+      windowHeight: captureHeight,
+    });
+  } finally {
+    captureElement.remove();
+  }
 
   const pdfWidth = 595.28;
   const pdfHeight = 841.89;
@@ -79,8 +149,44 @@ async function buildInvoicePdfBlob(element) {
     unit: 'pt',
   });
 
-  const pageImageData = canvas.toDataURL('image/jpeg', 0.88);
-  pdf.addImage(pageImageData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
+  const canvasPageHeight = Math.floor(canvas.width * (pdfHeight / pdfWidth));
+  const pageCanvas = document.createElement('canvas');
+  const pageContext = pageCanvas.getContext('2d');
+  if (!pageContext) {
+    throw new Error('Could not prepare invoice PDF pages');
+  }
+  pageCanvas.width = canvas.width;
+
+  let renderedHeight = 0;
+  let pageIndex = 0;
+
+  while (renderedHeight < canvas.height) {
+    const sliceHeight = Math.min(canvasPageHeight, canvas.height - renderedHeight);
+    pageCanvas.height = sliceHeight;
+    pageContext.clearRect(0, 0, pageCanvas.width, pageCanvas.height);
+    pageContext.drawImage(
+      canvas,
+      0,
+      renderedHeight,
+      canvas.width,
+      sliceHeight,
+      0,
+      0,
+      canvas.width,
+      sliceHeight
+    );
+
+    if (pageIndex > 0) {
+      pdf.addPage();
+    }
+
+    const pageImageData = pageCanvas.toDataURL('image/jpeg', 0.88);
+    const renderedPdfHeight = (sliceHeight / canvasPageHeight) * pdfHeight;
+    pdf.addImage(pageImageData, 'JPEG', 0, 0, pdfWidth, renderedPdfHeight, undefined, 'FAST');
+
+    renderedHeight += sliceHeight;
+    pageIndex += 1;
+  }
 
   return pdf.output('blob');
 }
@@ -100,6 +206,7 @@ export default function InvoicePreviewPage() {
   const [taxAllocation, setTaxAllocation] = useState(null);
   const [allocationConnectionPrompt, setAllocationConnectionPrompt] = useState(null);
   const [signingLinkLoading, setSigningLinkLoading] = useState(false);
+  const [previewScale, setPreviewScale] = useState(1);
   const invoiceContentRef = useRef(null);
   const savedInvoiceUrl = invoice?.savedInvoiceUrl || '';
   const savedInvoiceFileName = invoice?.savedFileName || `${invoice?.invoiceNumber || 'invoice'}.pdf`;
@@ -152,6 +259,25 @@ export default function InvoicePreviewPage() {
   }, [openedFromSaved]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    function updatePreviewScale() {
+      const horizontalPadding = window.innerWidth < 640 ? 24 : 64;
+      const availableWidth = Math.max(280, window.innerWidth - horizontalPadding);
+      setPreviewScale(Math.min(1, availableWidth / INVOICE_PREVIEW_WIDTH));
+    }
+
+    updatePreviewScale();
+    window.addEventListener('resize', updatePreviewScale);
+    window.addEventListener('orientationchange', updatePreviewScale);
+
+    return () => {
+      window.removeEventListener('resize', updatePreviewScale);
+      window.removeEventListener('orientationchange', updatePreviewScale);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!user?.uid || !canRequestTaxAllocation) return undefined;
 
     let active = true;
@@ -182,10 +308,14 @@ export default function InvoicePreviewPage() {
   const lineItems = invoice?.lineItems || [];
   const payments = invoice?.payments || [];
   const subtotal = useMemo(() => Number(invoice?.subtotal) || 0, [invoice?.subtotal]);
+  const subtotalBeforeDiscount = useMemo(() => Number(invoice?.subtotalBeforeDiscount ?? invoice?.subtotal) || 0, [invoice?.subtotal, invoice?.subtotalBeforeDiscount]);
+  const invoiceDiscountAmount = useMemo(() => Number(invoice?.discountAmount) || 0, [invoice?.discountAmount]);
   const vatAmount = useMemo(() => Number(invoice?.vatAmount) || 0, [invoice?.vatAmount]);
   const total = useMemo(() => Number(invoice?.total) || 0, [invoice?.total]);
+  const roundingAdjustment = useMemo(() => Number(invoice?.roundingAdjustment) || 0, [invoice?.roundingAdjustment]);
   const paidTotal = useMemo(() => Number(invoice?.paidTotal) || 0, [invoice?.paidTotal]);
   const amountDue = useMemo(() => Number(invoice?.amountDue) || 0, [invoice?.amountDue]);
+  const invoiceNotes = useMemo(() => String(invoice?.notes || '').trim(), [invoice?.notes]);
   const generatedAt = useMemo(() => new Date(), []);
 
   async function saveInvoiceRecord() {
@@ -300,6 +430,8 @@ export default function InvoicePreviewPage() {
     const customerVatNumber = String(invoice?.clientId || '').replace(/\D/g, '');
     const invoiceDocId = savedInvoice?.invoiceDocId || savedInvoice?.savedFirestoreId || `${docType}_${invoice?.invoiceNumber || Date.now()}`;
     const paymentAmount = Number(invoice?.subtotal) || Math.max((Number(invoice?.total) || 0) - (Number(invoice?.vatAmount) || 0), 0);
+    const amountBeforeDiscount = Number(invoice?.subtotalBeforeDiscount ?? invoice?.subtotal) || paymentAmount;
+    const discountAmount = Number(invoice?.discountAmount) || 0;
     const invoiceVatAmount = Number(invoice?.vatAmount) || 0;
     const paymentAmountIncludingVat = Number(invoice?.total) || paymentAmount + invoiceVatAmount;
 
@@ -316,8 +448,8 @@ export default function InvoicePreviewPage() {
         invoice_date: invoice?.issueDate || new Date().toISOString().slice(0, 10),
         invoice_issuance_date: invoice?.issueDate || new Date().toISOString().slice(0, 10),
         accounting_software_number: Number(process.env.NEXT_PUBLIC_TAX_ACCOUNTING_SOFTWARE_NUMBER || 987654321),
-        amount_before_discount: paymentAmount,
-        discount: 0,
+        amount_before_discount: amountBeforeDiscount,
+        discount: discountAmount,
         payment_amount: paymentAmount,
         vat_amount: invoiceVatAmount,
         payment_amount_including_vat: paymentAmountIncludingVat,
@@ -325,8 +457,9 @@ export default function InvoicePreviewPage() {
         action: 0,
         items: lineItems.map((item, index) => {
           const quantity = Number(item?.quantity) || 0;
-          const pricePerUnit = Number(item?.unitPrice) || 0;
-          const totalAmount = quantity * pricePerUnit;
+          const rawUnitPrice = Number(item?.unitPrice) || 0;
+          const totalAmount = Number(item?.lineSubtotal ?? quantity * rawUnitPrice) || 0;
+          const pricePerUnit = quantity > 0 ? totalAmount / quantity : Number(item?.unitPrice) || 0;
           return {
             index: index + 1,
             description: item?.description || 'Service',
@@ -334,8 +467,8 @@ export default function InvoicePreviewPage() {
             price_per_unit: pricePerUnit,
             discount: 0,
             total_amount: totalAmount,
-            vat_rate: Number(invoice?.vatRate) || 0,
-            vat_amount: totalAmount * ((Number(invoice?.vatRate) || 0) / 100),
+            vat_rate: item?.vatMode === 'no_vat' ? 0 : Number(invoice?.vatRate) || 0,
+            vat_amount: Number(item?.lineVatAmount ?? totalAmount * ((Number(invoice?.vatRate) || 0) / 100)) || 0,
           };
         }),
       },
@@ -685,6 +818,12 @@ export default function InvoicePreviewPage() {
   }
 
   const backHref = openedFromSaved ? '/worker/invoices/saved' : '/worker/invoices';
+  const invoiceItemPages = shouldUseStoredPdf ? [] : buildInvoiceItemPages(lineItems);
+  const invoicePreviewPageCount = shouldUseStoredPdf ? 1 : invoiceItemPages.length;
+  const previewShellHeight = (
+    (INVOICE_PREVIEW_HEIGHT * invoicePreviewPageCount)
+    + (INVOICE_PREVIEW_PAGE_GAP * Math.max(invoicePreviewPageCount - 1, 0))
+  ) * previewScale;
 
   return (
     <>
@@ -702,8 +841,21 @@ export default function InvoicePreviewPage() {
           </div>
         </header>
 
-        <div className="px-3 py-6 print:px-0 print:py-0 sm:px-8 sm:py-16">
-          <section ref={invoiceContentRef} className="mx-auto min-h-[1123px] w-full max-w-[794px] rounded-[2px] bg-white shadow-[0_14px_40px_rgba(15,23,42,0.35)] print:h-[297mm] print:min-h-0 print:w-[210mm] print:max-w-none print:shadow-none">
+        <div className="overflow-x-hidden px-3 py-6 print:px-0 print:py-0 sm:px-8 sm:py-16">
+          <div
+            className="invoice-preview-shell mx-auto print:h-auto print:w-auto"
+            style={{
+              width: `${INVOICE_PREVIEW_WIDTH * previewScale}px`,
+              height: `${previewShellHeight}px`,
+            }}
+          >
+            <section
+              ref={invoiceContentRef}
+              className="invoice-preview-frame flex w-[794px] max-w-none flex-col gap-6 print:w-[210mm] print:max-w-none print:gap-0"
+              style={{
+                '--invoice-preview-scale': previewScale,
+              }}
+            >
             {shouldUseStoredPdf ? (
               <div className="px-4 py-5 sm:px-14 sm:py-14">
                 <div className="rounded-[22px] bg-[#dcebfa] px-5 py-5 sm:px-7 sm:py-6">
@@ -775,7 +927,7 @@ export default function InvoicePreviewPage() {
 
                 <div className="divide-y divide-[#e6edf7]">
                   {lineItems.map((item, index) => {
-                    const lineTotal = (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
+                    const lineTotal = Number(item.lineSubtotal ?? (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0));
 
                     return (
                       <div key={item.id || `${item.description}_${index}`} className="grid grid-cols-[1fr_80px_133px_133px] items-center text-right text-[15px] leading-[18px] text-[#40434d]">
@@ -790,27 +942,47 @@ export default function InvoicePreviewPage() {
               </div>
 
               <div className="mt-6 flex justify-end" dir="ltr">
-                <div className="w-[347px] rounded-[13px] border border-[#abd1f2] bg-[#dcebfa] p-[19px] text-[#0f172a]" dir="rtl">
-                  <div className="space-y-1 text-[15px] leading-[18px]">
-                    <div className="flex items-center justify-between gap-4">
-                      <span>{formatCurrency(subtotal, locale)}</span>
-                      <span>{copy.subtotal}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-4">
-                      <span>{formatCurrency(vatAmount, locale)}</span>
-                      <span>{copy.vatAmount}</span>
-                    </div>
-                    <div className="border-t border-[#9eb7ce] pt-2">
-                      <div className="flex items-center justify-between gap-4 text-xl font-bold leading-6 text-[#1454b2]">
-                        <span>{formatCurrency(total, locale)}</span>
-                        <span>{copy.total}</span>
+                <div className="w-[347px]" dir="rtl">
+                  <div className="rounded-[13px] border border-[#abd1f2] bg-[#dcebfa] p-[19px] text-[#0f172a]">
+                    <div className="space-y-1 text-[15px] leading-[18px]">
+                      <div className="flex items-center justify-between gap-4">
+                        <span>{formatCurrency(subtotalBeforeDiscount, locale)}</span>
+                        <span>{copy.subtotal}</span>
+                      </div>
+                      {invoiceDiscountAmount > 0 ? (
+                        <div className="flex items-center justify-between gap-4">
+                          <span>-{formatCurrency(invoiceDiscountAmount, locale)}</span>
+                          <span>{copy.discountType}</span>
+                        </div>
+                      ) : null}
+                      <div className="flex items-center justify-between gap-4">
+                        <span>{formatCurrency(vatAmount, locale)}</span>
+                        <span>{copy.vatAmount}</span>
+                      </div>
+                      {invoice?.roundTotalEnabled && Math.abs(roundingAdjustment) >= 0.01 ? (
+                        <div className="flex items-center justify-between gap-4">
+                          <span>{formatCurrency(roundingAdjustment, locale)}</span>
+                          <span>{copy.roundingAdjustment}</span>
+                        </div>
+                      ) : null}
+                      <div className="border-t border-[#9eb7ce] pt-2">
+                        <div className="flex items-center justify-between gap-4 text-xl font-bold leading-6 text-[#1454b2]">
+                          <span>{formatCurrency(total, locale)}</span>
+                          <span>{copy.total}</span>
+                        </div>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-4 text-[15px] leading-[18px] text-[#536170]">
+                        <span>{invoice.dueDate || invoice.issueDate || ''}</span>
+                        <span>{copy.paymentDueDate || copy.dueDate || ''}</span>
                       </div>
                     </div>
-                    <div className="mt-2 flex items-center justify-between gap-4 text-[15px] leading-[18px] text-[#536170]">
-                      <span>{invoice.dueDate || invoice.issueDate || ''}</span>
-                      <span>{copy.paymentDueDate || copy.dueDate || ''}</span>
-                    </div>
                   </div>
+                  {invoiceNotes ? (
+                    <div className="mt-3 text-right text-[13px] leading-5 text-[#3f4d5f]">
+                      <p className="font-semibold text-[#26313b]">{copy.notes}</p>
+                      <p className="mt-1 whitespace-pre-line">{invoiceNotes}</p>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -835,7 +1007,8 @@ export default function InvoicePreviewPage() {
               </footer>
             </div>
             )}
-          </section>
+            </section>
+          </div>
         </div>
 
         <div className="sticky bottom-0 border-t border-[#d8dce3] bg-[#eef0f4]/95 px-4 py-3 backdrop-blur print:hidden sm:px-8">

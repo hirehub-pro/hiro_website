@@ -4,7 +4,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { FaApple, FaGooglePlay } from 'react-icons/fa';
-import { HiDesktopComputer, HiDeviceMobile, HiKey, HiLockClosed, HiMail, HiOutlineUser, HiShieldCheck, HiSparkles } from 'react-icons/hi';
+import { HiDesktopComputer, HiDeviceMobile, HiEye, HiEyeOff, HiKey, HiLockClosed, HiMail, HiOutlineUser, HiShieldCheck, HiSparkles } from 'react-icons/hi';
 import clsx from 'clsx';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -27,6 +27,7 @@ export default function SignInPage() {
 
   const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetEmailHint, setResetEmailHint] = useState('');
   const [showPasswordReset, setShowPasswordReset] = useState(false);
@@ -314,14 +315,22 @@ export default function SignInPage() {
                   <div className="relative">
                     <HiLockClosed className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
                     <input
-                      type="password"
+                      type={showPassword ? 'text' : 'password'}
                       required
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder={t.auth.password}
-                      className="input-field min-h-[52px] pl-12 text-base"
+                      className="input-field min-h-[52px] pl-12 pr-12 text-base"
                       autoComplete="current-password"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((current) => !current)}
+                      className="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? <HiEyeOff className="h-5 w-5" /> : <HiEye className="h-5 w-5" />}
+                    </button>
                   </div>
                 </div>
 
@@ -395,16 +404,16 @@ export default function SignInPage() {
               <HiOutlineUser className="w-5 h-5" />
               {t.auth.continueAsGuest}
             </button>
+
+            <p className="mt-4 text-center text-sm text-gray-500">
+              {t.auth.noAccount}{' '}
+              <Link href="/auth/signup" className="font-bold text-primary underline-offset-4 hover:underline">
+                {t.auth.register}
+              </Link>
+            </p>
           </div>
 
           {!useWideDesktopLayout ? featureCards : null}
-
-          <p className={clsx('text-center text-sm text-gray-500', !forceMobileLayout && 'xl:text-left')}>
-            {t.auth.noAccount}{' '}
-            <Link href="/auth/signup" className="font-bold text-primary underline-offset-4 hover:underline">
-              {t.auth.register}
-            </Link>
-          </p>
 
           <div className={clsx(
             'mx-auto w-full rounded-[24px] border border-white/60 bg-white/70 p-4 shadow-soft animate-fade-up',
