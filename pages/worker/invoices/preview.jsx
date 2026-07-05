@@ -22,9 +22,11 @@ import {
 const INVOICE_PREVIEW_WIDTH = 794;
 const INVOICE_PREVIEW_HEIGHT = 1123;
 const INVOICE_PREVIEW_PAGE_GAP = 24;
-const FIRST_INVOICE_PAGE_ITEM_LIMIT = 8;
+const SINGLE_INVOICE_PAGE_ITEM_LIMIT = 11;
+const FIRST_INVOICE_PAGE_ITEM_LIMIT = 14;
 const CONTINUATION_INVOICE_PAGE_ITEM_LIMIT = 18;
-const FINAL_INVOICE_PAGE_ITEM_LIMIT = 8;
+const FINAL_INVOICE_PAGE_ITEM_LIMIT = 10;
+const MIN_FINAL_INVOICE_PAGE_ITEMS = 1;
 
 function DetailCard({ title, lines, tint = 'white', align = 'right' }) {
   const tone = tint === 'blue'
@@ -71,24 +73,26 @@ function formatFooterGeneratedAt(value) {
 
 function buildInvoiceItemPages(items) {
   const normalizedItems = Array.isArray(items) ? items : [];
-  if (normalizedItems.length <= FIRST_INVOICE_PAGE_ITEM_LIMIT) {
+  if (normalizedItems.length <= SINGLE_INVOICE_PAGE_ITEM_LIMIT) {
     return [{ items: normalizedItems, startIndex: 0 }];
   }
 
+  const firstPageItemCount = Math.min(
+    FIRST_INVOICE_PAGE_ITEM_LIMIT,
+    Math.max(1, normalizedItems.length - MIN_FINAL_INVOICE_PAGE_ITEMS)
+  );
   const pages = [{
-    items: normalizedItems.slice(0, FIRST_INVOICE_PAGE_ITEM_LIMIT),
+    items: normalizedItems.slice(0, firstPageItemCount),
     startIndex: 0,
   }];
-  let nextIndex = FIRST_INVOICE_PAGE_ITEM_LIMIT;
+  let nextIndex = firstPageItemCount;
 
-  while (normalizedItems.length - nextIndex > FINAL_INVOICE_PAGE_ITEM_LIMIT) {
-    const remainingAfterContinuation = normalizedItems.length - nextIndex - CONTINUATION_INVOICE_PAGE_ITEM_LIMIT;
-    const pageSize = remainingAfterContinuation > 0
-      ? CONTINUATION_INVOICE_PAGE_ITEM_LIMIT
-      : Math.max(
-        FINAL_INVOICE_PAGE_ITEM_LIMIT,
-        normalizedItems.length - nextIndex - FINAL_INVOICE_PAGE_ITEM_LIMIT
-      );
+  while (normalizedItems.length - nextIndex > FINAL_INVOICE_PAGE_ITEM_LIMIT + 2) {
+    const remainingItems = normalizedItems.length - nextIndex;
+    const pageSize = Math.min(
+      CONTINUATION_INVOICE_PAGE_ITEM_LIMIT,
+      remainingItems - FINAL_INVOICE_PAGE_ITEM_LIMIT
+    );
 
     pages.push({
       items: normalizedItems.slice(nextIndex, nextIndex + pageSize),
@@ -1013,7 +1017,7 @@ export default function InvoicePreviewPage() {
                     </div>
                   ) : null}
 
-                  <footer className="absolute bottom-[57px] left-[57px] right-[57px] px-[11px] pt-8 text-[#26313b]" dir="rtl">
+                  <footer className="mt-auto shrink-0 px-[11px] pt-8 text-[#26313b]" dir="rtl">
                     {isFinalPage ? (
                       <div className="mb-6 flex items-center justify-center gap-4 text-[13px] leading-4">
                         <span>חתימה:</span>
