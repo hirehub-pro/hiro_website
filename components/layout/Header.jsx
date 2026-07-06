@@ -376,8 +376,15 @@ export default function Header() {
           <div className="h-full px-6 flex items-center justify-between gap-5">
             <Link href="/" className="flex items-center gap-3 shrink-0 animate-slide-right">
               <div className="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-hero-gradient shadow-glow-sm">
-                <span className="absolute inset-0 bg-shine bg-[length:200%_100%] animate-shimmer opacity-40" />
-                <span className="relative text-base font-extrabold text-white">H</span>
+                <Image
+                  src="/web-app-manifest-192x192.png"
+                  alt="Hiro"
+                  fill
+                  sizes="44px"
+                  className="object-cover"
+                  priority
+                />
+                <span className="pointer-events-none absolute inset-0 bg-shine bg-[length:200%_100%] animate-shimmer opacity-40" />
               </div>
               <div>
                 <p className="font-display text-xl font-extrabold tracking-tight text-gray-950">Hiro</p>
@@ -504,8 +511,16 @@ export default function Header() {
         <div className="glass rounded-[24px] border border-white/60 shadow-soft">
           <div className="flex h-16 items-center justify-between px-4">
             <Link href="/" className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-hero-gradient shadow-glow-sm">
-                <span className="text-sm font-extrabold text-white">H</span>
+              <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl bg-hero-gradient shadow-glow-sm">
+                <Image
+                  src="/web-app-manifest-192x192.png"
+                  alt="Hiro"
+                  fill
+                  sizes="40px"
+                  className="object-cover"
+                  priority
+                />
+                <span className="pointer-events-none absolute inset-0 bg-shine bg-[length:200%_100%] animate-shimmer opacity-35" />
               </div>
               <div>
                 <p className="font-display text-lg font-extrabold text-gray-950">Hiro</p>

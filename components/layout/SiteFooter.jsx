@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { FiFacebook, FiX } from 'react-icons/fi';
 import { FaGooglePlay, FaApple } from 'react-icons/fa';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -22,8 +23,14 @@ export default function SiteFooter() {
           <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
             <Link href="/" className="inline-flex items-center gap-3">
               <div className="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-hero-gradient shadow-glow-sm">
-                <span className="absolute inset-0 bg-shine bg-[length:200%_100%] animate-shimmer opacity-35" />
-                <span className="relative text-base font-extrabold text-white">H</span>
+                <Image
+                  src="/web-app-manifest-192x192.png"
+                  alt="Hiro"
+                  fill
+                  sizes="44px"
+                  className="object-cover"
+                />
+                <span className="pointer-events-none absolute inset-0 bg-shine bg-[length:200%_100%] animate-shimmer opacity-35" />
               </div>
               <div>
                   <p className="font-display text-2xl font-extrabold tracking-tight text-white">Hiro</p>
