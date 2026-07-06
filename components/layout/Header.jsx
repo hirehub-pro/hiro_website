@@ -1,8 +1,9 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
 import { collection, deleteDoc, doc, getDocs, updateDoc } from 'firebase/firestore';
-import { HiBell, HiCheck, HiLocationMarker, HiRefresh, HiX } from 'react-icons/hi';
+import { HiBell, HiCheck, HiLocationMarker, HiPlus, HiRefresh, HiX } from 'react-icons/hi';
 import { FiSettings, FiUser, FiLogOut, FiMenu, FiX } from 'react-icons/fi';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -10,8 +11,12 @@ import Image from 'next/image';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { db } from '../../lib/firebase';
-import { getUserSavedLocations, setUserActiveLocation } from '../../lib/firestore';
+import { createUserSavedLocation, getUserSavedLocations, setUserActiveLocation } from '../../lib/firestore';
 import { replacePathLocale } from '../../lib/seo-locale';
+
+const CityMapPickerModal = dynamic(() => import('../auth/CityMapPickerModal'), {
+  ssr: false,
+});
 
 const localeLabels = { en: 'EN', he: 'עב', ar: 'ع' };
 const dateLocales = { en: 'en-US', he: 'he-IL', ar: 'ar' };
@@ -22,6 +27,7 @@ export default function Header() {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [locationsOpen, setLocationsOpen] = useState(false);
+  const [addLocationOpen, setAddLocationOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsDeleting, setNotificationsDeleting] = useState(false);
@@ -29,6 +35,7 @@ export default function Header() {
   const [notifications, setNotifications] = useState([]);
   const [locationsLoading, setLocationsLoading] = useState(false);
   const [locationsError, setLocationsError] = useState('');
+  const [addingLocation, setAddingLocation] = useState(false);
   const [locationSavingId, setLocationSavingId] = useState('');
   const [currentLocation, setCurrentLocation] = useState({
     loading: false,
@@ -328,6 +335,37 @@ export default function Header() {
       toast.error(locationTexts.saveError || 'Could not update the active location.');
     } finally {
       setLocationSavingId('');
+    }
+  }
+
+  async function handleAddLocationConfirm(location) {
+    if (!user?.uid || addingLocation || typeof location?.lat !== 'number' || typeof location?.lng !== 'number') {
+      return;
+    }
+
+    setAddingLocation(true);
+
+    try {
+      const label = location.city?.trim() || `${formatCoordinate(location.lat)}, ${formatCoordinate(location.lng)}`;
+      const savedLocation = await createUserSavedLocation(user.uid, {
+        label,
+        lat: location.lat,
+        lng: location.lng,
+      });
+
+      setLocationsData((current) => ({
+        ...current,
+        locations: [
+          savedLocation,
+          ...current.locations.filter((locationItem) => locationItem.id !== savedLocation.id),
+        ],
+      }));
+      setAddLocationOpen(false);
+      toast.success(locationTexts.addSuccess || 'Location added.');
+    } catch (error) {
+      toast.error(locationTexts.addError || 'Could not add this location.');
+    } finally {
+      setAddingLocation(false);
     }
   }
 
@@ -702,13 +740,25 @@ export default function Header() {
                   {locationTexts.subtitle || 'Choose from the places saved on your account.'}
                 </p>
               </div>
-              <button
-                onClick={() => setLocationsOpen(false)}
-                className="rounded-2xl p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-                aria-label={t.common.close}
-              >
-                <HiX className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAddLocationOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-2.5 text-sm font-bold text-white transition-all duration-200 hover:shadow-glow disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+                  disabled={addingLocation}
+                >
+                  <HiPlus className="h-4 w-4" />
+                  {addingLocation ? (locationTexts.adding || 'Adding...') : (locationTexts.addLocation || 'Add location')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLocationsOpen(false)}
+                  className="rounded-2xl p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                  aria-label={t.common.close}
+                >
+                  <HiX className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             <div className="mt-5 max-h-[70vh] space-y-3 overflow-y-auto pr-1">
@@ -849,6 +899,21 @@ export default function Header() {
           </div>
         </div>
       )}
+
+      <CityMapPickerModal
+        isOpen={addLocationOpen}
+        initialLat={currentLocation.lat ?? profile?.activeSearchLat ?? null}
+        initialLng={currentLocation.lng ?? profile?.activeSearchLng ?? null}
+        initialCity=""
+        allowAnyLocation
+        eyebrow={locationTexts.addEyebrow || 'GPS'}
+        title={locationTexts.addTitle || 'Add location'}
+        subtitle={locationTexts.addSubtitle || 'Tap the map or use your current location, then save it.'}
+        selectedLabel={locationTexts.addSelectedLabel || 'Selected location'}
+        emptySelectionText={locationTexts.addEmptySelection || 'Tap on the map to choose a location'}
+        onClose={() => setAddLocationOpen(false)}
+        onConfirm={handleAddLocationConfirm}
+      />
     </>
   );
 }

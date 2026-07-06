@@ -86,11 +86,16 @@ export default function CityMapPickerModal({
   subtitle = 'Tap the map or drag the pin, then confirm the city.',
   selectedLabel = 'Selected city',
   emptySelectionText = 'Tap on the map to choose a city',
+  showNameInput = false,
+  initialName = '',
+  nameLabel = 'Location name',
+  namePlaceholder = 'Name this location',
   onClose,
   onConfirm,
 }) {
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [cityName, setCityName] = useState(initialCity);
+  const [locationName, setLocationName] = useState(initialName);
   const [isResolvingCity, setIsResolvingCity] = useState(false);
   const [hasResolvedCurrentPoint, setHasResolvedCurrentPoint] = useState(false);
   const [locationError, setLocationError] = useState('');
@@ -110,6 +115,7 @@ export default function CityMapPickerModal({
         lng: Number(initialLng),
       });
       setCityName(initialCity || '');
+      setLocationName(initialName || '');
       setHasResolvedCurrentPoint(Boolean(initialCity));
       setLocationError('');
       return;
@@ -120,9 +126,10 @@ export default function CityMapPickerModal({
       lng: DEFAULT_CENTER[1],
     });
     setCityName(initialCity || '');
+    setLocationName(initialName || '');
     setHasResolvedCurrentPoint(false);
     setLocationError('');
-  }, [initialCity, initialLat, initialLng, isOpen]);
+  }, [initialCity, initialLat, initialLng, initialName, isOpen]);
 
   useEffect(() => {
     if (!isOpen || !selectedLocation || hasResolvedCurrentPoint) return;
@@ -211,6 +218,7 @@ export default function CityMapPickerModal({
     if (allowAnyLocation) {
       onConfirm({
         city: cityName.trim(),
+        name: locationName.trim(),
         lat: selectedLocation.lat,
         lng: selectedLocation.lng,
       });
@@ -228,6 +236,7 @@ export default function CityMapPickerModal({
 
     onConfirm({
       city: cityName.trim(),
+      name: locationName.trim(),
       lat: selectedLocation.lat,
       lng: selectedLocation.lng,
     });
@@ -317,6 +326,19 @@ export default function CityMapPickerModal({
               <p className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                 {locationError}
               </p>
+            ) : null}
+
+            {showNameInput ? (
+              <label className="block">
+                <span className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">{nameLabel}</span>
+                <input
+                  type="text"
+                  value={locationName}
+                  onChange={(event) => setLocationName(event.target.value)}
+                  placeholder={namePlaceholder}
+                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
+                />
+              </label>
             ) : null}
           </div>
         </div>
