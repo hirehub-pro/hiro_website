@@ -346,7 +346,7 @@ export default function Header() {
     setAddingLocation(true);
 
     try {
-      const label = location.city?.trim() || `${formatCoordinate(location.lat)}, ${formatCoordinate(location.lng)}`;
+      const label = location.name?.trim() || location.city?.trim() || `${formatCoordinate(location.lat)}, ${formatCoordinate(location.lng)}`;
       const savedLocation = await createUserSavedLocation(user.uid, {
         label,
         lat: location.lat,
@@ -906,6 +906,9 @@ export default function Header() {
         initialLng={currentLocation.lng ?? profile?.activeSearchLng ?? null}
         initialCity=""
         allowAnyLocation
+        showNameInput
+        nameLabel={locationTexts.nameLabel || 'Location name'}
+        namePlaceholder={locationTexts.namePlaceholder || 'Home, work, or any name'}
         eyebrow={locationTexts.addEyebrow || 'GPS'}
         title={locationTexts.addTitle || 'Add location'}
         subtitle={locationTexts.addSubtitle || 'Tap the map or use your current location, then save it.'}
