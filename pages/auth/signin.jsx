@@ -9,6 +9,9 @@ import clsx from 'clsx';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 
+const SEO_TITLE = 'התחברות להירו | מצאו ושמרו בעלי מקצוע אמינים';
+const SEO_DESCRIPTION = 'התחברו לחשבון הירו כדי לנהל פניות, לשמור בעלי מקצוע מומלצים, להמשיך שיחות ולמצוא במהירות אנשי מקצוע אמינים באזור שלכם.';
+
 // Auth pages use a custom minimal layout (no Header/BottomNav)
 SignInPage.getLayout = (page) => page;
 SignInPage.showFooter = false;
@@ -207,7 +210,12 @@ export default function SignInPage() {
 
   return (
     <>
-      <Head><title>Hiro – Sign In</title></Head>
+      <Head>
+        <title>{SEO_TITLE}</title>
+        <meta name="description" content={SEO_DESCRIPTION} />
+        <meta property="og:title" content={SEO_TITLE} />
+        <meta property="og:description" content={SEO_DESCRIPTION} />
+      </Head>
 
       <div
         className="min-h-screen overflow-hidden bg-slate-50"

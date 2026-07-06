@@ -11,6 +11,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { db } from '../../lib/firebase';
 
+const SEO_TITLE = 'הרשמה להירו | הצטרפו ומצאו בעלי מקצוע מומלצים';
+const SEO_DESCRIPTION = 'פתחו חשבון הירו בחינם, מצאו בעלי מקצוע אמינים באזור שלכם, שלחו בקשות, שמרו פרופילים מומלצים ונהלו הכול במקום אחד.';
+
 const CityMapPickerModal = dynamic(() => import('../../components/auth/CityMapPickerModal'), {
   ssr: false,
 });
@@ -328,7 +331,12 @@ export default function SignUpPage() {
 
   return (
     <>
-      <Head><title>Hiro – Sign Up</title></Head>
+      <Head>
+        <title>{SEO_TITLE}</title>
+        <meta name="description" content={SEO_DESCRIPTION} />
+        <meta property="og:title" content={SEO_TITLE} />
+        <meta property="og:description" content={SEO_DESCRIPTION} />
+      </Head>
 
       <div className="min-h-screen overflow-hidden bg-slate-50" dir={dir}>
         <div className="absolute inset-0 bg-mesh opacity-80" />

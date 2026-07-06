@@ -29,6 +29,8 @@ const CATEGORY_LABELS = {
   '\u05e9\u05d0\u05dc\u05d4': 'Question',
 };
 
+const DEFAULT_VIDEO_THUMBNAIL = 'https://hiro-services.com/web-app-manifest-512x512.png';
+
 function normalizeDateValue(value) {
   if (!value) return null;
   if (value instanceof Date) return value;
@@ -36,6 +38,11 @@ function normalizeDateValue(value) {
 
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function toIsoDate(value) {
+  const date = normalizeDateValue(value);
+  return date ? date.toISOString() : '';
 }
 
 function formatDateValue(value) {
@@ -124,16 +131,32 @@ function getInitials(name) {
   return initials.toUpperCase() || 'A';
 }
 
-export default function BlogPostPage() {
+function getVideoMimeType(url) {
+  const normalizedUrl = String(url || '').toLowerCase();
+  if (normalizedUrl.includes('.webm')) return 'video/webm';
+  if (normalizedUrl.includes('.mov')) return 'video/quicktime';
+  if (normalizedUrl.includes('.m4v')) return 'video/x-m4v';
+  return 'video/mp4';
+}
+
+function serializeForPageProps(value) {
+  if (!value) return value;
+  return JSON.parse(JSON.stringify(value, function (_key, item) {
+    if (item && typeof item.toDate === 'function') return item.toDate().toISOString();
+    return item;
+  }));
+}
+
+export default function BlogPostPage({ initialPost = null }) {
   const router = useRouter();
   const postRoute = typeof router.query.postId === 'string' ? router.query.postId : '';
   const { t, dir } = useLanguage();
   const { user, profile } = useAuth();
 
-  const [post, setPost] = useState(null);
+  const [post, setPost] = useState(initialPost);
   const [comments, setComments] = useState([]);
   const [commentProfiles, setCommentProfiles] = useState({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialPost);
   const [commentText, setCommentText] = useState('');
   const [bidPriceInput, setBidPriceInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -230,6 +253,27 @@ export default function BlogPostPage() {
   }, [post]);
   const seo = getCommunityPostSeo(post);
   const canonicalUrl = post ? absoluteUrl(buildCommunityPostPath(post)) : absoluteUrl('/community');
+  const imageMedia = mediaTypes.filter(function (item) { return getMediaKind(item) === 'image' && item.url; });
+  const videoMedia = mediaTypes.filter(function (item) { return getMediaKind(item) === 'video' && item.url; });
+  const primaryImageUrl = imageMedia[0]?.url || post?.imageUrl || '';
+  const socialImageUrl = primaryImageUrl || (videoMedia.length > 0 ? DEFAULT_VIDEO_THUMBNAIL : '');
+  const videoThumbnailUrl = socialImageUrl || DEFAULT_VIDEO_THUMBNAIL;
+  const videoStructuredData = post && videoMedia.length > 0
+    ? {
+      '@context': 'https://schema.org',
+      '@graph': videoMedia.map(function (video, index) {
+        return {
+          '@type': 'VideoObject',
+          name: index === 0 ? seo.title : `${seo.title} ${index + 1}`,
+          description: seo.description,
+          thumbnailUrl: [video.thumbnailUrl || video.thumbnail || videoThumbnailUrl],
+          uploadDate: toIsoDate(post.timestamp) || new Date().toISOString(),
+          contentUrl: video.url,
+          embedUrl: canonicalUrl,
+        };
+      }),
+    }
+    : null;
   const postDate = post ? normalizeDateValue(post.timestamp) : null;
   const postTimeLabel = postDate ? postDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
   const rawCategory = String(post?.rawCategory || '').trim().toLowerCase();
@@ -386,7 +430,27 @@ export default function BlogPostPage() {
         <meta property="og:description" content={seo.description} />
         <meta property="og:type" content="article" />
         <meta property="og:url" content={canonicalUrl} />
-        {post?.imageUrl ? <meta property="og:image" content={post.imageUrl} /> : null}
+        {imageMedia.map((image, index) => (
+          <meta key={`og-image-${image.url}-${index}`} property="og:image" content={image.url} />
+        ))}
+        {imageMedia.length === 0 && socialImageUrl ? <meta property="og:image" content={socialImageUrl} /> : null}
+        {socialImageUrl ? <meta name="twitter:card" content="summary_large_image" /> : null}
+        {socialImageUrl ? <meta name="twitter:image" content={socialImageUrl} /> : null}
+        {videoMedia.map((video, index) => (
+          <meta key={`og-video-${video.url}-${index}`} property="og:video" content={video.url} />
+        ))}
+        {videoMedia.map((video, index) => (
+          <meta key={`og-video-secure-${video.url}-${index}`} property="og:video:secure_url" content={video.url} />
+        ))}
+        {videoMedia.map((video, index) => (
+          <meta key={`og-video-type-${video.url}-${index}`} property="og:video:type" content={getVideoMimeType(video.url)} />
+        ))}
+        {videoStructuredData ? (
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(videoStructuredData) }}
+          />
+        ) : null}
         <link rel="canonical" href={canonicalUrl} />
       </Head>
 
@@ -783,4 +847,24 @@ export default function BlogPostPage() {
       </div>
     </>
   );
+}
+
+export async function getServerSideProps({ params }) {
+  const postIdentifier = typeof params?.postId === 'string' ? params.postId : '';
+
+  try {
+    const initialPost = await resolveBlogPost(postIdentifier);
+
+    return {
+      props: {
+        initialPost: initialPost ? serializeForPageProps(initialPost) : null,
+      },
+    };
+  } catch (error) {
+    return {
+      props: {
+        initialPost: null,
+      },
+    };
+  }
 }

@@ -2,6 +2,8 @@ import { buildSitemapIndex, sendXml } from '../lib/sitemap';
      
 const SITEMAPS = [             
   '/sitemap-pages.xml',
+  '/sitemap-posts.xml',
+  '/sitemap-projects.xml',
 ];
 
 export function getServerSideProps({ res }) {

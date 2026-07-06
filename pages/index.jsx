@@ -6,8 +6,8 @@ import HomeShowcaseSections from '../components/home/HomeShowcaseSections';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 
-const SEO_TITLE = 'Hiro | מצאו בעלי מקצוע לידכם';
-const SEO_DESCRIPTION = 'Hiro עוזר לכם למצוא בעלי מקצוע אמינים לידכם במהירות. חפשו חשמלאי, אינסטלטור, שיפוצניק, מנקה, טכנאי, הובלות ועוד בעלי מקצוע מומלצים באזור שלכם.';
+const SEO_TITLE = 'הירו | מצאו בעלי מקצוע לידכם';
+const SEO_DESCRIPTION = 'הירו עוזר לכם למצוא בעלי מקצוע אמינים לידכם במהירות. חפשו חשמלאי, אינסטלטור, שיפוצניק, מנקה, טכנאי, הובלות ועוד בעלי מקצוע מומלצים באזור שלכם.';
 const SEO_KEYWORDS = [
   'בעלי מקצוע',
   'בעלי מקצוע לידכם',

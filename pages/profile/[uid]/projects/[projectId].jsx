@@ -17,9 +17,25 @@ import {
   toggleProjectLike,
 } from '../../../../lib/firestore';
 
+const DEFAULT_VIDEO_THUMBNAIL = 'https://hiro-services.com/web-app-manifest-512x512.png';
+
+function normalizeDateValue(timestamp) {
+  if (!timestamp) return null;
+  if (timestamp instanceof Date) return timestamp;
+  if (typeof timestamp.toDate === 'function') return timestamp.toDate();
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function toIsoDate(timestamp) {
+  const date = normalizeDateValue(timestamp);
+  return date ? date.toISOString() : '';
+}
+
 function timeAgo(timestamp) {
   if (!timestamp) return '';
-  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+  const date = normalizeDateValue(timestamp);
+  if (!date) return '';
   const diff = Math.floor((Date.now() - date.getTime()) / 1000);
   if (diff < 60) return 'just now';
   if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
@@ -28,9 +44,32 @@ function timeAgo(timestamp) {
   return date.toLocaleDateString();
 }
 
+function getMediaKind(item) {
+  if (!item) return 'image';
+  if (item.type === 'video') return 'video';
+  const rawUrl = String(item.url || '').trim().toLowerCase();
+  if (/\.(mp4|mov|webm|m4v)(\?|#|$)/.test(rawUrl)) return 'video';
+  return 'image';
+}
+
+function getVideoMimeType(url) {
+  const normalizedUrl = String(url || '').toLowerCase();
+  if (normalizedUrl.includes('.webm')) return 'video/webm';
+  if (normalizedUrl.includes('.mov')) return 'video/quicktime';
+  if (normalizedUrl.includes('.m4v')) return 'video/x-m4v';
+  return 'video/mp4';
+}
+
 function getProjectMedia(project) {
   if (Array.isArray(project?.media) && project.media.length > 0) {
-    return project.media.filter(function (item) { return item && item.url; });
+    return project.media
+      .filter(function (item) { return item && item.url; })
+      .map(function (item) {
+        return {
+          ...item,
+          type: getMediaKind(item),
+        };
+      });
   }
 
   if (project?.imageUrl) {
@@ -40,15 +79,23 @@ function getProjectMedia(project) {
   return [];
 }
 
-export default function ProjectDetailsPage() {
+function serializeForPageProps(value) {
+  if (!value) return value;
+  return JSON.parse(JSON.stringify(value, function (_key, item) {
+    if (item && typeof item.toDate === 'function') return item.toDate().toISOString();
+    return item;
+  }));
+}
+
+export default function ProjectDetailsPage({ initialProject = null }) {
   const router = useRouter();
   const { uid, projectId } = router.query;
   const { user, profile } = useAuth();
 
-  const [project, setProject] = useState(null);
+  const [project, setProject] = useState(initialProject);
   const [comments, setComments] = useState([]);
   const [likedBy, setLikedBy] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialProject);
   const [commentText, setCommentText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const seo = getProjectPageSeo(project, project?.userName || '');
@@ -64,6 +111,26 @@ export default function ProjectDetailsPage() {
     });
     return firstImage?.url || project?.imageUrl || '';
   }, [media, project?.imageUrl]);
+  const imageMedia = media.filter(function (item) { return item.type === 'image' && item.url; });
+  const videoMedia = media.filter(function (item) { return item.type === 'video' && item.url; });
+  const socialImageUrl = ogImage || (videoMedia.length > 0 ? DEFAULT_VIDEO_THUMBNAIL : '');
+  const videoThumbnailUrl = socialImageUrl || DEFAULT_VIDEO_THUMBNAIL;
+  const videoStructuredData = project && videoMedia.length > 0
+    ? {
+      '@context': 'https://schema.org',
+      '@graph': videoMedia.map(function (video, index) {
+        return {
+          '@type': 'VideoObject',
+          name: index === 0 ? seo.title : `${seo.title} ${index + 1}`,
+          description: seo.description,
+          thumbnailUrl: [video.thumbnailUrl || video.thumbnail || videoThumbnailUrl],
+          uploadDate: toIsoDate(project.timestamp) || new Date().toISOString(),
+          contentUrl: video.url,
+          embedUrl: canonicalUrl,
+        };
+      }),
+    }
+    : null;
 
   useEffect(function () {
     if (!uid || !projectId) return;
@@ -166,7 +233,27 @@ export default function ProjectDetailsPage() {
         <meta property="og:description" content={seo.description} />
         <meta property="og:type" content="article" />
         <meta property="og:url" content={canonicalUrl} />
-        {ogImage ? <meta property="og:image" content={ogImage} /> : null}
+        {imageMedia.map((image, index) => (
+          <meta key={`og-image-${image.url}-${index}`} property="og:image" content={image.url} />
+        ))}
+        {imageMedia.length === 0 && socialImageUrl ? <meta property="og:image" content={socialImageUrl} /> : null}
+        {socialImageUrl ? <meta name="twitter:card" content="summary_large_image" /> : null}
+        {socialImageUrl ? <meta name="twitter:image" content={socialImageUrl} /> : null}
+        {videoMedia.map((video, index) => (
+          <meta key={`og-video-${video.url}-${index}`} property="og:video" content={video.url} />
+        ))}
+        {videoMedia.map((video, index) => (
+          <meta key={`og-video-secure-${video.url}-${index}`} property="og:video:secure_url" content={video.url} />
+        ))}
+        {videoMedia.map((video, index) => (
+          <meta key={`og-video-type-${video.url}-${index}`} property="og:video:type" content={getVideoMimeType(video.url)} />
+        ))}
+        {videoStructuredData ? (
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(videoStructuredData) }}
+          />
+        ) : null}
         <link rel="canonical" href={canonicalUrl} />
       </Head>
 
@@ -193,7 +280,7 @@ export default function ProjectDetailsPage() {
                 'grid grid-cols-1 gap-2 bg-gray-100 p-2'
               )}>
                 {(media.length > 0 ? media : [{ type: 'image', url: '/placeholder-project.jpg' }]).map(function (item, index) {
-                  const isVideo = item.type === 'video';
+                  const isVideo = getMediaKind(item) === 'video';
                   return (
                     <div
                       key={`${item.url}-${index}`}
@@ -291,4 +378,25 @@ export default function ProjectDetailsPage() {
       </div>
     </>
   );
+}
+
+export async function getServerSideProps({ params }) {
+  const uid = typeof params?.uid === 'string' ? params.uid : '';
+  const projectId = typeof params?.projectId === 'string' ? params.projectId : '';
+
+  try {
+    const initialProject = await getWorkerProject(uid, projectId);
+
+    return {
+      props: {
+        initialProject: initialProject ? serializeForPageProps(initialProject) : null,
+      },
+    };
+  } catch (error) {
+    return {
+      props: {
+        initialProject: null,
+      },
+    };
+  }
 }

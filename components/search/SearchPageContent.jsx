@@ -25,6 +25,7 @@ import { searchWorkers } from '../../lib/firestore';
 import { db } from '../../lib/firebase';
 import { buildLocalizedSearchPath, findProfessionBySlug, slugifyProfession } from '../../lib/search-routing';
 import { getProfessionSeoData } from '../../lib/profession-seo';
+import { getSearchPageSeo } from '../../lib/page-seo';
 import WorkerCard from '../workers/WorkerCard';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -435,9 +436,10 @@ export default function SearchPageContent({ categorySlug = '' }) {
       : categorySlug;
     return getProfessionSeoData(professionSlug, locale, matchedProfessionLabel);
   }, [categorySlug, locale, matchedProfession, matchedProfessionLabel]);
+  const searchSeo = getSearchPageSeo();
   const searchDisplayLabel = matchedProfessionLabel || query;
-  const pageTitle = categorySeo?.title || (searchDisplayLabel ? `"${searchDisplayLabel}" – Hiro` : 'Search – Hiro');
-  const pageDescription = categorySeo?.description || 'Find trusted professionals near you on Hiro.';
+  const pageTitle = categorySeo?.title || (searchDisplayLabel ? `"${searchDisplayLabel}" – הירו` : searchSeo.title);
+  const pageDescription = categorySeo?.description || searchSeo.description;
   const pageKeywords = categorySeo?.keywords?.join(', ') || '';
 
   return (
