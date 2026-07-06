@@ -20,7 +20,6 @@ import {
   FiInfo,
   FiLock,
   FiLogOut,
-  FiMessageSquare,
   FiShield,
   FiUser,
 } from 'react-icons/fi';
@@ -141,7 +140,7 @@ export default function SettingsPage() {
       key: 'reports',
       label: copy.reports,
       icon: FiAlertTriangle,
-      href: '/contact',
+      href: '/reports',
     },
     {
       key: 'about',
@@ -553,15 +552,6 @@ export default function SettingsPage() {
               <p className="mb-3 px-2 text-sm font-black uppercase tracking-[0.18em] text-gray-400">{copy.supportSection}</p>
               <div className="overflow-hidden rounded-[34px] bg-white shadow-card">
                 {supportRows.map(renderSettingsRow)}
-                <Link href="/messages" className="flex items-center justify-between rounded-[28px] px-5 py-5 transition-colors hover:bg-slate-50">
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary-50 text-primary">
-                      <FiMessageSquare className="h-5 w-5" />
-                    </div>
-                    <span className="text-base font-bold text-gray-900 sm:text-lg">{copy.openMessages}</span>
-                  </div>
-                  {isRtl ? <FiChevronLeft className="h-6 w-6 text-gray-400" /> : <FiChevronRight className="h-6 w-6 text-gray-400" />}
-                </Link>
               </div>
             </div>
           </section>

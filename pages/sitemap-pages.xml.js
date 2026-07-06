@@ -1,4 +1,3 @@
-import { SEO_LOCALES, localizePath } from '../lib/seo-locale';
 import { buildUrlSet, createSitemapEntries, sendXml } from '../lib/sitemap';
 
 export function getServerSideProps({ res }) {
@@ -7,17 +6,9 @@ export function getServerSideProps({ res }) {
 
   sitemap.add('/', { lastmod: nowIso, changefreq: 'daily', priority: '1.0' });
   sitemap.add('/search', { lastmod: nowIso, changefreq: 'daily', priority: '0.9' });
-
-  SEO_LOCALES.filter((locale) => locale !== 'he').forEach((locale) => {
-    sitemap.add(localizePath('/search', locale), {
-      lastmod: nowIso,
-      changefreq: 'daily',
-      priority: '0.8',
-    });
-  });
-
   sitemap.add('/community', { lastmod: nowIso, changefreq: 'daily', priority: '0.8' });
-  sitemap.add('/contact', { lastmod: nowIso, changefreq: 'monthly', priority: '0.7' });
+  sitemap.add('/auth/signin', { lastmod: nowIso, changefreq: 'monthly', priority: '0.5' });
+  sitemap.add('/auth/signup', { lastmod: nowIso, changefreq: 'monthly', priority: '0.5' });
 
   sendXml(res, buildUrlSet(sitemap.getEntries()));
 
