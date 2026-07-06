@@ -570,8 +570,12 @@ export default function SearchPageContent({ categorySlug = '' }) {
                 </span>
                 <span className="text-xs font-medium text-gray-500">
                   {displayedWorkers.length === 1
-                    ? `result for "${searchDisplayLabel}"`
-                    : `results for "${searchDisplayLabel}"`}
+                    ? (typeof t.search.resultFor === 'function'
+                      ? t.search.resultFor(searchDisplayLabel)
+                      : `result for "${searchDisplayLabel}"`)
+                    : (typeof t.search.resultsFor === 'function'
+                      ? t.search.resultsFor(searchDisplayLabel)
+                      : `results for "${searchDisplayLabel}"`)}
                 </span>
               </div>
 

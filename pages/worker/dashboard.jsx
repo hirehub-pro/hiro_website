@@ -3,13 +3,13 @@ import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import {
-  HiBriefcase,
-  HiStar,
-  HiEye,
-  HiChartBar,
-  HiSparkles,
+  HiBriefcase, 
+  HiStar,      
+  HiEye,       
+  HiChartBar,  
+  HiSparkles,  
   HiTrendingUp,
-  HiLightBulb,
+  HiLightBulb, 
   HiChevronDown,
 } from 'react-icons/hi';
 import clsx from 'clsx';

@@ -2,7 +2,6 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { HiCheckCircle, HiLightningBolt, HiShieldCheck, HiSparkles } from 'react-icons/hi';
 import SearchBar from '../components/home/SearchBar';
-import CategoryGrid from '../components/home/CategoryGrid';
 import HomeShowcaseSections from '../components/home/HomeShowcaseSections';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -193,7 +192,6 @@ export default function HomePage() {
       </div>
 
       <div className="mx-auto max-w-7xl space-y-8 px-0 pb-28 md:pb-14">
-        <CategoryGrid />
         <HomeShowcaseSections />
       </div>
     </>
