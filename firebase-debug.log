@@ -1,0 +1,55 @@
+[debug] [2026-07-05T10:26:07.438Z] ----------------------------------------------------------------------
+[debug] [2026-07-05T10:26:07.441Z] Command:       /opt/homebrew/Cellar/node/25.9.0_2/bin/node /Users/raslan/.npm/_npx/ba4f1959e38407b5/node_modules/.bin/firebase dataconnect:services:list --project hire-hub-fe6c4
+[debug] [2026-07-05T10:26:07.441Z] CLI Version:   15.22.4
+[debug] [2026-07-05T10:26:07.441Z] Platform:      darwin
+[debug] [2026-07-05T10:26:07.442Z] Node Version:  v25.9.0
+[debug] [2026-07-05T10:26:07.442Z] Detected Agent: codex_cli
+[debug] [2026-07-05T10:26:07.442Z] Time:          Sun Jul 05 2026 13:26:07 GMT+0300 (Israel Daylight Time)
+[debug] [2026-07-05T10:26:07.442Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-07-05T10:26:07.443Z] >>> [apiv2][query] GET https://firebase-public.firebaseio.com/cli.json [none]
+[debug] [2026-07-05T10:26:07.585Z] Object "/storage" in "firebase.json" has unknown property: {"additionalProperty":"bucket"}
+[debug] [2026-07-05T10:26:07.586Z] Field "/storage" in "firebase.json" is possibly invalid: must be array
+[debug] [2026-07-05T10:26:07.586Z] Field "/storage" in "firebase.json" is possibly invalid: must match a schema in anyOf
+[debug] [2026-07-05T10:26:07.590Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-07-05T10:26:07.590Z] > authorizing via signed-in user (my.hire.hub@gmail.com)
+[debug] [2026-07-05T10:26:07.590Z] [iam] checking project hire-hub-fe6c4 for permissions ["dataconnect.connectors.list","dataconnect.schemas.list","dataconnect.services.list","firebase.projects.get"]
+[debug] [2026-07-05T10:26:07.591Z] Checked if tokens are valid: false, expires at: 1782822825345
+[debug] [2026-07-05T10:26:07.591Z] Checked if tokens are valid: false, expires at: 1782822825345
+[debug] [2026-07-05T10:26:07.591Z] > refreshing access token with scopes: []
+[debug] [2026-07-05T10:26:07.592Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-07-05T10:26:07.592Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-07-05T10:26:07.812Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-07-05T10:26:07.813Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-07-05T10:26:07.823Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/hire-hub-fe6c4:testIamPermissions [none]
+[debug] [2026-07-05T10:26:07.823Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/hire-hub-fe6c4:testIamPermissions  x-goog-user-project=hire-hub-fe6c4
+[debug] [2026-07-05T10:26:07.823Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/hire-hub-fe6c4:testIamPermissions {"permissions":["dataconnect.connectors.list","dataconnect.schemas.list","dataconnect.services.list","firebase.projects.get"]}
+[debug] [2026-07-05T10:26:08.008Z] <<< [apiv2][status] GET https://firebase-public.firebaseio.com/cli.json 200
+[debug] [2026-07-05T10:26:08.009Z] <<< [apiv2][body] GET https://firebase-public.firebaseio.com/cli.json {"cloudBuildErrorAfter":1594252800000,"cloudBuildWarnAfter":1590019200000,"defaultNode10After":1594252800000,"minVersion":"3.0.5","node8DeploysDisabledAfter":1613390400000,"node8RuntimeDisabledAfter":1615809600000,"node8WarnAfter":1600128000000}
+[debug] [2026-07-05T10:26:08.158Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/hire-hub-fe6c4:testIamPermissions 400
+[debug] [2026-07-05T10:26:08.159Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/hire-hub-fe6c4:testIamPermissions {"error":{"code":400,"message":"Permission dataconnect.connectors.list is not valid for this resource.","status":"INVALID_ARGUMENT"}}
+[debug] [2026-07-05T10:26:08.159Z] [iam] error while checking permissions, command may fail: Request to https://cloudresourcemanager.googleapis.com/v1/projects/hire-hub-fe6c4:testIamPermissions had HTTP Error: 400, Permission dataconnect.connectors.list is not valid for this resource.
+[info] i  dataconnect: ensuring required API firebasedataconnect.googleapis.com is enabled... 
+[debug] [2026-07-05T10:26:08.160Z] Checked if tokens are valid: true, expires at: 1783250766813
+[debug] [2026-07-05T10:26:08.160Z] Checked if tokens are valid: true, expires at: 1783250766813
+[info] i  dataconnect: ensuring required API sqladmin.googleapis.com is enabled... 
+[debug] [2026-07-05T10:26:08.160Z] Checked if tokens are valid: true, expires at: 1783250766813
+[debug] [2026-07-05T10:26:08.161Z] Checked if tokens are valid: true, expires at: 1783250766813
+[debug] [2026-07-05T10:26:08.161Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/hire-hub-fe6c4/services/firebasedataconnect.googleapis.com [none]
+[debug] [2026-07-05T10:26:08.161Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/hire-hub-fe6c4/services/firebasedataconnect.googleapis.com  x-goog-user-project=hire-hub-fe6c4
+[debug] [2026-07-05T10:26:08.162Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/hire-hub-fe6c4/services/sqladmin.googleapis.com [none]
+[debug] [2026-07-05T10:26:08.162Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/hire-hub-fe6c4/services/sqladmin.googleapis.com  x-goog-user-project=hire-hub-fe6c4
+[debug] [2026-07-05T10:26:08.774Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/hire-hub-fe6c4/services/sqladmin.googleapis.com 200
+[debug] [2026-07-05T10:26:08.774Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/hire-hub-fe6c4/services/sqladmin.googleapis.com [omitted]
+[info] ✔  dataconnect: required API sqladmin.googleapis.com is enabled 
+[debug] [2026-07-05T10:26:09.294Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/hire-hub-fe6c4/services/firebasedataconnect.googleapis.com 200
+[debug] [2026-07-05T10:26:09.294Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/hire-hub-fe6c4/services/firebasedataconnect.googleapis.com [omitted]
+[info] ✔  dataconnect: required API firebasedataconnect.googleapis.com is enabled 
+[debug] [2026-07-05T10:26:09.299Z] Checked if tokens are valid: true, expires at: 1783250766813
+[debug] [2026-07-05T10:26:09.299Z] Checked if tokens are valid: true, expires at: 1783250766813
+[debug] [2026-07-05T10:26:09.300Z] >>> [apiv2][query] GET https://firebasedataconnect.googleapis.com/v1/projects/hire-hub-fe6c4/locations/-/services [none]
+[debug] [2026-07-05T10:26:10.806Z] <<< [apiv2][status] GET https://firebasedataconnect.googleapis.com/v1/projects/hire-hub-fe6c4/locations/-/services 200
+[debug] [2026-07-05T10:26:10.806Z] <<< [apiv2][body] GET https://firebasedataconnect.googleapis.com/v1/projects/hire-hub-fe6c4/locations/-/services {}
+[info] ┌────────────┬──────────┬─────────────┬─────────────────────┬──────────────┬────────────────────────┐
+│ Service ID │ Location │ Data Source │ Schema Last Updated │ Connector ID │ Connector Last Updated │
+└────────────┴──────────┴─────────────┴─────────────────────┴──────────────┴────────────────────────┘

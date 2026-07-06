@@ -5,7 +5,7 @@ import { getSearchPageSeo } from '../lib/page-seo';
 
 export default function SearchPage({ alternateUrls }) {
   const seo = getSearchPageSeo();
-
+            
   return (
     <>
       <Head>

@@ -129,6 +129,16 @@ body {
            focus:ring-primary/15 transition-all duration-200;
   }
 
+  .time-field,
+  .time-value {
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+
+  .time-field {
+    text-align: center;
+  }
+
   .floating-field {
     @apply relative block;
   }

@@ -452,7 +452,7 @@ export default function SettingsPage() {
                           <div>
                             <p className="text-lg font-extrabold tracking-tight text-gray-950 sm:text-xl">{copy.scheduleHoursTitle}</p>
                             <p className="mt-1 text-xs text-gray-500 sm:text-sm">
-                              {copy.scheduleFrom} {scheduleSettings.from} {copy.scheduleUntil} {scheduleSettings.to}
+                              {copy.scheduleFrom} <span className="time-value">{scheduleSettings.from}</span> {copy.scheduleUntil} <span className="time-value">{scheduleSettings.to}</span>
                             </p>
                           </div>
                           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary-50 text-primary sm:h-11 sm:w-11">
@@ -468,7 +468,7 @@ export default function SettingsPage() {
                             type="time"
                             value={scheduleSettings.from}
                             onChange={(event) => handleScheduleTimeChange('from', event.target.value)}
-                            className="input-field text-sm sm:text-base"
+                            className="input-field time-field text-sm sm:text-base"
                           />
                         </label>
                         <label className="block">
@@ -477,7 +477,7 @@ export default function SettingsPage() {
                             type="time"
                             value={scheduleSettings.to}
                             onChange={(event) => handleScheduleTimeChange('to', event.target.value)}
-                            className="input-field text-sm sm:text-base"
+                            className="input-field time-field text-sm sm:text-base"
                           />
                         </label>
                       </div>

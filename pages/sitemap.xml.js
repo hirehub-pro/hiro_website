@@ -1,6 +1,6 @@
 import { buildSitemapIndex, sendXml } from '../lib/sitemap';
-
-const SITEMAPS = [
+     
+const SITEMAPS = [             
   '/sitemap-pages.xml',
   '/sitemap-professions.xml',
   '/sitemap-profiles.xml',

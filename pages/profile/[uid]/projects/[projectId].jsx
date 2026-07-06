@@ -28,6 +28,18 @@ function timeAgo(timestamp) {
   return date.toLocaleDateString();
 }
 
+function getProjectMedia(project) {
+  if (Array.isArray(project?.media) && project.media.length > 0) {
+    return project.media.filter(function (item) { return item && item.url; });
+  }
+
+  if (project?.imageUrl) {
+    return [{ type: 'image', url: project.imageUrl }];
+  }
+
+  return [];
+}
+
 export default function ProjectDetailsPage() {
   const router = useRouter();
   const { uid, projectId } = router.query;
@@ -43,6 +55,15 @@ export default function ProjectDetailsPage() {
   const canonicalUrl = uid && projectId
     ? absoluteUrl(`/profile/${uid}/projects/${projectId}`)
     : absoluteUrl('/search');
+  const media = useMemo(function () {
+    return getProjectMedia(project);
+  }, [project]);
+  const ogImage = useMemo(function () {
+    const firstImage = media.find(function (item) {
+      return item.type === 'image' && item.url;
+    });
+    return firstImage?.url || project?.imageUrl || '';
+  }, [media, project?.imageUrl]);
 
   useEffect(function () {
     if (!uid || !projectId) return;
@@ -145,7 +166,7 @@ export default function ProjectDetailsPage() {
         <meta property="og:description" content={seo.description} />
         <meta property="og:type" content="article" />
         <meta property="og:url" content={canonicalUrl} />
-        {project?.imageUrl ? <meta property="og:image" content={project.imageUrl} /> : null}
+        {ogImage ? <meta property="og:image" content={ogImage} /> : null}
         <link rel="canonical" href={canonicalUrl} />
       </Head>
 
@@ -168,17 +189,40 @@ export default function ProjectDetailsPage() {
         ) : (
           <>
             <article className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
-              <div className="relative h-64 w-full md:h-96">
-                <Image
-                  src={project.imageUrl || '/placeholder-project.jpg'}
-                  alt={project.description || 'Project image'}
-                  fill
-                  className="object-cover"
-                />
+              <div className={clsx(
+                'grid grid-cols-1 gap-2 bg-gray-100 p-2'
+              )}>
+                {(media.length > 0 ? media : [{ type: 'image', url: '/placeholder-project.jpg' }]).map(function (item, index) {
+                  const isVideo = item.type === 'video';
+                  return (
+                    <div
+                      key={`${item.url}-${index}`}
+                      className="relative h-[70vh] max-h-[760px] min-h-[320px] overflow-hidden rounded-2xl bg-gray-950"
+                    >
+                      {isVideo ? (
+                        <video
+                          src={item.url}
+                          className="h-full w-full object-contain"
+                          controls
+                          playsInline
+                          preload="metadata"
+                        />
+                      ) : (
+                        <Image
+                          src={item.url || '/placeholder-project.jpg'}
+                          alt={project.description || 'Project image'}
+                          fill
+                          sizes="(min-width: 768px) 768px, 100vw"
+                          className="object-contain"
+                        />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               <div className="p-5 md:p-6">
-                <h1 className="text-xl font-extrabold text-gray-900 md:text-2xl">Project Photo</h1>
+                <h1 className="text-xl font-extrabold text-gray-900 md:text-2xl">Project</h1>
 
                 {project.description && (
                   <p className="mt-3 whitespace-pre-wrap leading-7 text-gray-700">{project.description}</p>

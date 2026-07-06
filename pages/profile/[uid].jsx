@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
-import { HiStar } from 'react-icons/hi';
+import { HiPhotograph, HiPlus, HiStar } from 'react-icons/hi';
 import { FaFacebookF, FaInstagram, FaTiktok } from 'react-icons/fa';
 import { FiGlobe, FiLink as FiLinkIcon, FiMapPin } from 'react-icons/fi';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
@@ -14,6 +14,7 @@ import {
   resolveUserProfile,
   getWorkerProjects,
   getWorkerReviews,
+  addProject,
   addReview,
   updateUserProfile,
 } from '../../lib/firestore';
@@ -293,7 +294,13 @@ export default function ProfilePage({
   const [savingProfessions, setSavingProfessions] = useState(false);
   const [taxAuthorityConnecting, setTaxAuthorityConnecting] = useState(false);
   const [taxAuthorityConnected, setTaxAuthorityConnected] = useState(null);
+  const [projectEditorOpen, setProjectEditorOpen] = useState(false);
+  const [projectDescription, setProjectDescription] = useState('');
+  const [projectMediaFiles, setProjectMediaFiles] = useState([]);
+  const [projectMediaPreviews, setProjectMediaPreviews] = useState([]);
+  const [savingProject, setSavingProject] = useState(false);
   const avatarInputRef = useRef(null);
+  const projectImageInputRef = useRef(null);
   const socialLinks = getNormalizedSocialLinks(profile);
   const uid = profile?.uid || '';
   const isOwnProfile = user?.uid === profile?.uid;
@@ -435,6 +442,19 @@ export default function ProfilePage({
   useEffect(() => {
     setNoteText('');
   }, [selectedDate]);
+
+  useEffect(() => {
+    const previews = projectMediaFiles.map((file) => ({
+      url: URL.createObjectURL(file),
+      type: file.type.startsWith('video/') ? 'video' : 'image',
+      name: file.name,
+    }));
+    setProjectMediaPreviews(previews);
+
+    return () => {
+      previews.forEach((preview) => URL.revokeObjectURL(preview.url));
+    };
+  }, [projectMediaFiles]);
 
   useEffect(() => {
     if (!socialEditorOpen) return;
@@ -686,6 +706,132 @@ export default function ProfilePage({
   function handleAvatarEditRequest() {
     setAvatarActionSheetOpen(false);
     avatarInputRef.current?.click();
+  }
+
+  function resetProjectForm() {
+    setProjectDescription('');
+    setProjectMediaFiles([]);
+  }
+
+  function handleOpenProjectEditor() {
+    if (!isOwnProfile || profile?.role !== 'worker') return;
+    resetProjectForm();
+    setProjectEditorOpen(true);
+  }
+
+  function handleCloseProjectEditor() {
+    if (savingProject) return;
+    setProjectEditorOpen(false);
+    resetProjectForm();
+  }
+
+  function handleProjectMediaChange(e) {
+    const selectedFiles = Array.from(e.target.files || []);
+    e.target.value = '';
+
+    if (selectedFiles.length === 0) return;
+
+    const validFiles = selectedFiles.filter((file) => (
+      file.type.startsWith('image/') || file.type.startsWith('video/')
+    ));
+
+    if (validFiles.length !== selectedFiles.length) {
+      toast.error(t.profile.projectMediaTypeError || 'Choose image or video files only');
+    }
+
+    if (validFiles.length === 0) return;
+
+    setProjectMediaFiles((current) => {
+      const nextFiles = [...current, ...validFiles].slice(0, 5);
+      if (current.length + validFiles.length > 5) {
+        toast.error(t.profile.projectMediaLimit || 'You can add up to 5 files');
+      }
+      return nextFiles;
+    });
+  }
+
+  function handleRemoveProjectMedia(index) {
+    if (savingProject) return;
+    setProjectMediaFiles((current) => current.filter((_, fileIndex) => fileIndex !== index));
+  }
+
+  function getProjectMediaKind(file) {
+    if (file.type.startsWith('video/')) return 'video';
+    if (file.type.startsWith('image/')) return 'image';
+    return 'file';
+  }
+
+  function getProjectMediaExtension(file) {
+    const fallback = getProjectMediaKind(file) === 'video' ? 'mp4' : 'jpg';
+    return (file.name.split('.').pop() || fallback).toLowerCase();
+  }
+
+  function getProjectMediaContentType(file) {
+    if (file.type) return file.type;
+    return getProjectMediaKind(file) === 'video' ? 'video/mp4' : 'image/jpeg';
+  }
+
+  async function uploadProjectMedia(file, index) {
+    const kind = getProjectMediaKind(file);
+    const extension = getProjectMediaExtension(file);
+    const path = `project_media/${profile.uid}/project-${Date.now()}-${index}.${extension}`;
+    const uploaded = await uploadBytes(storageRef(storage, path), file, {
+      contentType: getProjectMediaContentType(file),
+    });
+
+    return {
+      type: kind,
+      url: await getDownloadURL(uploaded.ref),
+      storagePath: path,
+      contentType: getProjectMediaContentType(file),
+      name: file.name,
+    };
+  }
+
+  function getPrimaryProjectImageUrl(media) {
+    const firstImage = media.find((item) => item.type === 'image' && item.url);
+    if (firstImage) return firstImage.url;
+
+    const firstItem = media.find((item) => item.url);
+    return firstItem?.url || '';
+  }
+
+  async function handleSaveProject() {
+    if (!isOwnProfile || !profile?.uid || profile?.role !== 'worker') return;
+
+    const description = projectDescription.trim();
+    if (projectMediaFiles.length === 0) {
+      toast.error(t.profile.projectMediaRequired || 'Choose project photos or videos');
+      return;
+    }
+
+    if (projectMediaFiles.length > 5) {
+      toast.error(t.profile.projectMediaLimit || 'You can add up to 5 files');
+      return;
+    }
+
+    try {
+      setSavingProject(true);
+      const media = await Promise.all(projectMediaFiles.map(uploadProjectMedia));
+      const imageUrl = getPrimaryProjectImageUrl(media);
+
+      await addProject(profile.uid, { description, imageUrl, media });
+      const nextProjects = await getWorkerProjects(profile.uid);
+      setProjects(nextProjects);
+      setLoadedDataUid(profile.uid);
+      setProfile((current) => current ? ({
+        ...current,
+        projectCount: nextProjects.length,
+      }) : current);
+      setProjectEditorOpen(false);
+      resetProjectForm();
+      toast.success(t.profile.projectAdded || 'Project added');
+    } catch (error) {
+      console.error('Failed to add project:', error);
+      toast.error(t.profile.projectAddFailed || 'Failed to add project');
+    } finally {
+      setSavingProject(false);
+    }
   }
 
   async function handleAvatarFileChange(e) {
@@ -1113,7 +1259,21 @@ export default function ProfilePage({
 
       <div className="max-w-2xl mx-auto px-4 py-5">
         {tab === 'projects' && (
-          <ProjectsGallery projects={projects} loading={loadingData} profileUid={uid} />
+          <div className="space-y-4">
+            {isOwnProfile && profile?.role === 'worker' && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleOpenProjectEditor}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-primary-dark"
+                >
+                  <HiPlus className="h-4 w-4" />
+                  {t.profile.addProject || 'Add project'}
+                </button>
+              </div>
+            )}
+            <ProjectsGallery projects={projects} loading={loadingData} profileUid={uid} />
+          </div>
         )}
 
         {tab === 'reviews' && (
@@ -1466,6 +1626,148 @@ export default function ProfilePage({
         onClose={() => setContactCityPickerOpen(false)}
         onConfirm={handleContactCityConfirm}
       />
+
+      {projectEditorOpen && isOwnProfile && profile?.role === 'worker' && (
+        <div className="fixed inset-0 z-[122] flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-6">
+          <div className="flex h-[82vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[32px] bg-white shadow-2xl sm:h-auto sm:max-h-[90vh] sm:rounded-[32px]">
+            <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-primary">{t.profile.projects}</p>
+                <h3 className="mt-1 text-xl font-extrabold text-slate-950">{t.profile.addProject || 'Add project'}</h3>
+                <p className="mt-1 text-sm text-slate-500">{t.profile.addProjectSubtitle || 'Upload a photo and short description for your portfolio.'}</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseProjectEditor}
+                disabled={savingProject}
+                className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label="Close project editor"
+              >
+                x
+              </button>
+            </div>
+
+            <div className="flex-1 space-y-5 overflow-y-auto p-5">
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {t.profile.projectMedia || 'Project photos or videos'}
+                </label>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => projectImageInputRef.current?.click()}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      projectImageInputRef.current?.click();
+                    }
+                  }}
+                  className="relative flex min-h-[180px] w-full items-center justify-center overflow-hidden rounded-[28px] border border-dashed border-primary/30 bg-primary/5 text-left transition hover:bg-primary/10"
+                >
+                  {projectMediaPreviews.length > 0 ? (
+                    <span className="grid w-full grid-cols-2 gap-2 p-2 sm:grid-cols-3">
+                      {projectMediaPreviews.map((preview, index) => (
+                        <span key={`${preview.url}-${index}`} className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100">
+                          {preview.type === 'video' ? (
+                            <video
+                              src={preview.url}
+                              className="h-full w-full object-cover"
+                              muted
+                              playsInline
+                              preload="metadata"
+                            />
+                          ) : (
+                            <span
+                              className="block h-full w-full bg-cover bg-center"
+                              style={{ backgroundImage: `url(${preview.url})` }}
+                              aria-hidden="true"
+                            />
+                          )}
+                          <span className="absolute left-2 top-2 rounded-full bg-black/55 px-2 py-1 text-[10px] font-bold uppercase text-white">
+                            {preview.type}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleRemoveProjectMedia(index);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                handleRemoveProjectMedia(index);
+                              }
+                            }}
+                            className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-sm font-bold text-slate-700 shadow-sm"
+                            aria-label="Remove project media"
+                          >
+                            x
+                          </button>
+                        </span>
+                      ))}
+                    </span>
+                  ) : (
+                    <span className="flex flex-col items-center gap-3 px-6 text-center">
+                      <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-primary shadow-sm">
+                        <HiPhotograph className="h-7 w-7" />
+                      </span>
+                      <span className="text-sm font-semibold text-primary">
+                        {t.profile.chooseProjectMedia || 'Choose files'}
+                      </span>
+                    </span>
+                  )}
+                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  {t.profile.projectMediaHelp || 'Add up to 5 images or videos.'}
+                </p>
+                <input
+                  ref={projectImageInputRef}
+                  type="file"
+                  accept="image/*,video/*"
+                  multiple
+                  onChange={handleProjectMediaChange}
+                  className="hidden"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {t.profile.projectDescription || 'Description'}
+                </label>
+                <textarea
+                  value={projectDescription}
+                  onChange={(e) => setProjectDescription(e.target.value)}
+                  rows={4}
+                  maxLength={280}
+                  placeholder={t.profile.projectDescriptionPlaceholder || 'What work did you complete?'}
+                  className="input-field min-h-[120px] resize-none"
+                />
+                <p className="mt-2 text-xs text-slate-400">{projectDescription.length}/280</p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 border-t border-slate-100 px-5 py-4">
+              <button
+                type="button"
+                onClick={handleCloseProjectEditor}
+                disabled={savingProject}
+                className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {t.common.cancel || 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveProject}
+                disabled={savingProject}
+                className="flex-1 rounded-2xl bg-primary px-4 py-3 text-sm font-bold text-white transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {savingProject ? (t.common.loading || 'Loading...') : (t.profile.saveProject || 'Save project')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {bioEditorOpen && isOwnProfile && (
         <div className="fixed inset-0 z-[121] flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-6">

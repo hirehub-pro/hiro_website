@@ -467,7 +467,7 @@ export default function WorkerSchedulePage() {
                   href="/worker/invoices/saved"
                   className="shrink-0 rounded-2xl bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-700 transition-colors hover:bg-sky-100"
                 >
-                  Saved
+                  Saved Documents
                 </Link>
                 <Link
                   href="/worker/dashboard"

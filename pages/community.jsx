@@ -966,7 +966,7 @@ export default function CommunityPage() {
                         type="time"
                         value={newRequestHourFrom}
                         onChange={function (e) { setNewRequestHourFrom(e.target.value); }}
-                        className="w-full rounded-2xl border border-gray-100 bg-white px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                        className="time-field w-full rounded-2xl border border-gray-100 bg-white px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20"
                       />
                     </div>
                     <div>
@@ -975,7 +975,7 @@ export default function CommunityPage() {
                         type="time"
                         value={newRequestHourTo}
                         onChange={function (e) { setNewRequestHourTo(e.target.value); }}
-                        className="w-full rounded-2xl border border-gray-100 bg-white px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                        className="time-field w-full rounded-2xl border border-gray-100 bg-white px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20"
                       />
                     </div>
                   </div>

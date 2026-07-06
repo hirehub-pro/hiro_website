@@ -1007,7 +1007,7 @@ export default function ProfileScheduleView({ uid, profile }) {
                       type="time"
                       value={requestHourFrom}
                       onChange={(event) => setRequestHourFrom(event.target.value)}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      className="time-field w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/20"
                     />
                   </label>
                   <label className="block">
@@ -1016,7 +1016,7 @@ export default function ProfileScheduleView({ uid, profile }) {
                       type="time"
                       value={requestHourTo}
                       onChange={(event) => setRequestHourTo(event.target.value)}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      className="time-field w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/20"
                     />
                   </label>
                 </div>
