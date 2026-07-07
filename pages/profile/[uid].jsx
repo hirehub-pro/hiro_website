@@ -59,6 +59,10 @@ function normalizeExternalUrl(value) {
   return `https://${raw}`;
 }
 
+function isVideoUrl(value) {
+  return /\.(mp4|mov|webm|m4v)(\?|#|$)/i.test(String(value || '').trim());
+}
+
 function getNormalizedSocialLinks(profile) {
   return (Array.isArray(profile?.socialLinks) ? profile.socialLinks : [])
     .map((item) => ({
@@ -790,10 +794,7 @@ export default function ProfilePage({
 
   function getPrimaryProjectImageUrl(media) {
     const firstImage = media.find((item) => item.type === 'image' && item.url);
-    if (firstImage) return firstImage.url;
-
-    const firstItem = media.find((item) => item.url);
-    return firstItem?.url || '';
+    return firstImage?.url || '';
   }
 
   async function handleSaveProject() {
@@ -1117,6 +1118,7 @@ export default function ProfilePage({
   const profileImageUrl = String(profile?.profileImageUrl || '').trim();
   const projectImageUrls = (Array.isArray(projects) ? projects : [])
     .map((project) => String(project?.imageUrl || '').trim())
+    .filter((imageUrl) => imageUrl && !isVideoUrl(imageUrl))
     .filter(Boolean)
     .slice(0, 3);
   const previewImageUrls = [

@@ -13,6 +13,28 @@ import '../styles/globals.css';
 
 const APP_PACKAGE_NAME = 'com.hirehub.app';
 const APP_PROMPT_STORAGE_KEY = 'hiro-hide-open-app-prompt-until';
+const SITE_NAME = 'הירו';
+const SITE_URL = 'https://hiro-services.com';
+const SITE_LOGO_URL = `${SITE_URL}/web-app-manifest-512x512.png`;
+const siteIdentityStructuredData = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  '@id': `${SITE_URL}/#website`,
+  url: SITE_URL,
+  name: SITE_NAME,
+  alternateName: ['Hiro', 'hiro-services.com'],
+  publisher: {
+    '@type': 'Organization',
+    '@id': `${SITE_URL}/#organization`,
+    name: SITE_NAME,
+    alternateName: 'Hiro',
+    url: SITE_URL,
+    logo: {
+      '@type': 'ImageObject',
+      url: SITE_LOGO_URL,
+    },
+  },
+};
 
 function isMobileBrowser() {
   if (typeof navigator === 'undefined') return false;
@@ -128,6 +150,11 @@ export default function App({ Component, pageProps }) {
       <AuthProvider>
         <Head>
           <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+          <meta property="og:site_name" content={SITE_NAME} />
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(siteIdentityStructuredData) }}
+          />
         </Head>
         <Toaster
           position="top-center"

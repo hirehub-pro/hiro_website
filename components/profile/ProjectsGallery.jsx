@@ -1,18 +1,43 @@
 import Image from 'next/image';
 import Link from 'next/link';
-import { HiPhotograph } from 'react-icons/hi';
+import { HiDuplicate, HiPhotograph, HiPlay } from 'react-icons/hi';
 import { useLanguage } from '../../contexts/LanguageContext';
+
+function getMediaKind(item) {
+  if (!item) return 'image';
+
+  const rawType = String(item.type || item.kind || item.contentType || '').trim().toLowerCase();
+  if (rawType === 'video' || rawType.startsWith('video/')) return 'video';
+
+  const rawUrl = String(item.url || '').trim().toLowerCase();
+  if (/\.(mp4|mov|webm|m4v)(\?|#|$)/.test(rawUrl)) return 'video';
+
+  if (rawType === 'image' || rawType.startsWith('image/')) return 'image';
+
+  return 'image';
+}
 
 function getProjectMedia(project) {
   if (Array.isArray(project?.media) && project.media.length > 0) {
-    return project.media.filter((item) => item?.url);
+    return project.media
+      .filter((item) => item?.url)
+      .map((item) => ({
+        ...item,
+        type: getMediaKind(item),
+      }));
   }
 
   if (project?.imageUrl) {
-    return [{ type: 'image', url: project.imageUrl }];
+    return [{ type: getMediaKind({ url: project.imageUrl }), url: project.imageUrl }];
   }
 
   return [];
+}
+
+function getVideoPreviewUrl(url) {
+  const rawUrl = String(url || '');
+  if (!rawUrl || rawUrl.includes('#t=')) return rawUrl;
+  return `${rawUrl}#t=0.1`;
 }
 
 function SkeletonTile() {
@@ -49,18 +74,28 @@ export default function ProjectsGallery({ projects, loading, profileUid }) {
       {projects.map((project) => {
         const media = getProjectMedia(project);
         const primaryMedia = media[0];
-        const isVideo = primaryMedia?.type === 'video';
+        const isVideo = getMediaKind(primaryMedia) === 'video';
 
         return (
-          <Link key={project.id} href={'/profile/' + profileUid + '/projects/' + project.id} className="relative aspect-square rounded-2xl overflow-hidden group shadow-sm hover:shadow-lg transition-shadow duration-300 cursor-pointer block bg-gray-100">
+          <Link key={project.id} href={'/profile/' + profileUid + '/projects/' + project.id} className="relative aspect-square overflow-hidden rounded-[28px] bg-slate-100 shadow-sm transition-shadow duration-300 hover:shadow-xl group cursor-pointer block">
             {isVideo ? (
-              <video
-                src={primaryMedia.url}
-                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
-                muted
-                playsInline
-                preload="metadata"
-              />
+              <>
+                <video
+                  src={getVideoPreviewUrl(primaryMedia.url)}
+                  poster={primaryMedia.thumbnailUrl || primaryMedia.thumbnail || undefined}
+                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+                  muted
+                  autoPlay
+                  loop
+                  playsInline
+                  preload="auto"
+                />
+                <div className="absolute inset-0 flex items-center justify-center bg-black/10">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full border-4 border-white bg-black/15 text-white shadow-lg backdrop-blur-[1px]">
+                    <HiPlay className="ml-0.5 h-6 w-6" />
+                  </span>
+                </div>
+              </>
             ) : (
               <Image
                 src={primaryMedia?.url || '/placeholder-project.jpg'}
@@ -77,9 +112,12 @@ export default function ProjectsGallery({ projects, loading, profileUid }) {
             </div>
             {/* Shine effect */}
             <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 transition-colors duration-300" />
-            <div className="absolute top-2 right-2 rounded-full bg-black/40 px-2 py-1 text-[10px] font-semibold text-white/90 backdrop-blur-sm">
-              {media.length > 1 ? `${media.length} files` : isVideo ? 'Video' : 'Open'}
-            </div>
+            {media.length > 1 && (
+              <div className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-black/75 px-2.5 py-1 text-xs font-extrabold text-white shadow-sm backdrop-blur-sm">
+                <span>{media.length}</span>
+                <HiDuplicate className="h-4 w-4" />
+              </div>
+            )}
           </Link>
         );
       })}

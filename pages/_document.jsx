@@ -9,9 +9,9 @@ function MyDocument(props) {
     <Html lang={locale} dir={dir}>
       <Head>
         <meta charSet="UTF-8" />
-        <meta name="description" content="Hiro – Find trusted professionals near you" />
-        <meta name="application-name" content="Hiro" />
-        <meta name="apple-mobile-web-app-title" content="Hiro" />
+        <meta name="description" content="הירו - מצאו בעלי מקצוע אמינים לידכם" />
+        <meta name="application-name" content="הירו" />
+        <meta name="apple-mobile-web-app-title" content="הירו" />
         <meta name="theme-color" content="#ffffff" />
         <link rel="icon" href="/favicon-96x96.png" sizes="96x96" type="image/png" />
         <link rel="shortcut icon" href="/favicon-96x96.png" type="image/png" />

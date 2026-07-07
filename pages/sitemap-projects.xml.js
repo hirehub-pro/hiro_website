@@ -6,9 +6,15 @@ const DEFAULT_VIDEO_THUMBNAIL = 'https://hiro-services.com/web-app-manifest-512x
 
 function getMediaKind(item) {
   if (!item) return 'image';
-  if (item.type === 'video') return 'video';
+
+  const rawType = String(item.type || item.kind || item.contentType || '').trim().toLowerCase();
+  if (rawType === 'video' || rawType.startsWith('video/')) return 'video';
+
   const rawUrl = String(item.url || '').trim().toLowerCase();
   if (/\.(mp4|mov|webm|m4v)(\?|#|$)/.test(rawUrl)) return 'video';
+
+  if (rawType === 'image' || rawType.startsWith('image/')) return 'image';
+
   return 'image';
 }
 
@@ -23,7 +29,7 @@ function getProjectMedia(data) {
       thumbnailUrl: item.thumbnailUrl || item.thumbnail || '',
     }));
   const fallbackImages = data.imageUrl
-    ? [{ url: data.imageUrl, type: 'image', title: data.title || data.description || 'פרויקט בהירו' }]
+    ? [{ url: data.imageUrl, type: getMediaKind({ url: data.imageUrl }), title: data.title || data.description || 'פרויקט בהירו' }]
     : [];
   const allMedia = [...normalizedMedia, ...fallbackImages];
   const seenUrls = new Set();

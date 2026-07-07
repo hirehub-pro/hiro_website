@@ -46,9 +46,15 @@ function timeAgo(timestamp) {
 
 function getMediaKind(item) {
   if (!item) return 'image';
-  if (item.type === 'video') return 'video';
+
+  const rawType = String(item.type || item.kind || item.contentType || '').trim().toLowerCase();
+  if (rawType === 'video' || rawType.startsWith('video/')) return 'video';
+
   const rawUrl = String(item.url || '').trim().toLowerCase();
   if (/\.(mp4|mov|webm|m4v)(\?|#|$)/.test(rawUrl)) return 'video';
+
+  if (rawType === 'image' || rawType.startsWith('image/')) return 'image';
+
   return 'image';
 }
 
@@ -73,7 +79,7 @@ function getProjectMedia(project) {
   }
 
   if (project?.imageUrl) {
-    return [{ type: 'image', url: project.imageUrl }];
+    return [{ type: getMediaKind({ url: project.imageUrl }), url: project.imageUrl }];
   }
 
   return [];
@@ -109,8 +115,8 @@ export default function ProjectDetailsPage({ initialProject = null }) {
     const firstImage = media.find(function (item) {
       return item.type === 'image' && item.url;
     });
-    return firstImage?.url || project?.imageUrl || '';
-  }, [media, project?.imageUrl]);
+    return firstImage?.url || '';
+  }, [media]);
   const imageMedia = media.filter(function (item) { return item.type === 'image' && item.url; });
   const videoMedia = media.filter(function (item) { return item.type === 'video' && item.url; });
   const socialImageUrl = ogImage || (videoMedia.length > 0 ? DEFAULT_VIDEO_THUMBNAIL : '');
