@@ -8,6 +8,7 @@ import clsx from 'clsx';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import {
   FiAlertTriangle,
+  FiArchive,
   FiBell,
   FiCalendar,
   FiChevronDown,
@@ -24,14 +25,34 @@ import {
   FiUser,
 } from 'react-icons/fi';
 import { db } from '../lib/firebase';
+import { BkmvExportService } from '../lib/bkmvExportService';
 import { registerForPushNotifications } from '../lib/notifications';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const notificationStorageKey = 'hiro_notifications_enabled';
+const datePromptPattern = /^\d{4}-\d{2}-\d{2}$/;
 
 function getAvatarFallback(name) {
   return String(name || 'H').trim().charAt(0).toUpperCase() || 'H';
+}
+
+function downloadBlobFile(file) {
+  const url = URL.createObjectURL(file.blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = file.name;
+  link.rel = 'noopener';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+function wait(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 export default function SettingsPage() {
@@ -50,6 +71,7 @@ export default function SettingsPage() {
     weekdays: [1, 2, 3, 4, 5],
   });
   const [scheduleBusy, setScheduleBusy] = useState(false);
+  const [isGeneratingUniformFiles, setIsGeneratingUniformFiles] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -102,7 +124,7 @@ export default function SettingsPage() {
     return copy.roleCustomer;
   }, [copy.roleAdmin, copy.roleCustomer, copy.roleWorker, profile?.role]);
 
-  const accountRows = useMemo(() => ([
+  const accountRows = [
     {
       key: 'account',
       label: copy.viewProfile,
@@ -114,6 +136,14 @@ export default function SettingsPage() {
       label: copy.businessVerification,
       icon: FiShield,
       href: '/worker/verification',
+    }] : []),
+    ...(user && !user.isAnonymous && profile?.role === 'worker' ? [{
+      key: 'uniformFiles',
+      label: copy.generateUniformFiles,
+      subtitle: copy.generateUniformFilesSubtitle,
+      icon: FiArchive,
+      onClick: handleGenerateUniformFiles,
+      disabled: isGeneratingUniformFiles,
     }] : []),
     {
       key: 'privacy',
@@ -127,7 +157,7 @@ export default function SettingsPage() {
       icon: FiFileText,
       onClick: () => setActiveInfoPanel('terms'),
     },
-  ]), [copy.businessVerification, copy.privacyPolicy, copy.termsOfService, copy.viewProfile, profile?.role, user?.uid]);
+  ];
 
   const supportRows = useMemo(() => ([
     {
@@ -270,6 +300,63 @@ export default function SettingsPage() {
     saveScheduleSettings(nextSettings);
   }
 
+  async function handleGenerateUniformFiles() {
+    if (!user || user.isAnonymous || profile?.role !== 'worker' || isGeneratingUniformFiles) return;
+    if (typeof window === 'undefined') return;
+
+    const recipientEmail = window.prompt(copy.uniformFilesEmailPrompt, user.email || '');
+    if (recipientEmail === null) return;
+
+    const fromDate = window.prompt(copy.uniformFilesFromDatePrompt, new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10));
+    if (fromDate === null) return;
+
+    const toDate = window.prompt(copy.uniformFilesToDatePrompt, new Date().toISOString().slice(0, 10));
+    if (toDate === null) return;
+
+    if (!datePromptPattern.test(fromDate) || !datePromptPattern.test(toDate) || fromDate > toDate) {
+      toast.error(copy.uniformFilesInvalidDateRange);
+      return;
+    }
+
+    try {
+      setIsGeneratingUniformFiles(true);
+      const result = await BkmvExportService.exportForUser({ user, fromDate, toDate });
+      result.files.forEach(downloadBlobFile);
+      await wait(1200);
+
+      if (recipientEmail.trim()) {
+        const subject = encodeURIComponent(copy.uniformFilesEmailSubject);
+        const body = encodeURIComponent([
+          copy.uniformFilesEmailBody,
+          '',
+          `${copy.uniformFilesGeneratedFiles}:`,
+          ...result.files.map((file) => `- ${file.name}`),
+        ].join('\n'));
+        const mailUrl = `mailto:${encodeURIComponent(recipientEmail.trim())}?subject=${subject}&body=${body}`;
+        try {
+          window.location.href = mailUrl;
+        } catch (error) {
+          throw new Error(copy.uniformFilesEmailError);
+        }
+      }
+
+      toast.success(copy.uniformFilesSuccess);
+    } catch (error) {
+      console.error('Failed to generate uniform files:', error);
+      if (error?.code === 'missing-business-details') {
+        toast.error(copy.uniformFilesMissingBusiness);
+      } else if (error?.code === 'no-documents') {
+        toast.error(copy.uniformFilesNoDocuments);
+      } else if (String(error?.message || '').includes(copy.uniformFilesEmailError)) {
+        toast.error(copy.uniformFilesEmailError);
+      } else {
+        toast.error(error?.message || copy.uniformFilesError);
+      }
+    } finally {
+      setIsGeneratingUniformFiles(false);
+    }
+  }
+
   function renderSettingsRow(item) {
     const Icon = item.icon;
     const ChevronIcon = isRtl ? FiChevronLeft : FiChevronRight;
@@ -278,7 +365,12 @@ export default function SettingsPage() {
         <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary-50 text-primary">
           <Icon className="h-5 w-5" />
         </div>
-        <span className="text-base font-bold text-gray-900 sm:text-lg">{item.label}</span>
+        <div>
+          <span className="block text-base font-bold text-gray-900 sm:text-lg">{item.label}</span>
+          {item.subtitle ? (
+            <span className="mt-0.5 block text-start text-xs font-semibold text-gray-500 sm:text-sm">{item.subtitle}</span>
+          ) : null}
+        </div>
       </div>
     );
 
@@ -298,7 +390,8 @@ export default function SettingsPage() {
         key={item.key}
         type="button"
         onClick={item.onClick}
-        className={className}
+        disabled={item.disabled}
+        className={clsx(className, item.disabled && 'cursor-not-allowed opacity-60')}
       >
         {content}
         <ChevronIcon className="h-6 w-6 text-gray-400" />
