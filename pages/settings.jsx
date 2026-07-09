@@ -361,11 +361,11 @@ export default function SettingsPage() {
     const Icon = item.icon;
     const ChevronIcon = isRtl ? FiChevronLeft : FiChevronRight;
     const content = (
-      <div className="flex items-center gap-4">
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary-50 text-primary">
+      <div className="flex min-w-0 flex-1 items-center gap-4">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary-50 text-primary">
           <Icon className="h-5 w-5" />
         </div>
-        <div>
+        <div className="min-w-0">
           <span className="block text-base font-bold text-gray-900 sm:text-lg">{item.label}</span>
           {item.subtitle ? (
             <span className="mt-0.5 block text-start text-xs font-semibold text-gray-500 sm:text-sm">{item.subtitle}</span>
@@ -374,13 +374,13 @@ export default function SettingsPage() {
       </div>
     );
 
-    const className = 'flex items-center justify-between rounded-[28px] px-5 py-5 transition-colors hover:bg-slate-50';
+    const className = 'flex w-full items-center justify-between gap-4 rounded-[28px] px-5 py-5 transition-colors hover:bg-slate-50';
 
     if (item.href) {
       return (
         <Link key={item.key} href={item.href} className={className}>
           {content}
-          <ChevronIcon className="h-6 w-6 text-gray-400" />
+          <ChevronIcon className="h-6 w-6 shrink-0 text-gray-400" />
         </Link>
       );
     }
@@ -394,7 +394,7 @@ export default function SettingsPage() {
         className={clsx(className, item.disabled && 'cursor-not-allowed opacity-60')}
       >
         {content}
-        <ChevronIcon className="h-6 w-6 text-gray-400" />
+        <ChevronIcon className="h-6 w-6 shrink-0 text-gray-400" />
       </button>
     );
   }
