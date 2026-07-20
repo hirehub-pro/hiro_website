@@ -90,7 +90,7 @@ function buildPreviewPayloadFromSavedInvoice(item) {
     clientEmail: item?.clientEmail || '',
     clientPhone: item?.clientPhone || '',
     clientCity: item?.clientAddress || '',
-    documentType: item?.type || item?.docType || 'receipt',
+    documentType: normalizeSavedDocType(item?.type || item?.docType),
     documentDescription: item?.name || '',
     vatRate: 0,
     paymentTerms: '',
@@ -118,6 +118,13 @@ function buildPreviewPayloadFromSavedInvoice(item) {
     allocationNumber: item?.allocationNumber || '',
     taxAuthorityAllocationNumber: item?.taxAuthorityAllocationNumber || '',
   };
+}
+
+function normalizeSavedDocType(value) {
+  const raw = String(value || '').toLowerCase();
+  if (raw === 'tax_invoice') return 'invoice';
+  if (raw === 'tax_invoice_receipt') return 'invoice_receipt';
+  return raw || 'receipt';
 }
 
 export default function SavedInvoicesPage() {
@@ -187,11 +194,11 @@ export default function SavedInvoicesPage() {
         : '';
       const matchesDate = !selectedDate || itemDateKey === selectedDate;
 
-      const normalizedType = String(item.docType || '').toLowerCase();
+      const normalizedType = normalizeSavedDocType(item.docType);
       const matchesType = selectedType === 'all'
-        || (selectedType === 'tax_invoice' && normalizedType === 'tax_invoice')
-        || (selectedType === 'receipt' && normalizedType.includes('receipt'))
-        || (selectedType === 'tax_invoice_receipt' && normalizedType === 'tax_invoice_receipt')
+        || (selectedType === 'invoice' && normalizedType === 'invoice')
+        || (selectedType === 'receipt' && normalizedType === 'receipt')
+        || (selectedType === 'invoice_receipt' && normalizedType === 'invoice_receipt')
         || (selectedType === 'credit_note' && normalizedType === 'credit_note')
         || (selectedType === 'quote' && normalizedType === 'quote')
         || (selectedType === 'work_order' && normalizedType === 'work_order');
@@ -243,9 +250,9 @@ export default function SavedInvoicesPage() {
 
   const filterChips = [
     { key: 'all', label: copy.allDocs },
-    { key: 'tax_invoice', label: copy.taxInvoiceDoc },
+    { key: 'invoice', label: copy.taxInvoiceDoc },
     { key: 'receipt', label: copy.receiptDoc },
-    { key: 'tax_invoice_receipt', label: copy.taxInvoiceReceiptDoc },
+    { key: 'invoice_receipt', label: copy.taxInvoiceReceiptDoc },
     { key: 'credit_note', label: copy.creditNoteDoc },
     { key: 'quote', label: copy.quoteDoc },
     { key: 'work_order', label: copy.workOrderDoc },
@@ -266,7 +273,7 @@ export default function SavedInvoicesPage() {
             <h1 className="text-[28px] font-extrabold tracking-tight text-slate-900 sm:text-[38px]">{copy.savedTitle}</h1>
           </div>
 
-          <div className="mt-6 grid gap-3 md:grid-cols-[1fr_122px]">
+          <div className="mt-6 grid gap-3 md:grid-cols-[minmax(0,1fr)_max-content]">
             <label className="flex items-center gap-3 rounded-[20px] border border-[#d4e0ef] bg-white px-4 py-3.5 shadow-sm">
               <FiSearch className="h-6 w-6 text-slate-600" />
               <input
@@ -277,10 +284,10 @@ export default function SavedInvoicesPage() {
               />
             </label>
 
-            <div className="rounded-[20px] bg-[#dcebfa] px-4 py-3.5 text-slate-700 shadow-sm">
+            <div className="w-full max-w-full rounded-[20px] bg-[#dcebfa] px-4 py-3.5 text-slate-700 shadow-sm md:w-fit md:min-w-[122px]">
               <p className="text-3xl font-extrabold leading-none text-primary">{filteredInvoices.length}</p>
               <p className="mt-1.5 text-sm font-bold uppercase tracking-wide">{copy.docsShort}</p>
-              <p className="mt-2 text-[22px] font-extrabold">{formatCurrency(totalAmount, locale)}</p>
+              <p className="mt-2 whitespace-nowrap text-[clamp(1rem,4.8vw,1.375rem)] font-extrabold">{formatCurrency(totalAmount, locale)}</p>
             </div>
           </div>
 
@@ -323,10 +330,10 @@ export default function SavedInvoicesPage() {
               </div>
             ) : (
               filteredInvoices.map((item) => {
-                const normalizedType = String(item.docType || '').toLowerCase();
-                const typeLabel = normalizedType === 'tax_invoice'
+                const normalizedType = normalizeSavedDocType(item.docType);
+                const typeLabel = normalizedType === 'invoice'
                   ? copy.taxInvoiceDoc
-                  : normalizedType === 'tax_invoice_receipt'
+                  : normalizedType === 'invoice_receipt'
                     ? copy.taxInvoiceReceiptDoc
                     : normalizedType === 'credit_note'
                       ? copy.creditNoteDoc

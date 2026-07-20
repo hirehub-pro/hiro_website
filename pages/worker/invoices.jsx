@@ -81,7 +81,14 @@ function documentTypeUsesCounter(value) {
 }
 
 function isTaxInvoiceDocumentType(value) {
-  return value === 'tax_invoice' || value === 'tax_invoice_receipt';
+  return value === 'invoice' || value === 'invoice_receipt' || value === 'tax_invoice' || value === 'tax_invoice_receipt';
+}
+
+function normalizeDocumentType(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'tax_invoice') return 'invoice';
+  if (raw === 'tax_invoice_receipt') return 'invoice_receipt';
+  return raw || 'receipt';
 }
 
 function normalizeNineDigitInput(value) {
@@ -171,8 +178,10 @@ function documentTypeConfig(value) {
       return { showDueDate: false, showPaymentDetails: false, showPaymentType: false };
     case 'receipt':
       return { showDueDate: false, showPaymentDetails: true, showPaymentType: true };
+    case 'invoice':
     case 'tax_invoice':
       return { showDueDate: true, showPaymentDetails: false, showPaymentType: false };
+    case 'invoice_receipt':
     case 'tax_invoice_receipt':
       return { showDueDate: false, showPaymentDetails: true, showPaymentType: true };
     case 'credit_note':
@@ -216,8 +225,8 @@ export default function WorkerInvoicesPage() {
     { value: 'quote', label: copy.quoteDoc },
     { value: 'work_order', label: copy.workOrderDoc },
     { value: 'receipt', label: copy.receiptDoc },
-    { value: 'tax_invoice', label: copy.taxInvoiceDoc },
-    { value: 'tax_invoice_receipt', label: copy.taxInvoiceReceiptDoc },
+    { value: 'invoice', label: copy.taxInvoiceDoc },
+    { value: 'invoice_receipt', label: copy.taxInvoiceReceiptDoc },
     { value: 'credit_note', label: copy.creditNoteDoc },
   ].filter((option) => {
     if (!dealerTypeLoaded && isTaxInvoiceDocumentType(option.value)) return false;
@@ -331,7 +340,7 @@ export default function WorkerInvoicesPage() {
       setClientPhone(parsed.clientPhone || '');
       setClientCity(parsed.clientCity || '');
       setClientUid(parsed.clientUid || '');
-      setDocumentType(parsed.documentType || 'receipt');
+      setDocumentType(normalizeDocumentType(parsed.documentType));
       setDocumentDescription(parsed.documentDescription || '');
       setNotes(parsed.notes || parsed.paymentTerms || '');
       setDiscountType(parsed.discountType === 'fixed' ? 'fixed' : 'percent');

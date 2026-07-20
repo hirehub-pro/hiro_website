@@ -60,6 +60,13 @@ function getPdfFilePrefix(docType) {
   return 'invoice';
 }
 
+function normalizePreviewDocType(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'tax_invoice') return 'invoice';
+  if (raw === 'tax_invoice_receipt') return 'invoice_receipt';
+  return raw || 'receipt';
+}
+
 function formatFooterGeneratedAt(value) {
   return new Intl.DateTimeFormat('he-IL', {
     day: '2-digit',
@@ -219,14 +226,14 @@ export default function InvoicePreviewPage() {
   const savedInvoiceUrl = invoice?.savedInvoiceUrl || '';
   const savedInvoiceFileName = invoice?.savedFileName || `${invoice?.invoiceNumber || 'invoice'}.pdf`;
   const shouldUseStoredPdf = openedFromSaved && Boolean(savedInvoiceUrl);
-  const docType = invoice?.documentType || invoice?.docType || 'receipt';
-  const canRequestTaxAllocation = docType === 'tax_invoice' || docType === 'tax_invoice_receipt';
+  const docType = normalizePreviewDocType(invoice?.documentType || invoice?.docType);
+  const canRequestTaxAllocation = docType === 'invoice' || docType === 'invoice_receipt';
   const canRequestSignature = docType === 'quote' || docType === 'work_order';
   const allocationNumber = taxAllocation?.confirmationNumber || invoice?.allocationNumber || invoice?.taxAuthorityAllocationNumber || '';
   const docTypeLabel = (
-    docType === 'tax_invoice'
+    docType === 'invoice'
       ? copy.taxInvoiceDoc
-      : docType === 'tax_invoice_receipt'
+      : docType === 'invoice_receipt'
         ? copy.taxInvoiceReceiptDoc
         : docType === 'credit_note'
           ? copy.creditNoteDoc
