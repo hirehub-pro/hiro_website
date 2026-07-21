@@ -4,7 +4,7 @@ import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
 import { PhoneAuthProvider, RecaptchaVerifier, updatePhoneNumber } from 'firebase/auth';
 import { collection, doc, getDocs, limit, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
-import { FiChevronLeft, FiChevronRight, FiPhone, FiShield } from 'react-icons/fi';
+import { FiCheckCircle, FiChevronLeft, FiChevronRight, FiLock, FiPhone, FiSend, FiShield } from 'react-icons/fi';
 import { auth, db } from '../../../lib/firebase';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useLanguage } from '../../../contexts/LanguageContext';
@@ -48,6 +48,59 @@ function getFirebaseAuthMessage(error, fallback) {
     default:
       return error?.message || fallback;
   }
+}
+
+function StepPill({ number, label, active, complete }) {
+  return (
+    <div className={`flex min-w-0 items-center gap-2 rounded-full px-3 py-2 text-sm font-extrabold transition-colors ${
+      complete
+        ? 'bg-emerald-50 text-emerald-700'
+        : active
+          ? 'bg-primary-50 text-primary'
+          : 'bg-white text-slate-400'
+    }`}>
+      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
+        complete
+          ? 'bg-emerald-500 text-white'
+          : active
+            ? 'bg-primary text-white'
+            : 'bg-slate-100 text-slate-400'
+      }`}>
+        {complete ? <FiCheckCircle className="h-4 w-4" /> : number}
+      </span>
+      <span className="truncate">{label}</span>
+    </div>
+  );
+}
+
+function PanelHeader({ icon: Icon, title, subtitle, complete, locked }) {
+  return (
+    <div className="mb-5 flex items-start gap-3">
+      <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${
+        complete
+          ? 'bg-emerald-50 text-emerald-600'
+          : locked
+            ? 'bg-slate-100 text-slate-400'
+            : 'bg-primary-50 text-primary'
+      }`}>
+        {complete ? <FiCheckCircle className="h-6 w-6" /> : locked ? <FiLock className="h-5 w-5" /> : <Icon className="h-5 w-5" />}
+      </div>
+      <div className="min-w-0 flex-1">
+        <h2 className={`text-xl font-extrabold tracking-tight ${locked ? 'text-slate-400' : 'text-gray-950'}`}>{title}</h2>
+        <p className="mt-1 text-sm font-semibold leading-5 text-gray-500">{subtitle}</p>
+      </div>
+    </div>
+  );
+}
+
+function PanelShell({ children, locked = false }) {
+  return (
+    <div className={`rounded-[30px] border bg-white p-5 shadow-card transition-all sm:p-6 ${
+      locked ? 'border-slate-100 opacity-65' : 'border-white'
+    }`}>
+      {children}
+    </div>
+  );
 }
 
 export default function ChangePhoneNumberPage() {
@@ -235,6 +288,9 @@ export default function ChangePhoneNumberPage() {
     }
   }
 
+  const currentSmsSent = Boolean(currentVerificationId);
+  const newSmsSent = Boolean(newVerificationId);
+
   return (
     <>
       <Head>
@@ -259,105 +315,114 @@ export default function ChangePhoneNumberPage() {
             </button>
           </div>
 
-          <div className="space-y-4">
-            <form onSubmit={handleSendCurrentCode} className="rounded-[30px] bg-white p-5 shadow-card sm:p-6">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary-50 text-primary">
-                  <FiShield className="h-5 w-5" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-extrabold text-gray-950">{phoneCopy.currentTitle || 'Verify current phone'}</h2>
-                  <p className="text-sm font-semibold text-gray-500">{phoneCopy.currentSubtitle || 'Enter the phone number already saved on your account.'}</p>
-                </div>
-              </div>
+          <div className="mb-5 grid gap-2 rounded-[28px] bg-white/70 p-2 shadow-sm backdrop-blur sm:grid-cols-3">
+            <StepPill number="1" label={phoneCopy.currentTitle || 'Current phone'} active={!currentVerified} complete={currentVerified} />
+            <StepPill number="2" label={phoneCopy.newTitle || 'New phone'} active={currentVerified && !newSmsSent} complete={false} />
+            <StepPill number="3" label={phoneCopy.verifyNewCode || 'Finish'} active={newSmsSent} complete={false} />
+          </div>
 
-              <label className="block">
-                <span className="mb-2 block text-sm font-semibold text-slate-700">{phoneCopy.currentPhoneLabel || 'Current phone number'}</span>
-                <input
-                  type="tel"
-                  value={currentPhone}
-                  onChange={(event) => setCurrentPhone(event.target.value)}
-                  placeholder="+972..."
-                  autoComplete="off"
-                  className="input-field"
+          <div className="grid gap-4 lg:grid-cols-2">
+            <PanelShell>
+              <form onSubmit={currentSmsSent && !currentVerified ? handleVerifyCurrentCode : handleSendCurrentCode}>
+                <PanelHeader
+                  icon={FiShield}
+                  title={phoneCopy.currentTitle || 'Verify current phone'}
+                  subtitle={phoneCopy.currentSubtitle || 'Enter the phone number already saved on your account.'}
+                  complete={currentVerified}
                 />
-              </label>
 
-              <button
-                type="submit"
-                disabled={Boolean(busy) || currentVerified}
-                className="btn-primary mt-4 w-full disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {phoneCopy.sendCurrentCode || 'Send SMS code'}
-              </button>
-            </form>
+                <div className="space-y-4">
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-semibold text-slate-700">{phoneCopy.currentPhoneLabel || 'Current phone number'}</span>
+                    <input
+                      type="tel"
+                      value={currentPhone}
+                      onChange={(event) => setCurrentPhone(event.target.value)}
+                      placeholder="+972..."
+                      autoComplete="off"
+                      disabled={currentSmsSent || currentVerified}
+                      className="input-field disabled:text-slate-400"
+                    />
+                  </label>
 
-            {currentVerificationId && !currentVerified ? (
-              <form onSubmit={handleVerifyCurrentCode} className="rounded-[30px] bg-white p-5 shadow-card sm:p-6">
-                <label className="block">
-                  <span className="mb-2 block text-sm font-semibold text-slate-700">{phoneCopy.currentCodeLabel || 'Current phone SMS code'}</span>
-                  <input
-                    inputMode="numeric"
-                    value={currentCode}
-                    onChange={(event) => setCurrentCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
-                    placeholder="123456"
-                    className="input-field"
-                  />
-                </label>
-
-                <button type="submit" disabled={Boolean(busy)} className="btn-primary mt-4 w-full disabled:cursor-not-allowed disabled:opacity-60">
-                  {phoneCopy.verifyCurrentCode || 'Verify current phone'}
-                </button>
-              </form>
-            ) : null}
-
-            {currentVerified ? (
-              <form onSubmit={handleSendNewCode} className="rounded-[30px] bg-white p-5 shadow-card sm:p-6">
-                <div className="mb-4 flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary-50 text-primary">
-                    <FiPhone className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-extrabold text-gray-950">{phoneCopy.newTitle || 'Verify new phone'}</h2>
-                    <p className="text-sm font-semibold text-gray-500">{phoneCopy.newSubtitle || 'Enter the new phone number and verify it by SMS.'}</p>
-                  </div>
+                  {currentSmsSent && !currentVerified ? (
+                    <label className="block">
+                      <span className="mb-2 block text-sm font-semibold text-slate-700">{phoneCopy.currentCodeLabel || 'Current phone SMS code'}</span>
+                      <input
+                        inputMode="numeric"
+                        value={currentCode}
+                        onChange={(event) => setCurrentCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="123456"
+                        autoComplete="one-time-code"
+                        className="input-field text-center text-2xl font-extrabold tracking-[0.3em]"
+                      />
+                    </label>
+                  ) : null}
                 </div>
 
-                <label className="block">
-                  <span className="mb-2 block text-sm font-semibold text-slate-700">{phoneCopy.newPhoneLabel || 'New phone number'}</span>
-                  <input
-                    type="tel"
-                    value={newPhone}
-                    onChange={(event) => setNewPhone(event.target.value)}
-                    placeholder="+972..."
-                    className="input-field"
-                  />
-                </label>
-
-                <button type="submit" disabled={Boolean(busy)} className="btn-primary mt-4 w-full disabled:cursor-not-allowed disabled:opacity-60">
-                  {phoneCopy.sendNewCode || 'Send SMS to new phone'}
+                <button
+                  type="submit"
+                  disabled={Boolean(busy) || currentVerified}
+                  className="btn-primary mt-5 flex w-full items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {currentSmsSent && !currentVerified ? <FiCheckCircle className="h-5 w-5" /> : <FiSend className="h-5 w-5" />}
+                  {currentSmsSent && !currentVerified
+                    ? (phoneCopy.verifyCurrentCode || 'Verify current phone')
+                    : (phoneCopy.sendCurrentCode || 'Send SMS code')}
                 </button>
               </form>
-            ) : null}
+            </PanelShell>
 
-            {newVerificationId ? (
-              <form onSubmit={handleVerifyNewAndSave} className="rounded-[30px] bg-white p-5 shadow-card sm:p-6">
-                <label className="block">
-                  <span className="mb-2 block text-sm font-semibold text-slate-700">{phoneCopy.newCodeLabel || 'New phone SMS code'}</span>
-                  <input
-                    inputMode="numeric"
-                    value={newCode}
-                    onChange={(event) => setNewCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
-                    placeholder="123456"
-                    className="input-field"
-                  />
-                </label>
+            <PanelShell locked={!currentVerified}>
+              <form onSubmit={newSmsSent ? handleVerifyNewAndSave : handleSendNewCode}>
+                <PanelHeader
+                  icon={FiPhone}
+                  title={phoneCopy.newTitle || 'Verify new phone'}
+                  subtitle={phoneCopy.newSubtitle || 'Enter the new phone number and verify it by SMS.'}
+                  locked={!currentVerified}
+                  complete={false}
+                />
 
-                <button type="submit" disabled={Boolean(busy)} className="btn-primary mt-4 w-full disabled:cursor-not-allowed disabled:opacity-60">
-                  {phoneCopy.verifyNewCode || 'Verify and change phone number'}
+                <div className="space-y-4">
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-semibold text-slate-700">{phoneCopy.newPhoneLabel || 'New phone number'}</span>
+                    <input
+                      type="tel"
+                      value={newPhone}
+                      onChange={(event) => setNewPhone(event.target.value)}
+                      placeholder="+972..."
+                      disabled={!currentVerified || newSmsSent}
+                      className="input-field disabled:text-slate-400"
+                    />
+                  </label>
+
+                  {newSmsSent ? (
+                    <label className="block">
+                      <span className="mb-2 block text-sm font-semibold text-slate-700">{phoneCopy.newCodeLabel || 'New phone SMS code'}</span>
+                      <input
+                        inputMode="numeric"
+                        value={newCode}
+                        onChange={(event) => setNewCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="123456"
+                        autoComplete="one-time-code"
+                        className="input-field text-center text-2xl font-extrabold tracking-[0.3em]"
+                      />
+                    </label>
+                  ) : null}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={Boolean(busy) || !currentVerified}
+                  className="btn-primary mt-5 flex w-full items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {newSmsSent ? <FiCheckCircle className="h-5 w-5" /> : <FiSend className="h-5 w-5" />}
+                  {newSmsSent
+                    ? (phoneCopy.verifyNewCode || 'Verify and change phone number')
+                    : (phoneCopy.sendNewCode || 'Send SMS to new phone')}
                 </button>
               </form>
-            ) : null}
+            </PanelShell>
           </div>
 
           <div id="phone-change-recaptcha" />
