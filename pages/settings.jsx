@@ -129,7 +129,7 @@ export default function SettingsPage() {
       key: 'account',
       label: copy.viewProfile,
       icon: FiUser,
-      href: `/profile/${user?.uid || ''}`,
+      href: '/settings/account',
     },
     ...(profile?.role === 'worker' ? [{
       key: 'businessVerification',
