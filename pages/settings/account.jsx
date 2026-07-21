@@ -7,10 +7,9 @@ import {
   EmailAuthProvider,
   deleteUser,
   reauthenticateWithCredential,
-  updateEmail,
   updatePassword,
 } from 'firebase/auth';
-import { deleteDoc, doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { deleteDoc, doc } from 'firebase/firestore';
 import { FiBriefcase, FiChevronLeft, FiChevronRight, FiKey, FiMail, FiPhone, FiTrash2 } from 'react-icons/fi';
 import { auth, db } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -62,31 +61,6 @@ export default function AccountSettingsPage() {
 
     const credential = EmailAuthProvider.credential(user.email, currentPassword);
     await reauthenticateWithCredential(auth.currentUser, credential);
-  }
-
-  async function handleChangeEmail() {
-    const nextEmail = window.prompt(accountCopy.emailPrompt || 'Enter your new email address.', user.email || profile?.email || '');
-    if (nextEmail === null) return;
-    const normalizedEmail = nextEmail.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-      toast.error(accountCopy.invalidEmail || 'Enter a valid email address.');
-      return;
-    }
-
-    try {
-      setBusyAction('email');
-      await reauthenticateWithPassword();
-      await updateEmail(auth.currentUser, normalizedEmail);
-      await setDoc(doc(db, 'users', user.uid), {
-        email: normalizedEmail,
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-      toast.success(accountCopy.emailUpdated || 'Email updated.');
-    } catch (error) {
-      toast.error(error?.message || accountCopy.updateError || 'Could not update account.');
-    } finally {
-      setBusyAction('');
-    }
   }
 
   async function handleChangePassword() {
@@ -146,7 +120,7 @@ export default function AccountSettingsPage() {
       label: accountCopy.changeEmail || 'Change email',
       subtitle: user.email || profile?.email || copy.notProvided,
       icon: FiMail,
-      onClick: handleChangeEmail,
+      href: '/settings/account/email',
     },
     {
       key: 'password',

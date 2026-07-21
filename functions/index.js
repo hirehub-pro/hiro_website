@@ -24,6 +24,74 @@ function getAuthenticatedUid(request) {
   return uid;
 }
 
+function getSignedInUid(request) {
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError('unauthenticated', 'Sign in before managing your account.');
+  }
+  return uid;
+}
+
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function assertValidEmail(email) {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new HttpsError('invalid-argument', 'Enter a valid email address.');
+  }
+}
+
+function hashEmailCode(code) {
+  return crypto.createHash('sha256').update(String(code)).digest('hex');
+}
+
+function createEmailCode() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
+function isHttpsError(error) {
+  return Boolean(error?.code && typeof error.message === 'string' && error.httpErrorCode);
+}
+
+async function loadAccountEmailState(uid) {
+  const [authUser, userSnap] = await Promise.all([
+    admin.auth().getUser(uid),
+    admin.firestore().doc(`users/${uid}`).get(),
+  ]);
+  const userData = userSnap.data() || {};
+  const currentEmail = normalizeEmail(authUser.email || userData.email);
+
+  return { authUser, currentEmail };
+}
+
+async function assertCurrentEmailWasVerified(uid) {
+  const currentCodeSnap = await admin.firestore().doc(`users/${uid}/account_email_codes/current`).get();
+  const currentCodeData = currentCodeSnap.data() || {};
+  const expiresAtMs = currentCodeData.expiresAt?.toMillis?.() || 0;
+
+  if (!currentCodeSnap.exists || currentCodeData.verified !== true || expiresAtMs < Date.now()) {
+    throw new HttpsError('failed-precondition', 'Verify your current email first.');
+  }
+}
+
+async function writeEmailCodeMessage({ uid, email, code, purpose }) {
+  const purposeLabel = purpose === 'current' ? 'current email' : 'new email';
+  await admin.firestore().collection('mail').add({
+    to: email,
+    message: {
+      subject: 'Hiro email verification code',
+      text: `Your Hiro verification code for your ${purposeLabel} is ${code}. It expires in 10 minutes.`,
+      html: `<p>Your Hiro verification code for your ${purposeLabel} is:</p><p style="font-size:28px;font-weight:700;letter-spacing:4px;">${code}</p><p>It expires in 10 minutes.</p>`,
+    },
+    metadata: {
+      uid,
+      purpose,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+  });
+}
+
 function normalizeNineDigitId(value) {
   return String(value ?? '').replace(/\D/g, '');
 }
@@ -319,6 +387,144 @@ exports.createTaxAuthorityAuthorizationUrl = onCall({
   authorizationUrl.searchParams.set('state', state);
 
   return { authorizationUrl: authorizationUrl.toString() };
+});
+
+exports.sendAccountEmailCode = onCall({
+  region: TAX_FUNCTION_REGION,
+}, async (request) => {
+  try {
+    const uid = getSignedInUid(request);
+    const purpose = String(request.data?.purpose || '').trim().toLowerCase();
+    const email = normalizeEmail(request.data?.email);
+
+    if (!['current', 'new'].includes(purpose)) {
+      throw new HttpsError('invalid-argument', 'Invalid email verification purpose.');
+    }
+    assertValidEmail(email);
+
+    const { currentEmail } = await loadAccountEmailState(uid);
+    if (!currentEmail) {
+      throw new HttpsError('failed-precondition', 'Your account does not have an email address.');
+    }
+
+    if (purpose === 'current' && email !== currentEmail) {
+      throw new HttpsError('failed-precondition', 'This does not match your current email.');
+    }
+
+    if (purpose === 'new') {
+      if (email === currentEmail) {
+        throw new HttpsError('failed-precondition', 'Enter a different email address.');
+      }
+      await assertCurrentEmailWasVerified(uid);
+
+      let emailAlreadyExists = false;
+      try {
+        await admin.auth().getUserByEmail(email);
+        emailAlreadyExists = true;
+      } catch (error) {
+        if (error?.code !== 'auth/user-not-found') {
+          console.error('Could not check account email availability.', { uid, email, code: error?.code, message: error?.message });
+          throw new HttpsError('internal', 'Could not check email availability.');
+        }
+      }
+
+      if (emailAlreadyExists) {
+        throw new HttpsError('already-exists', 'This email is already used by another account.');
+      }
+    }
+
+    const code = createEmailCode();
+    await admin.firestore().doc(`users/${uid}/account_email_codes/${purpose}`).set({
+      email,
+      codeHash: hashEmailCode(code),
+      attempts: 0,
+      verified: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
+    }, { merge: false });
+    await writeEmailCodeMessage({ uid, email, code, purpose });
+
+    return { sent: true };
+  } catch (error) {
+    if (isHttpsError(error)) {
+      throw error;
+    }
+    console.error('sendAccountEmailCode failed.', { code: error?.code, message: error?.message, stack: error?.stack });
+    throw new HttpsError('internal', 'Could not send verification code.');
+  }
+});
+
+exports.verifyAccountEmailCode = onCall({
+  region: TAX_FUNCTION_REGION,
+}, async (request) => {
+  try {
+    const uid = getSignedInUid(request);
+    const purpose = String(request.data?.purpose || '').trim().toLowerCase();
+    const email = normalizeEmail(request.data?.email);
+    const code = String(request.data?.code || '').replace(/\D/g, '');
+
+    if (!['current', 'new'].includes(purpose)) {
+      throw new HttpsError('invalid-argument', 'Invalid email verification purpose.');
+    }
+    assertValidEmail(email);
+    if (!/^\d{6}$/.test(code)) {
+      throw new HttpsError('invalid-argument', 'Enter the 6-digit verification code.');
+    }
+
+    const codeRef = admin.firestore().doc(`users/${uid}/account_email_codes/${purpose}`);
+    const codeSnap = await codeRef.get();
+    const codeData = codeSnap.data() || {};
+    const expiresAtMs = codeData.expiresAt?.toMillis?.() || 0;
+    const attempts = Number(codeData.attempts || 0);
+
+    if (!codeSnap.exists || codeData.email !== email || expiresAtMs < Date.now()) {
+      throw new HttpsError('failed-precondition', 'The verification code expired. Please request a new code.');
+    }
+    if (attempts >= 5) {
+      throw new HttpsError('resource-exhausted', 'Too many attempts. Please request a new code.');
+    }
+    if (codeData.codeHash !== hashEmailCode(code)) {
+      await codeRef.set({
+        attempts: admin.firestore.FieldValue.increment(1),
+        lastAttemptAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      throw new HttpsError('failed-precondition', 'The verification code is incorrect.');
+    }
+
+    if (purpose === 'current') {
+      const { currentEmail } = await loadAccountEmailState(uid);
+      if (email !== currentEmail) {
+        throw new HttpsError('failed-precondition', 'This does not match your current email.');
+      }
+      await codeRef.set({
+        verified: true,
+        verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      return { verified: true };
+    }
+
+    await assertCurrentEmailWasVerified(uid);
+    await admin.auth().updateUser(uid, {
+      email,
+      emailVerified: true,
+    });
+    await admin.firestore().doc(`users/${uid}`).set({
+      email,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    await codeRef.set({
+      verified: true,
+      verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    return { verified: true, emailUpdated: true };
+  } catch (error) {
+    if (isHttpsError(error)) {
+      throw error;
+    }
+    console.error('verifyAccountEmailCode failed.', { code: error?.code, message: error?.message, stack: error?.stack });
+    throw new HttpsError('internal', 'Could not verify email code.');
+  }
 });
 
 exports.getTaxAuthorityConnectionStatus = onCall({
