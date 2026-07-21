@@ -2,9 +2,9 @@ import Head from 'next/head';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
-import { httpsCallable } from 'firebase/functions';
-import { FiCheckCircle, FiChevronLeft, FiChevronRight, FiLock, FiMail, FiSend, FiShield } from 'react-icons/fi';
-import { auth, functions } from '../../../lib/firebase';
+import { verifyBeforeUpdateEmail } from 'firebase/auth';
+import { FiCheckCircle, FiChevronLeft, FiChevronRight, FiMail, FiSend, FiShield } from 'react-icons/fi';
+import { auth } from '../../../lib/firebase';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useLanguage } from '../../../contexts/LanguageContext';
 
@@ -18,20 +18,6 @@ function normalizeEmail(email) {
 
 function getFirebaseAuthMessage(error, fallback) {
   switch (error?.code) {
-    case 'functions/invalid-argument':
-      return error?.message || 'Check the email/code and try again.';
-    case 'functions/already-exists':
-      return 'This email is already used by another account.';
-    case 'functions/failed-precondition':
-      return error?.message || 'Please complete the previous verification step first.';
-    case 'functions/resource-exhausted':
-      return error?.message || 'Too many attempts. Please request a new code.';
-    case 'functions/unauthenticated':
-      return 'Please sign in before changing your email.';
-    case 'functions/internal':
-      return error?.message && error.message !== 'internal'
-        ? error.message
-        : fallback;
     case 'auth/invalid-email':
       return 'Enter a valid email address.';
     case 'auth/email-already-in-use':
@@ -40,63 +26,42 @@ function getFirebaseAuthMessage(error, fallback) {
       return 'Please sign out and sign in again before changing your email.';
     case 'auth/too-many-requests':
       return 'Too many attempts. Please wait a little before trying again.';
-    case 'auth/wrong-password':
-    case 'auth/invalid-credential':
-      return 'The current password is incorrect.';
+    case 'auth/operation-not-allowed':
+      return 'Email/password sign-in is not enabled in Firebase Authentication.';
+    case 'auth/user-token-expired':
+      return 'Please sign in again before changing your email.';
     default:
       return error?.message || fallback;
   }
 }
 
-function StepPill({ number, label, active, complete }) {
+function StatusPill({ icon: Icon, label, active }) {
   return (
     <div className={`flex min-w-0 items-center gap-2 rounded-full px-3 py-2 text-sm font-extrabold transition-colors ${
-      complete
-        ? 'bg-emerald-50 text-emerald-700'
-        : active
-          ? 'bg-primary-50 text-primary'
-          : 'bg-white text-slate-400'
+      active ? 'bg-primary-50 text-primary' : 'bg-white text-slate-400'
     }`}>
       <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
-        complete
-          ? 'bg-emerald-500 text-white'
-          : active
-            ? 'bg-primary text-white'
-            : 'bg-slate-100 text-slate-400'
+        active ? 'bg-primary text-white' : 'bg-slate-100 text-slate-400'
       }`}>
-        {complete ? <FiCheckCircle className="h-4 w-4" /> : number}
+        <Icon className="h-4 w-4" />
       </span>
       <span className="truncate">{label}</span>
     </div>
   );
 }
 
-function PanelHeader({ icon: Icon, title, subtitle, complete, locked }) {
+function InfoPanel({ icon: Icon, title, subtitle }) {
   return (
-    <div className="mb-5 flex items-start gap-3">
-      <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${
-        complete
-          ? 'bg-emerald-50 text-emerald-600'
-          : locked
-            ? 'bg-slate-100 text-slate-400'
-            : 'bg-primary-50 text-primary'
-      }`}>
-        {complete ? <FiCheckCircle className="h-6 w-6" /> : locked ? <FiLock className="h-5 w-5" /> : <Icon className="h-5 w-5" />}
+    <div className="rounded-[30px] border border-white bg-white p-5 shadow-card sm:p-6">
+      <div className="flex items-start gap-3">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary-50 text-primary">
+          <Icon className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-xl font-extrabold tracking-tight text-gray-950">{title}</h2>
+          <p className="mt-1 text-sm font-semibold leading-6 text-gray-500">{subtitle}</p>
+        </div>
       </div>
-      <div className="min-w-0 flex-1">
-        <h2 className={`text-xl font-extrabold tracking-tight ${locked ? 'text-slate-400' : 'text-gray-950'}`}>{title}</h2>
-        <p className="mt-1 text-sm font-semibold leading-5 text-gray-500">{subtitle}</p>
-      </div>
-    </div>
-  );
-}
-
-function PanelShell({ children, locked = false }) {
-  return (
-    <div className={`rounded-[30px] border bg-white p-5 shadow-card transition-all sm:p-6 ${
-      locked ? 'border-slate-100 opacity-65' : 'border-white'
-    }`}>
-      {children}
     </div>
   );
 }
@@ -110,17 +75,13 @@ export default function ChangeEmailPage() {
   const emailCopy = accountCopy.emailFlow || {};
   const isRtl = dir === 'rtl';
   const [currentEmail, setCurrentEmail] = useState('');
-  const [currentCode, setCurrentCode] = useState('');
   const [newEmail, setNewEmail] = useState('');
-  const [newCode, setNewCode] = useState('');
-  const [currentVerificationSent, setCurrentVerificationSent] = useState(false);
-  const [currentVerified, setCurrentVerified] = useState(false);
-  const [newVerificationSent, setNewVerificationSent] = useState(false);
-  const [busy, setBusy] = useState('');
+  const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const savedEmail = useMemo(
-    () => normalizeEmail(auth.currentUser?.email || profile?.email || ''),
-    [profile?.email]
+    () => normalizeEmail(user?.email || auth.currentUser?.email || profile?.email || ''),
+    [profile?.email, user?.email]
   );
 
   useEffect(() => {
@@ -139,60 +100,18 @@ export default function ChangeEmailPage() {
 
   if (!user) return null;
 
-  async function handleSendCurrentVerification(event) {
+  async function handleSendEmailChange(event) {
     event.preventDefault();
-    const normalizedEmail = normalizeEmail(currentEmail);
-
-    if (!isValidEmail(normalizedEmail)) {
-      toast.error(accountCopy.invalidEmail || 'Enter a valid email address.');
-      return;
-    }
-
-    if (!savedEmail || normalizedEmail !== savedEmail) {
-      toast.error(emailCopy.currentEmailMismatch || 'This does not match your current email.');
-      return;
-    }
-
-    try {
-      setBusy('current-send');
-      const sendCode = httpsCallable(functions, 'sendAccountEmailCode');
-      await sendCode({ purpose: 'current', email: normalizedEmail });
-      setCurrentVerificationSent(true);
-      toast.success(emailCopy.currentVerificationSent || 'Verification code sent to your current email.');
-    } catch (error) {
-      toast.error(getFirebaseAuthMessage(error, emailCopy.emailError || 'Could not send verification code.'));
-    } finally {
-      setBusy('');
-    }
-  }
-
-  async function handleConfirmCurrentVerified(event) {
-    event.preventDefault();
-
-    if (currentCode.trim().length < 6) {
-      toast.error(emailCopy.codeRequired || 'Enter the email verification code.');
-      return;
-    }
-
-    try {
-      setBusy('current-check');
-      const verifyCode = httpsCallable(functions, 'verifyAccountEmailCode');
-      await verifyCode({ purpose: 'current', email: savedEmail, code: currentCode.trim() });
-      setCurrentVerified(true);
-      toast.success(emailCopy.currentVerified || 'Current email verified.');
-    } catch (error) {
-      toast.error(getFirebaseAuthMessage(error, emailCopy.codeError || 'The verification code is incorrect.'));
-    } finally {
-      setBusy('');
-    }
-  }
-
-  async function handleSendNewVerification(event) {
-    event.preventDefault();
+    const normalizedCurrentEmail = normalizeEmail(currentEmail);
     const normalizedNewEmail = normalizeEmail(newEmail);
 
-    if (!isValidEmail(normalizedNewEmail)) {
+    if (!isValidEmail(normalizedCurrentEmail) || !isValidEmail(normalizedNewEmail)) {
       toast.error(accountCopy.invalidEmail || 'Enter a valid email address.');
+      return;
+    }
+
+    if (!savedEmail || normalizedCurrentEmail !== savedEmail) {
+      toast.error(emailCopy.currentEmailMismatch || 'This does not match your current email.');
       return;
     }
 
@@ -202,38 +121,14 @@ export default function ChangeEmailPage() {
     }
 
     try {
-      setBusy('new-send');
-      const sendCode = httpsCallable(functions, 'sendAccountEmailCode');
-      await sendCode({ purpose: 'new', email: normalizedNewEmail });
-      setNewVerificationSent(true);
-      toast.success(emailCopy.newVerificationSent || 'Verification code sent to your new email.');
+      setBusy(true);
+      await verifyBeforeUpdateEmail(auth.currentUser || user, normalizedNewEmail);
+      setSent(true);
+      toast.success(emailCopy.newVerificationSent || 'Firebase verification email sent.');
     } catch (error) {
-      toast.error(getFirebaseAuthMessage(error, emailCopy.emailError || 'Could not send verification code.'));
+      toast.error(getFirebaseAuthMessage(error, emailCopy.emailError || 'Could not send verification email.'));
     } finally {
-      setBusy('');
-    }
-  }
-
-  async function handleConfirmNewAndSave(event) {
-    event.preventDefault();
-    const normalizedNewEmail = normalizeEmail(newEmail);
-
-    if (newCode.trim().length < 6) {
-      toast.error(emailCopy.codeRequired || 'Enter the email verification code.');
-      return;
-    }
-
-    try {
-      setBusy('save');
-      const verifyCode = httpsCallable(functions, 'verifyAccountEmailCode');
-      await verifyCode({ purpose: 'new', email: normalizedNewEmail, code: newCode.trim() });
-      await auth.currentUser.reload();
-      toast.success(accountCopy.emailUpdated || 'Email updated.');
-      router.push('/settings/account');
-    } catch (error) {
-      toast.error(getFirebaseAuthMessage(error, emailCopy.codeError || accountCopy.updateError || 'Could not update account.'));
-    } finally {
-      setBusy('');
+      setBusy(false);
     }
   }
 
@@ -248,7 +143,7 @@ export default function ChangeEmailPage() {
           <div className="mb-6 flex items-center justify-between gap-4">
             <div>
               <h1 className="text-4xl font-extrabold tracking-tight text-gray-950">{emailCopy.title || 'Change Email'}</h1>
-              <p className="mt-2 max-w-xl text-sm leading-6 text-gray-500">{emailCopy.subtitle || 'Verify your current email before adding a new one.'}</p>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-gray-500">{emailCopy.subtitle || 'Send a Firebase verification link to your new email address.'}</p>
             </div>
 
             <button
@@ -262,70 +157,38 @@ export default function ChangeEmailPage() {
           </div>
 
           <div className="mb-5 grid gap-2 rounded-[28px] bg-white/70 p-2 shadow-sm backdrop-blur sm:grid-cols-3">
-            <StepPill number="1" label={emailCopy.currentTitle || 'Current email'} active={!currentVerified} complete={currentVerified} />
-            <StepPill number="2" label={emailCopy.newTitle || 'New email'} active={currentVerified && !newVerificationSent} complete={false} />
-            <StepPill number="3" label={emailCopy.finishTitle || 'Finish'} active={newVerificationSent} complete={false} />
+            <StatusPill icon={FiShield} label={emailCopy.currentTitle || 'Confirm current email'} active={!sent} />
+            <StatusPill icon={FiMail} label={emailCopy.newTitle || 'New email'} active={!sent} />
+            <StatusPill icon={FiCheckCircle} label={emailCopy.finishTitle || 'Open Firebase email'} active={sent} />
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <PanelShell>
-              <form onSubmit={currentVerificationSent && !currentVerified ? handleConfirmCurrentVerified : handleSendCurrentVerification}>
-                <PanelHeader
-                  icon={FiShield}
-                  title={emailCopy.currentTitle || 'Verify current email'}
-                  subtitle={emailCopy.currentSubtitle || 'Enter the email already saved on your account.'}
-                  complete={currentVerified}
-                />
+          <div className="grid gap-4 lg:grid-cols-[1fr_0.78fr]">
+            <form onSubmit={handleSendEmailChange} className="rounded-[30px] border border-white bg-white p-5 shadow-card sm:p-6">
+              <div className="mb-5 flex items-start gap-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary-50 text-primary">
+                  <FiMail className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-xl font-extrabold tracking-tight text-gray-950">{emailCopy.newTitle || 'Change email with Firebase'}</h2>
+                  <p className="mt-1 text-sm font-semibold leading-6 text-gray-500">
+                    {emailCopy.newSubtitle || 'Firebase will send a secure link to the new address. The email changes only after the link is opened.'}
+                  </p>
+                </div>
+              </div>
 
+              <div className="grid gap-4">
                 <label className="block">
                   <span className="mb-2 block text-sm font-semibold text-slate-700">{emailCopy.currentEmailLabel || 'Current email address'}</span>
                   <input
                     type="email"
                     value={currentEmail}
                     onChange={(event) => setCurrentEmail(event.target.value)}
-                    placeholder="name@example.com"
+                    placeholder="current@example.com"
                     autoComplete="off"
-                    disabled={currentVerificationSent || currentVerified}
+                    disabled={busy || sent}
                     className="input-field disabled:text-slate-400"
                   />
                 </label>
-
-                {currentVerificationSent && !currentVerified ? (
-                  <label className="mt-4 block">
-                    <span className="mb-2 block text-sm font-semibold text-slate-700">{emailCopy.currentCodeLabel || 'Current email code'}</span>
-                    <input
-                      inputMode="numeric"
-                      value={currentCode}
-                      onChange={(event) => setCurrentCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
-                      placeholder="123456"
-                      autoComplete="one-time-code"
-                      className="input-field text-center text-2xl font-extrabold tracking-[0.3em]"
-                    />
-                  </label>
-                ) : null}
-
-                <button
-                  type="submit"
-                  disabled={Boolean(busy) || currentVerified}
-                  className="btn-primary mt-5 flex w-full items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {currentVerificationSent && !currentVerified ? <FiCheckCircle className="h-5 w-5" /> : <FiSend className="h-5 w-5" />}
-                  {currentVerificationSent && !currentVerified
-                    ? (emailCopy.confirmCurrentVerified || 'I verified current email')
-                    : (emailCopy.sendCurrentVerification || 'Send verification email')}
-                </button>
-              </form>
-            </PanelShell>
-
-            <PanelShell locked={!currentVerified}>
-              <form onSubmit={newVerificationSent ? handleConfirmNewAndSave : handleSendNewVerification}>
-                <PanelHeader
-                  icon={FiMail}
-                  title={emailCopy.newTitle || 'Verify new email'}
-                  subtitle={emailCopy.newSubtitle || 'Enter the new email and verify it from your inbox.'}
-                  locked={!currentVerified}
-                  complete={false}
-                />
 
                 <label className="block">
                   <span className="mb-2 block text-sm font-semibold text-slate-700">{emailCopy.newEmailLabel || 'New email address'}</span>
@@ -333,39 +196,33 @@ export default function ChangeEmailPage() {
                     type="email"
                     value={newEmail}
                     onChange={(event) => setNewEmail(event.target.value)}
-                    placeholder="name@example.com"
+                    placeholder="new@example.com"
                     autoComplete="off"
-                    disabled={!currentVerified || newVerificationSent}
+                    disabled={busy || sent}
                     className="input-field disabled:text-slate-400"
                   />
                 </label>
+              </div>
 
-                {newVerificationSent ? (
-                  <label className="mt-4 block">
-                    <span className="mb-2 block text-sm font-semibold text-slate-700">{emailCopy.newCodeLabel || 'New email code'}</span>
-                    <input
-                      inputMode="numeric"
-                      value={newCode}
-                      onChange={(event) => setNewCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
-                      placeholder="123456"
-                      autoComplete="one-time-code"
-                      className="input-field text-center text-2xl font-extrabold tracking-[0.3em]"
-                    />
-                  </label>
-                ) : null}
+              <button
+                type="submit"
+                disabled={busy || sent}
+                className="btn-primary mt-5 flex w-full items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {sent ? <FiCheckCircle className="h-5 w-5" /> : <FiSend className="h-5 w-5" />}
+                {sent
+                  ? (emailCopy.newVerificationSent || 'Verification email sent')
+                  : (emailCopy.sendNewVerification || 'Send Firebase verification email')}
+              </button>
+            </form>
 
-                <button
-                  type="submit"
-                  disabled={Boolean(busy) || !currentVerified}
-                  className="btn-primary mt-5 flex w-full items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {newVerificationSent ? <FiCheckCircle className="h-5 w-5" /> : <FiSend className="h-5 w-5" />}
-                  {newVerificationSent
-                    ? (emailCopy.confirmNewVerified || 'I verified new email')
-                    : (emailCopy.sendNewVerification || 'Send verification to new email')}
-                </button>
-              </form>
-            </PanelShell>
+            <InfoPanel
+              icon={sent ? FiCheckCircle : FiShield}
+              title={sent ? (emailCopy.finishTitle || 'Check your inbox') : (emailCopy.currentTitle || 'Firebase protected')}
+              subtitle={sent
+                ? (emailCopy.afterSendHelp || 'Open the link from Firebase to complete the email change.')
+                : (emailCopy.currentSubtitle || 'This uses the Firebase Authentication email address change template from your console.')}
+            />
           </div>
         </div>
       </main>
