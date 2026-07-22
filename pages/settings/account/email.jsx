@@ -27,7 +27,7 @@ function getFirebaseAuthMessage(error, fallback) {
     case 'auth/too-many-requests':
       return 'Too many attempts. Please wait a little before trying again.';
     case 'auth/operation-not-allowed':
-      return 'Email/password sign-in is not enabled in Firebase Authentication.';
+      return 'Firebase could not send the email change verification. Check the Firebase email template and authorized domain settings.';
     case 'auth/user-token-expired':
       return 'Please sign in again before changing your email.';
     default:
@@ -122,9 +122,10 @@ export default function ChangeEmailPage() {
 
     try {
       setBusy(true);
-      await verifyBeforeUpdateEmail(auth.currentUser || user, normalizedNewEmail);
+      const activeUser = auth.currentUser || user;
+      await verifyBeforeUpdateEmail(activeUser, normalizedNewEmail);
       setSent(true);
-      toast.success(emailCopy.newVerificationSent || 'Firebase verification email sent.');
+      toast.success(emailCopy.newVerificationSent || 'Verification email sent.');
     } catch (error) {
       toast.error(getFirebaseAuthMessage(error, emailCopy.emailError || 'Could not send verification email.'));
     } finally {
