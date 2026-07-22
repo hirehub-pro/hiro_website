@@ -7,100 +7,172 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <style>
         :root {
-            --primary: #2563eb;
-            --primary-dark: #1e40af;
-            --secondary: #64748b;
-            --bg: #f8fafc;
-            --text-main: #0f172a;
-            --text-muted: #475569;
-            --card-bg: #ffffff;
-            --border: #e2e8f0;
-            --radius: 16px;
+            --primary: #1976d2;
+            --primary-dark: #0d47a1;
+            --primary-light: #42a5f5;
+            --ink: #111827;
+            --muted: #64748b;
+            --soft: #f8fafc;
+            --panel: rgba(255, 255, 255, 0.86);
+            --line: rgba(226, 232, 240, 0.95);
+            --shadow: 0 24px 70px rgba(15, 23, 42, 0.10);
         }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            scroll-behavior: smooth;
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; scroll-behavior: smooth; }
 
         body {
+            min-height: 100vh;
             font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
-            line-height: 1.6;
-            color: var(--text-main);
-            background-color: var(--bg);
-            padding-bottom: 50px;
+            line-height: 1.7;
+            color: var(--ink);
+            background:
+                linear-gradient(180deg, #f3f7fc 0%, #f8fafc 46%, #eef6ff 100%);
+            padding-bottom: 48px;
         }
 
+        .site-shell { width: min(1240px, calc(100% - 32px)); margin: 0 auto; }
+
+        .topbar {
+            position: sticky;
+            top: 16px;
+            z-index: 120;
+            margin: 16px auto 0;
+            padding: 12px 16px;
+            border: 1px solid rgba(255, 255, 255, 0.70);
+            border-radius: 28px;
+            background: rgba(255, 255, 255, 0.76);
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            color: inherit;
+            text-decoration: none;
+        }
+
+        .brand-mark {
+            width: 46px;
+            height: 46px;
+            border-radius: 18px;
+            overflow: hidden;
+            background: linear-gradient(135deg, #0d47a1 0%, #1976d2 70%, #1e88e5 100%);
+            box-shadow: 0 0 15px rgba(25, 118, 210, 0.20);
+        }
+
+        .brand-mark img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .brand-name { display: block; font-size: 1.25rem; font-weight: 900; line-height: 1; }
+        .brand-subtitle {
+            display: block;
+            margin-top: 4px;
+            color: var(--primary);
+            font-size: 0.68rem;
+            font-weight: 800;
+            letter-spacing: 0.24em;
+            text-transform: uppercase;
+        }
+
+        .topbar-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+
+        .topbar-link {
+            border-radius: 16px;
+            padding: 10px 14px;
+            color: #475569;
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 800;
+            transition: color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+        }
+
+        .topbar-link:hover { color: var(--primary); background: rgba(255, 255, 255, 0.74); transform: translateY(-1px); }
+
         .header {
-            background: #0f172a;
+            margin: 28px auto 0;
+            border-radius: 36px;
+            background: linear-gradient(135deg, #0d47a1 0%, #1565c0 42%, #1976d2 72%, #1e88e5 100%);
             color: white;
-            padding: 80px 20px;
-            text-align: center;
-            position: relative;
+            padding: 54px 34px;
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.26);
             overflow: hidden;
         }
 
-        .header h1 {
-            font-size: 3rem;
-            font-weight: 900;
-            margin-bottom: 10px;
-            letter-spacing: -1px;
-            position: relative;
-            z-index: 1;
+        .header-content { max-width: 760px; }
+
+        .eyebrow {
+            display: inline-flex;
+            margin-bottom: 14px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.14);
+            padding: 8px 14px;
+            color: rgba(255, 255, 255, 0.88);
+            font-size: 0.75rem;
+            font-weight: 800;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
         }
+
+        .header h1 { font-size: clamp(2.2rem, 7vw, 4.5rem); font-weight: 950; line-height: 0.95; letter-spacing: 0; }
+        .header p { max-width: 640px; margin-top: 16px; font-size: 1.05rem; font-weight: 650; color: rgba(255, 255, 255, 0.78); }
 
         .nav-container {
             position: sticky;
-            top: 0;
-            background: rgba(255, 255, 255, 0.8);
-            backdrop-filter: blur(12px);
-            border-bottom: 1px solid var(--border);
-            z-index: 100;
-            padding: 10px 0;
+            top: 96px;
+            z-index: 110;
+            margin-top: 18px;
         }
 
         .nav-inner {
-            max-width: 900px;
+            width: min(900px, calc(100% - 32px));
             margin: 0 auto;
             display: flex;
             justify-content: center;
             gap: 10px;
             flex-wrap: wrap;
-            padding: 0 20px;
+            padding: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.70);
+            border-radius: 28px;
+            background: rgba(255, 255, 255, 0.72);
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
         }
 
         .nav-link {
-            padding: 8px 16px;
-            border-radius: 99px;
+            padding: 10px 16px;
+            border-radius: 18px;
             text-decoration: none;
-            color: var(--text-muted);
+            color: #475569;
             font-size: 0.9rem;
-            font-weight: 600;
-            background: var(--bg);
-            border: 1px solid var(--border);
-            transition: 0.2s;
+            font-weight: 850;
+            background: rgba(255, 255, 255, 0.62);
+            border: 1px solid transparent;
+            transition: 0.2s ease;
         }
 
-        .nav-link:hover {
-            background: var(--primary);
+        .nav-link:hover, .nav-link.active {
+            background: #1976d2;
             color: white;
-            border-color: var(--primary);
+            border-color: #1976d2;
+            box-shadow: 0 0 15px rgba(25, 118, 210, 0.20);
         }
 
-        .container {
-            max-width: 900px;
-            margin: 40px auto;
-            padding: 0 20px;
-        }
+        .container { width: min(980px, calc(100% - 32px)); margin: 28px auto; }
 
         .card {
-            background: var(--card-bg);
-            padding: 60px;
-            border-radius: var(--radius);
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05);
-            border: 1px solid var(--border);
+            background: var(--panel);
+            padding: clamp(24px, 5vw, 56px);
+            border-radius: 32px;
+            box-shadow: var(--shadow);
+            border: 1px solid rgba(255, 255, 255, 0.72);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
         }
 
         .lang-section {
@@ -121,7 +193,7 @@
             font-size: 2.2rem;
             font-weight: 800;
             margin-bottom: 30px;
-            color: var(--text-main);
+            color: var(--ink);
             display: flex;
             align-items: center;
             gap: 15px;
@@ -136,8 +208,8 @@
             gap: 10px;
         }
 
-        .rtl { dir: rtl; text-align: right; }
-        .ltr { dir: ltr; text-align: left; }
+        .rtl { direction: rtl; text-align: right; }
+        .ltr { direction: ltr; text-align: left; }
 
         .rules-grid {
             display: grid;
@@ -146,10 +218,18 @@
         }
 
         .rule-card {
-            background: var(--bg);
+            background: rgba(248, 250, 252, 0.88);
             padding: 25px;
-            border-radius: 12px;
+            border-radius: 24px;
             border-right: 4px solid var(--primary);
+            box-shadow: 0 2px 16px rgba(0, 0, 0, 0.04);
+            transition: box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease;
+        }
+
+        .rule-card:hover {
+            background: white;
+            box-shadow: 0 12px 40px rgba(25, 118, 210, 0.14);
+            transform: translateY(-2px);
         }
 
         .ltr .rule-card {
@@ -161,52 +241,86 @@
             display: block;
             margin-bottom: 10px;
             font-size: 1.1rem;
-            color: var(--text-main);
+            color: var(--ink);
         }
 
         .rule-card p {
             font-size: 0.95rem;
-            color: var(--text-muted);
+            color: var(--muted);
         }
 
         .contact-box {
             margin-top: 50px;
             padding: 30px;
-            background: #eff6ff;
-            border-radius: 12px;
+            background: #e3f2fd;
+            border-radius: 28px;
             text-align: center;
-            border: 1px solid #dbeafe;
+            border: 1px solid #bbdefb;
+            font-weight: 750;
         }
 
+        .contact-box a { color: var(--primary); font-weight: 800; text-decoration: none; }
+
         footer {
-            text-align: center;
-            margin-top: 60px;
-            color: var(--text-muted);
+            width: min(980px, calc(100% - 32px));
+            margin: 40px auto 0;
+            border-radius: 30px;
+            background: linear-gradient(135deg, #0e2236 0%, #10283f 50%, #175181 100%);
+            color: rgba(255, 255, 255, 0.82);
             font-size: 0.9rem;
+            font-weight: 650;
+            padding: 28px;
+            text-align: center;
         }
 
         .badge {
             display: inline-block;
-            padding: 4px 12px;
-            background: #e0e7ff;
-            color: #4338ca;
+            padding: 7px 14px;
+            background: #e3f2fd;
+            color: var(--primary);
             border-radius: 99px;
             font-size: 0.85rem;
-            font-weight: 600;
+            font-weight: 800;
             margin-bottom: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .topbar { align-items: flex-start; flex-direction: column; top: 8px; border-radius: 24px; }
+            .topbar-actions { width: 100%; justify-content: flex-start; }
+            .header { border-radius: 30px; padding: 38px 22px; }
+            .nav-container { top: 126px; }
+            .section-title { font-size: 1.8rem; }
         }
     </style>
 </head>
 <body>
 
-    <header class="header">
-        <h1>hiro</h1>
-        <p>Legal Terms & User Agreement</p>
+    <div class="site-shell topbar">
+        <a href="/" class="brand">
+            <span class="brand-mark"><img src="/web-app-manifest-192x192.png" alt="Hiro"></span>
+            <span>
+                <span class="brand-name">Hiro</span>
+                <span class="brand-subtitle">Trusted local pros</span>
+            </span>
+        </a>
+        <div class="topbar-actions">
+            <a class="topbar-link" href="/">Home</a>
+            <a class="topbar-link" href="/privacy-policy">Privacy</a>
+            <a class="topbar-link" href="/contact">Contact</a>
+        </div>
+    </div>
+
+    <header class="site-shell header">
+        <div class="header-content">
+            <span class="eyebrow">Hiro Legal</span>
+            <h1>Terms of Service</h1>
+            <p>Legal Terms & User Agreement</p>
+        </div>
     </header>
 
     <div class="nav-container">
         <div class="nav-inner">
-            <a href="javascript:void(0)" class="nav-link" onclick="setLang('he')">עברית</a>
+            <a href="javascript:void(0)" class="nav-link active" onclick="setLang('he')">עברית</a>
             <a href="javascript:void(0)" class="nav-link" onclick="setLang('en')">English</a>
             <a href="javascript:void(0)" class="nav-link" onclick="setLang('ar')">العربية</a>
             <a href="javascript:void(0)" class="nav-link" onclick="setLang('ru')">Русский</a>
@@ -432,7 +546,9 @@
     <script>
         function setLang(lang) {
             document.querySelectorAll('.lang-section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.nav-link').forEach(s => s.classList.remove('active'));
             document.getElementById('lang-' + lang).classList.add('active');
+            document.querySelector(`.nav-link[onclick="setLang('${lang}')"]`)?.classList.add('active');
             document.documentElement.dir = (lang === 'he' || lang === 'ar') ? 'rtl' : 'ltr';
         }
     </script>
