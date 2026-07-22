@@ -8,8 +8,8 @@ export default function SiteFooter() {
   const { t } = useLanguage();
   const legalLinks = [
     { href: '/contact', label: t.nav.contact },
-    { href: 'https://hire-hub-fe6c4.web.app/terms-of-service', label: t.settings.termsOfService },
-    { href: 'https://hire-hub-fe6c4.web.app/privacy-policy', label: t.settings.privacyPolicy },
+    { href: '/terms-of-service', label: t.settings.termsOfService },
+    { href: '/privacy-policy', label: t.settings.privacyPolicy },
   ];
 
   return (

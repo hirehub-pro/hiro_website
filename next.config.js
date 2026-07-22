@@ -4,6 +4,14 @@ const nextConfig = {
   async rewrites() {
     return [
       {
+        source: '/privacy-policy',
+        destination: '/privacy-policy.html',
+      },
+      {
+        source: '/terms-of-service',
+        destination: '/terms-of-service.html',
+      },
+      {
         source: '/sign/:path*',
         destination:
           'https://us-central1-hire-hub-fe6c4.cloudfunctions.net/publicDocumentSigning/sign/:path*',
