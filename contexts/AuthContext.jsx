@@ -105,14 +105,50 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [phoneConfirmation, setPhoneConfirmation] = useState(null);
 
+  async function syncAuthEmailToUserProfile(firebaseUser, userProfile) {
+    const authEmail = String(firebaseUser?.email || '').trim();
+    if (!firebaseUser?.uid || !authEmail) {
+      return userProfile;
+    }
+
+    const profileEmail = String(userProfile?.email || '').trim();
+    const authEmailVerified = firebaseUser.emailVerified === true;
+    if (profileEmail === authEmail && userProfile?.emailVerified === authEmailVerified) {
+      return userProfile;
+    }
+
+    await setDoc(doc(db, 'users', firebaseUser.uid), {
+      email: authEmail,
+      emailVerified: authEmailVerified,
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+
+    return {
+      ...(userProfile || {}),
+      uid: firebaseUser.uid,
+      email: authEmail,
+      emailVerified: authEmailVerified,
+    };
+  }
+
   // Subscribe to Firebase auth changes
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
       if (firebaseUser) {
-        const userProfile = await getUserProfile(firebaseUser.uid);
-        setProfile(userProfile);
+        try {
+          await firebaseUser.reload();
+        } catch (error) {
+          // The cached user is still usable if refresh fails temporarily.
+        }
+
+        const refreshedUser = auth.currentUser || firebaseUser;
+        setUser(refreshedUser);
+
+        const userProfile = await getUserProfile(refreshedUser.uid);
+        const syncedProfile = await syncAuthEmailToUserProfile(refreshedUser, userProfile);
+        setProfile(syncedProfile);
       } else {
+        setUser(null);
         setProfile(null);
       }
       setLoading(false);

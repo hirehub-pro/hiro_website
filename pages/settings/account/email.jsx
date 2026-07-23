@@ -3,8 +3,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
 import { verifyBeforeUpdateEmail } from 'firebase/auth';
+import { httpsCallable } from 'firebase/functions';
 import { FiCheckCircle, FiChevronLeft, FiChevronRight, FiMail, FiSend, FiShield } from 'react-icons/fi';
-import { auth } from '../../../lib/firebase';
+import { auth, functions as firebaseFunctions } from '../../../lib/firebase';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useLanguage } from '../../../contexts/LanguageContext';
 
@@ -16,20 +17,29 @@ function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
 
-function getFirebaseAuthMessage(error, fallback) {
+function getFirebaseAuthMessage(error, fallback, messages = {}) {
   switch (error?.code) {
     case 'auth/invalid-email':
+    case 'functions/invalid-argument':
       return 'Enter a valid email address.';
     case 'auth/email-already-in-use':
-      return 'This email is already used by another account.';
+    case 'auth/credential-already-in-use':
+    case 'auth/account-exists-with-different-credential':
+    case 'functions/already-exists':
+      return messages.emailInUse || 'This email is already used by another account.';
+    case 'functions/failed-precondition':
+      return error?.message || fallback;
     case 'auth/requires-recent-login':
       return 'Please sign out and sign in again before changing your email.';
     case 'auth/too-many-requests':
       return 'Too many attempts. Please wait a little before trying again.';
     case 'auth/operation-not-allowed':
-      return 'Firebase could not send the email change verification. Check the Firebase email template and authorized domain settings.';
+      return 'We could not send the email change verification. Please try again.';
     case 'auth/user-token-expired':
       return 'Please sign in again before changing your email.';
+    case 'functions/internal':
+    case 'functions/not-found':
+      return messages.emailAvailabilityError || fallback;
     default:
       return error?.message || fallback;
   }
@@ -122,12 +132,18 @@ export default function ChangeEmailPage() {
 
     try {
       setBusy(true);
+      const checkEmailAvailability = httpsCallable(firebaseFunctions, 'checkAccountEmailAvailability');
+      await checkEmailAvailability({ email: normalizedNewEmail });
+
       const activeUser = auth.currentUser || user;
-      await verifyBeforeUpdateEmail(activeUser, normalizedNewEmail);
+      await verifyBeforeUpdateEmail(activeUser, normalizedNewEmail, {
+        url: 'https://hiro-services.com/auth/action',
+        handleCodeInApp: true,
+      });
       setSent(true);
       toast.success(emailCopy.newVerificationSent || 'Verification email sent.');
     } catch (error) {
-      toast.error(getFirebaseAuthMessage(error, emailCopy.emailError || 'Could not send verification email.'));
+      toast.error(getFirebaseAuthMessage(error, emailCopy.emailError || 'Could not send verification email.', emailCopy));
     } finally {
       setBusy(false);
     }
@@ -144,7 +160,7 @@ export default function ChangeEmailPage() {
           <div className="mb-6 flex items-center justify-between gap-4">
             <div>
               <h1 className="text-4xl font-extrabold tracking-tight text-gray-950">{emailCopy.title || 'Change Email'}</h1>
-              <p className="mt-2 max-w-xl text-sm leading-6 text-gray-500">{emailCopy.subtitle || 'Send a Firebase verification link to your new email address.'}</p>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-gray-500">{emailCopy.subtitle || 'We will send a secure link to your new email address.'}</p>
             </div>
 
             <button
@@ -160,7 +176,7 @@ export default function ChangeEmailPage() {
           <div className="mb-5 grid gap-2 rounded-[28px] bg-white/70 p-2 shadow-sm backdrop-blur sm:grid-cols-3">
             <StatusPill icon={FiShield} label={emailCopy.currentTitle || 'Confirm current email'} active={!sent} />
             <StatusPill icon={FiMail} label={emailCopy.newTitle || 'New email'} active={!sent} />
-            <StatusPill icon={FiCheckCircle} label={emailCopy.finishTitle || 'Open Firebase email'} active={sent} />
+            <StatusPill icon={FiCheckCircle} label={emailCopy.finishTitle || 'Open the email'} active={sent} />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[1fr_0.78fr]">
@@ -170,9 +186,9 @@ export default function ChangeEmailPage() {
                   <FiMail className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h2 className="text-xl font-extrabold tracking-tight text-gray-950">{emailCopy.newTitle || 'Change email with Firebase'}</h2>
+                  <h2 className="text-xl font-extrabold tracking-tight text-gray-950">{emailCopy.newTitle || 'Change email'}</h2>
                   <p className="mt-1 text-sm font-semibold leading-6 text-gray-500">
-                    {emailCopy.newSubtitle || 'Firebase will send a secure link to the new address. The email changes only after the link is opened.'}
+                    {emailCopy.newSubtitle || 'We will send a secure link to the new address. Your email changes only after you open the link.'}
                   </p>
                 </div>
               </div>
@@ -213,16 +229,16 @@ export default function ChangeEmailPage() {
                 {sent ? <FiCheckCircle className="h-5 w-5" /> : <FiSend className="h-5 w-5" />}
                 {sent
                   ? (emailCopy.newVerificationSent || 'Verification email sent')
-                  : (emailCopy.sendNewVerification || 'Send Firebase verification email')}
+                  : (emailCopy.sendNewVerification || 'Send verification email')}
               </button>
             </form>
 
             <InfoPanel
               icon={sent ? FiCheckCircle : FiShield}
-              title={sent ? (emailCopy.finishTitle || 'Check your inbox') : (emailCopy.currentTitle || 'Firebase protected')}
+              title={sent ? (emailCopy.finishTitle || 'Check your inbox') : (emailCopy.currentTitle || 'Account protected')}
               subtitle={sent
-                ? (emailCopy.afterSendHelp || 'Open the link from Firebase to complete the email change.')
-                : (emailCopy.currentSubtitle || 'This uses the Firebase Authentication email address change template from your console.')}
+                ? (emailCopy.afterSendHelp || 'Open the secure link we sent to complete the email change.')
+                : (emailCopy.currentSubtitle || 'Confirm the email currently connected to your account before choosing a new one.')}
             />
           </div>
         </div>

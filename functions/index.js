@@ -51,7 +51,7 @@ function createEmailCode() {
 }
 
 function isHttpsError(error) {
-  return Boolean(error?.code && typeof error.message === 'string' && error.httpErrorCode);
+  return error instanceof HttpsError || Boolean(error?.code && typeof error.message === 'string' && error.httpErrorCode);
 }
 
 async function loadAccountEmailState(uid) {
@@ -451,6 +451,107 @@ exports.sendAccountEmailCode = onCall({
     }
     console.error('sendAccountEmailCode failed.', { code: error?.code, message: error?.message, stack: error?.stack });
     throw new HttpsError('internal', 'Could not send verification code.');
+  }
+});
+
+exports.checkAccountEmailAvailability = onCall({
+  region: TAX_FUNCTION_REGION,
+}, async (request) => {
+  try {
+    const uid = getSignedInUid(request);
+    const email = normalizeEmail(request.data?.email);
+    assertValidEmail(email);
+
+    const { currentEmail } = await loadAccountEmailState(uid);
+    if (email === currentEmail) {
+      throw new HttpsError('failed-precondition', 'Enter a different email address.');
+    }
+
+    try {
+      const existingUser = await admin.auth().getUserByEmail(email);
+      if (existingUser.uid !== uid) {
+        throw new HttpsError('already-exists', 'This email is already used by another account.');
+      }
+    } catch (error) {
+      if (error?.code === 'auth/user-not-found') {
+        return { available: true };
+      }
+      throw error;
+    }
+
+    return { available: true };
+  } catch (error) {
+    if (isHttpsError(error)) {
+      throw error;
+    }
+    console.error('checkAccountEmailAvailability failed.', { code: error?.code, message: error?.message, stack: error?.stack });
+    throw new HttpsError('internal', 'Could not check email availability.');
+  }
+});
+
+exports.syncCurrentUserEmail = onCall({
+  region: TAX_FUNCTION_REGION,
+}, async (request) => {
+  try {
+    const uid = getSignedInUid(request);
+    const authUser = await admin.auth().getUser(uid);
+    const email = normalizeEmail(authUser.email);
+
+    if (!email) {
+      throw new HttpsError('failed-precondition', 'Your account does not have an email address.');
+    }
+
+    await admin.firestore().doc(`users/${uid}`).set({
+      email,
+      emailVerified: authUser.emailVerified === true,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    return {
+      email,
+      emailVerified: authUser.emailVerified === true,
+    };
+  } catch (error) {
+    if (isHttpsError(error)) {
+      throw error;
+    }
+    console.error('syncCurrentUserEmail failed.', { code: error?.code, message: error?.message, stack: error?.stack });
+    throw new HttpsError('internal', 'Could not sync account email.');
+  }
+});
+
+exports.syncVerifiedEmailByAddress = onCall({
+  region: TAX_FUNCTION_REGION,
+}, async (request) => {
+  try {
+    const email = normalizeEmail(request.data?.email);
+    assertValidEmail(email);
+
+    const authUser = await admin.auth().getUserByEmail(email);
+    if (authUser.emailVerified !== true) {
+      throw new HttpsError('failed-precondition', 'Verify the email address first.');
+    }
+
+    await admin.firestore().doc(`users/${authUser.uid}`).set({
+      email,
+      emailVerified: true,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    return {
+      uid: authUser.uid,
+      email,
+      emailVerified: true,
+    };
+  } catch (error) {
+    if (isHttpsError(error)) {
+      throw error;
+    }
+    if (error?.code === 'auth/user-not-found') {
+      throw new HttpsError('not-found', 'No account was found for this email address.');
+    }
+    console.error('syncVerifiedEmailByAddress failed.', { code: error?.code, message: error?.message, stack: error?.stack });
+    throw new HttpsError('internal', 'Could not sync account email.');
   }
 });
 
