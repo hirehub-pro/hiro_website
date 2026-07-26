@@ -5,7 +5,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
   collection,
+  getDoc,
   getDocs,
+  doc,
+  serverTimestamp,
+  updateDoc,
 } from 'firebase/firestore';
 import clsx from 'clsx';
 import { FiCalendar, FiClock, FiMapPin, FiMessageCircle, FiUser } from 'react-icons/fi';
@@ -16,8 +20,14 @@ import {
   formatRequestDateTime,
   getRequestMediaItems,
   getRequestStatusClass,
+  isPendingRequestExpired,
   normalizeRequestDocument,
 } from '../lib/request-utils';
+
+async function updateIfDocumentExists(reference, data) {
+  const snapshot = await getDoc(reference);
+  if (snapshot.exists()) await updateDoc(reference, data);
+}
 
 function getStatusLabel(copy, status) {
   return copy[status] || status;
@@ -123,7 +133,7 @@ function RequestCard({ request, user, mode, highlighted, copy, locale }) {
           <FiMapPin className="h-4 w-4 text-primary" />
           {mapHref ? (
             <a href={mapHref} target="_blank" rel="noreferrer" className="truncate font-semibold text-slate-800 hover:text-primary">
-              {request.locationName || copy.openMap}
+              {copy.openLocation}
             </a>
           ) : (
             <span className="truncate font-semibold text-slate-800">{request.locationName || copy.noLocation}</span>
@@ -198,12 +208,36 @@ export default function RequestsPage() {
           return bTime - aTime;
         });
 
-        setSentRequests(sortByNewest(sentSnap.docs
+        const sentRequests = sentSnap.docs
           .map((requestDoc) => normalizeRequestDocument(requestDoc.id, requestDoc.data()))
-          .filter((request) => request.type === 'work_request' && request.fromId === user.uid)));
-        setReceivedRequests(sortByNewest(receivedSnap.docs
+          .filter((request) => request.type === 'work_request' && request.fromId === user.uid);
+        const receivedRequests = receivedSnap.docs
           .map((requestDoc) => normalizeRequestDocument(requestDoc.id, requestDoc.data()))
-          .filter((request) => request.type === 'work_request' && request.workerId === user.uid)));
+          .filter((request) => request.type === 'work_request' && request.workerId === user.uid);
+
+        const expiredSentRequests = sentRequests.filter((request) => isPendingRequestExpired(request));
+        const expiredReceivedRequests = receivedRequests.filter((request) => isPendingRequestExpired(request));
+
+        if (expiredSentRequests.length || expiredReceivedRequests.length) {
+          const statusUpdate = { status: 'expired', expiredAt: serverTimestamp() };
+          await Promise.allSettled([
+            ...expiredSentRequests.flatMap((request) => [
+              updateDoc(doc(db, 'users', user.uid, 'requests', request.id), statusUpdate),
+              request.workerId ? updateIfDocumentExists(doc(db, 'users', request.workerId, 'RequestToMe', request.requestId), statusUpdate) : null,
+            ]),
+            ...expiredReceivedRequests.flatMap((request) => [
+              updateDoc(doc(db, 'users', user.uid, 'RequestToMe', request.id), statusUpdate),
+              request.fromId ? updateIfDocumentExists(doc(db, 'users', request.fromId, 'requests', request.requestId), statusUpdate) : null,
+            ]),
+          ].filter(Boolean));
+        }
+
+        const withExpiredStatus = (items) => items.map((request) => (
+          isPendingRequestExpired(request) ? { ...request, status: 'expired' } : request
+        ));
+
+        setSentRequests(sortByNewest(withExpiredStatus(sentRequests)));
+        setReceivedRequests(sortByNewest(withExpiredStatus(receivedRequests)));
       } catch (loadError) {
         if (!cancelled) {
           console.error('Failed to load requests:', loadError);

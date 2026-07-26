@@ -36,20 +36,16 @@ import {
   formatRequestDateTime,
   getRequestMediaItems,
   getRequestStatusClass,
+  isPendingRequestExpired,
   normalizeRequestDocument,
 } from '../../lib/request-utils';
 
 function DetailStat({ icon: Icon, label, value, href }) {
-  const content = href ? (
-    <a href={href} target="_blank" rel="noreferrer" className="font-bold text-slate-900 hover:text-primary">
-      {value}
-    </a>
-  ) : (
-    <span className="font-bold text-slate-900">{value}</span>
-  );
+  const isInternalLink = href?.startsWith('/');
+  const content = <span className="font-bold text-slate-900">{value}</span>;
 
-  return (
-    <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+  const body = (
+    <>
       <div className="flex items-center gap-3">
         <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary-50 text-primary">
           <Icon className="h-5 w-5" />
@@ -59,29 +55,46 @@ function DetailStat({ icon: Icon, label, value, href }) {
           <div className="mt-1 truncate text-sm">{content}</div>
         </div>
       </div>
+    </>
+  );
+
+  const className = 'rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm';
+  return isInternalLink ? (
+    <Link href={href} className={`${className} transition hover:border-primary/30 hover:bg-primary-50/30`}>
+      {body}
+    </Link>
+  ) : href ? (
+    <a href={href} target="_blank" rel="noreferrer" className={`${className} block transition hover:border-primary/30 hover:bg-primary-50/30`}>
+      {body}
+    </a>
+  ) : (
+    <div className={className}>
+      {body}
     </div>
   );
 }
 
-function PersonCard({ label, name, href, town, openProfileLabel }) {
+function PersonCard({ href, openProfileLabel, children }) {
   return (
-    <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">{label}</p>
-      <p className="mt-2 text-xl font-extrabold text-slate-950">{name}</p>
-      {town ? (
-        <p className="mt-1 text-sm font-medium text-slate-500">{town}</p>
-      ) : null}
-      {href ? (
-        <Link
-          href={href}
-          className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-        >
-          <FiUser className="h-4 w-4" />
-          {openProfileLabel}
-        </Link>
+    <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+      {(href || children) ? (
+        <div className="grid grid-cols-2 gap-2">
+          {href ? (
+            <Link href={href} className="inline-flex min-h-[76px] items-center justify-center gap-2 rounded-[24px] border border-slate-200 px-4 py-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+              <FiUser className="h-4 w-4" />
+              {openProfileLabel}
+            </Link>
+          ) : null}
+          {children}
+        </div>
       ) : null}
     </div>
   );
+}
+
+async function updateIfDocumentExists(reference, data) {
+  const snapshot = await getDoc(reference);
+  if (snapshot.exists()) await updateDoc(reference, data);
 }
 
 export default function RequestDetailsPage() {
@@ -95,6 +108,7 @@ export default function RequestDetailsPage() {
   const [pageLoading, setPageLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState('');
   const [error, setError] = useState('');
+  const [professionItems, setProfessionItems] = useState([]);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -102,6 +116,22 @@ export default function RequestDetailsPage() {
       router.replace(`/auth/signin?next=${encodeURIComponent(nextPath)}`);
     }
   }, [loading, router, user]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProfessionItems() {
+      try {
+        const snapshot = await getDoc(doc(db, 'metadata', 'professions'));
+        if (!cancelled) setProfessionItems(snapshot.data()?.items || []);
+      } catch (loadError) {
+        console.error('Failed to load profession translations:', loadError);
+      }
+    }
+
+    loadProfessionItems();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!user?.uid || typeof requestId !== 'string' || !requestId.trim()) return;
@@ -156,13 +186,41 @@ export default function RequestDetailsPage() {
     };
   }, [copy.detailsLoadError, copy.notFound, requestId, user?.uid]);
 
+  useEffect(() => {
+    if (!user?.uid || !request || !isPendingRequestExpired(request)) return;
+
+    let cancelled = false;
+    const statusUpdate = { status: 'expired', expiredAt: serverTimestamp() };
+
+    async function expireRequest() {
+      try {
+        const updates = requestMode === 'received'
+          ? [
+            updateDoc(doc(db, 'users', user.uid, 'RequestToMe', request.id), statusUpdate),
+            request.fromId ? updateIfDocumentExists(doc(db, 'users', request.fromId, 'requests', request.requestId), statusUpdate) : null,
+          ]
+          : [
+            updateDoc(doc(db, 'users', user.uid, 'requests', request.id), statusUpdate),
+            request.workerId ? updateIfDocumentExists(doc(db, 'users', request.workerId, 'RequestToMe', request.requestId), statusUpdate) : null,
+          ];
+
+        await Promise.allSettled(updates.filter(Boolean));
+        if (!cancelled) setRequest((current) => (current ? { ...current, status: 'expired' } : current));
+      } catch (expireError) {
+        console.error('Failed to expire request:', expireError);
+      }
+    }
+
+    expireRequest();
+    return () => { cancelled = true; };
+  }, [request, requestMode, user?.uid]);
+
   const mediaItems = useMemo(
     () => (request ? getRequestMediaItems(request).filter((item) => item?.url) : []),
     [request]
   );
   const otherUserId = requestMode === 'received' ? request?.fromId : request?.workerId;
   const otherUserName = requestMode === 'received' ? request?.fromName : request?.workerName;
-  const otherUserLabel = requestMode === 'received' ? copy.requestedBy : copy.assignedTo;
   const roomId = user?.uid && otherUserId ? [user.uid, otherUserId].sort().join('_') : '';
   const mapHref = request?.mapUrl || (
     typeof request?.latitude === 'number' && typeof request?.longitude === 'number'
@@ -170,9 +228,25 @@ export default function RequestDetailsPage() {
       : ''
   );
   const backHref = requestMode === 'received' ? '/requests?tab=received' : '/requests?tab=sent';
+  const scheduleHref = user?.uid ? `/profile/${user.uid}/schedule` : '';
+  const requestTitle = request?.title === 'Work Request'
+    ? copy.workRequestFrom.replace('{name}', otherUserName || copy.unknownUser)
+    : (request?.title || copy.workRequest);
+  const professionLabel = useMemo(() => {
+    const storedProfession = String(request?.profession || '').trim();
+    if (!storedProfession) return copy.generalRequest;
+
+    const normalizedProfession = storedProfession.toLowerCase();
+    const matchedProfession = professionItems.find((item) => (
+      [item.en, item.he, item.ar, item.value, item.logo, item.id]
+        .some((value) => String(value || '').trim().toLowerCase() === normalizedProfession)
+    ));
+
+    return matchedProfession?.[locale] || matchedProfession?.en || matchedProfession?.he || matchedProfession?.ar || storedProfession;
+  }, [copy.generalRequest, locale, professionItems, request?.profession]);
 
   async function handleRequestDecision(nextStatus) {
-    if (!user?.uid || requestMode !== 'received' || !request?.requestId || !request?.id || actionLoading) return;
+    if (!user?.uid || requestMode !== 'received' || request?.status !== 'pending' || !request?.requestId || !request?.id || actionLoading) return;
 
     setActionLoading(nextStatus);
     setError('');
@@ -273,7 +347,7 @@ export default function RequestDetailsPage() {
                 <div className="max-w-3xl">
                   <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">{copy.detailsTitle}</p>
                   <div className="mt-3 flex flex-wrap items-center gap-3">
-                    <h1 className="text-3xl font-extrabold tracking-tight text-slate-950">{request.title}</h1>
+                    <h1 className="text-3xl font-extrabold tracking-tight text-slate-950">{requestTitle}</h1>
                     <span className={clsx('rounded-full px-3 py-1 text-xs font-bold capitalize ring-1', getRequestStatusClass(request.status))}>
                       {copy[request.status] || request.status}
                     </span>
@@ -282,74 +356,6 @@ export default function RequestDetailsPage() {
                     {request.jobDescription || request.body || copy.noDescription}
                   </p>
                   <div className="mt-4 flex flex-wrap gap-2">
-                    {requestMode === 'received' ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleRequestDecision('accepted')}
-                          disabled={Boolean(actionLoading) || request.status === 'accepted'}
-                          className={clsx(
-                            'inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold text-white transition',
-                            Boolean(actionLoading) || request.status === 'accepted'
-                              ? 'cursor-not-allowed bg-emerald-300'
-                              : 'bg-emerald-600 hover:bg-emerald-700'
-                          )}
-                        >
-                          <FiCheck className="h-4 w-4" />
-                          {actionLoading === 'accepted' ? copy.accepting : request.status === 'accepted' ? copy.accepted : copy.agree}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleRequestDecision('declined')}
-                          disabled={Boolean(actionLoading) || request.status === 'declined'}
-                          className={clsx(
-                            'inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition',
-                            Boolean(actionLoading) || request.status === 'declined'
-                              ? 'cursor-not-allowed bg-rose-100 text-rose-300'
-                              : 'bg-rose-50 text-rose-600 hover:bg-rose-100'
-                          )}
-                        >
-                          <FiX className="h-4 w-4" />
-                          {actionLoading === 'declined' ? copy.refusing : request.status === 'declined' ? copy.refused : copy.refuse}
-                        </button>
-                      </>
-                    ) : null}
-                    {requestMode === 'sent' ? (
-                      <button
-                        type="button"
-                        onClick={handleCancelRequest}
-                        disabled={Boolean(actionLoading) || request.status === 'cancelled'}
-                        className={clsx(
-                          'inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition',
-                          Boolean(actionLoading) || request.status === 'cancelled'
-                            ? 'cursor-not-allowed bg-slate-100 text-slate-400'
-                            : 'bg-rose-50 text-rose-600 hover:bg-rose-100'
-                        )}
-                      >
-                        <FiTrash2 className="h-4 w-4" />
-                        {actionLoading === 'cancelled' ? copy.cancelling : request.status === 'cancelled' ? copy.cancelled : copy.cancelRequest}
-                      </button>
-                    ) : null}
-                    {roomId ? (
-                      <Link
-                        href={`/messages?roomId=${encodeURIComponent(roomId)}`}
-                        className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white transition hover:bg-primary-dark"
-                      >
-                        <FiMessageCircle className="h-4 w-4" />
-                        {copy.openChat}
-                      </Link>
-                    ) : null}
-                    {mapHref ? (
-                      <a
-                        href={mapHref}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                      >
-                        <FiMapPin className="h-4 w-4" />
-                        {copy.openLocation}
-                      </a>
-                    ) : null}
                   </div>
                 </div>
 
@@ -365,31 +371,80 @@ export default function RequestDetailsPage() {
               </div>
             </section>
 
-            <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <DetailStat icon={FiCalendar} label={copy.date} value={request.date || copy.noDateSelected} />
-              <DetailStat
-                icon={FiClock}
-                label={copy.time}
-                value={request.requestedFrom && request.requestedTo ? `${request.requestedFrom} - ${request.requestedTo}` : copy.noTimeWindow}
-              />
-              <DetailStat icon={FiMapPin} label={copy.location} value={request.locationName || copy.noLocationAdded} href={mapHref} />
-              <DetailStat icon={FiTag} label={copy.profession} value={request.profession || copy.generalRequest} />
-            </section>
-
             <section className="mt-6 grid gap-4 lg:grid-cols-2">
               <PersonCard
-                label={otherUserLabel}
-                name={otherUserName || copy.unknownUser}
                 href={otherUserId ? `/profile/${otherUserId}` : ''}
-                town={requestMode === 'received' ? request.fromLocation : ''}
                 openProfileLabel={copy.openProfile}
-              />
-              <PersonCard
-                label={copy.requestType}
-                name={request.serviceLocationType === 'provider_travels' ? copy.providerTravels : copy.customArrangement}
-                town={request.body && request.body !== request.jobDescription ? request.body : ''}
-                openProfileLabel={copy.openProfile}
-              />
+              >
+                {roomId ? (
+                  <Link
+                    href={`/messages?roomId=${encodeURIComponent(roomId)}`}
+                    className="inline-flex min-h-[76px] items-center justify-center gap-2 rounded-[24px] bg-primary px-4 py-4 text-sm font-semibold text-white transition hover:bg-primary-dark"
+                  >
+                    <FiMessageCircle className="h-4 w-4" />
+                    {copy.openChat}
+                  </Link>
+                ) : null}
+                {requestMode === 'sent' ? (
+                  <button
+                    type="button"
+                    onClick={handleCancelRequest}
+                    disabled={Boolean(actionLoading) || request.status === 'cancelled'}
+                    className={clsx(
+                      'inline-flex min-h-[76px] items-center justify-center gap-2 rounded-[24px] px-4 py-4 text-sm font-semibold transition',
+                      Boolean(actionLoading) || request.status === 'cancelled'
+                        ? 'cursor-not-allowed bg-slate-100 text-slate-400'
+                        : 'bg-rose-50 text-rose-600 hover:bg-rose-100'
+                    )}
+                  >
+                    <FiTrash2 className="h-4 w-4" />
+                    {actionLoading === 'cancelled' ? copy.cancelling : request.status === 'cancelled' ? copy.cancelled : copy.cancelRequest}
+                  </button>
+                ) : null}
+                {requestMode === 'received' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleRequestDecision('accepted')}
+                      disabled={Boolean(actionLoading) || request.status !== 'pending'}
+                      className={clsx(
+                        'inline-flex min-h-[76px] items-center justify-center gap-2 rounded-[24px] px-4 py-4 text-sm font-semibold text-white transition',
+                        Boolean(actionLoading) || request.status !== 'pending'
+                          ? 'cursor-not-allowed bg-emerald-300'
+                          : 'bg-emerald-600 hover:bg-emerald-700'
+                      )}
+                    >
+                      <FiCheck className="h-4 w-4" />
+                      {actionLoading === 'accepted' ? copy.accepting : request.status === 'accepted' ? copy.accepted : copy.agree}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRequestDecision('declined')}
+                      disabled={Boolean(actionLoading) || request.status !== 'pending'}
+                      className={clsx(
+                        'inline-flex min-h-[76px] items-center justify-center gap-2 rounded-[24px] px-4 py-4 text-sm font-semibold transition',
+                        Boolean(actionLoading) || request.status !== 'pending'
+                          ? 'cursor-not-allowed bg-rose-100 text-rose-300'
+                          : 'bg-rose-50 text-rose-600 hover:bg-rose-100'
+                      )}
+                    >
+                      <FiX className="h-4 w-4" />
+                      {actionLoading === 'declined' ? copy.refusing : request.status === 'declined' ? copy.refused : copy.refuse}
+                    </button>
+                  </>
+                ) : null}
+              </PersonCard>
+              <div className="grid grid-cols-2 gap-3 rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                <DetailStat icon={FiCalendar} label={copy.date} value={request.date || copy.noDateSelected} href={scheduleHref} />
+                <DetailStat
+                  icon={FiClock}
+                  label={copy.time}
+                  value={request.requestedFrom && request.requestedTo ? `${request.requestedFrom} - ${request.requestedTo}` : copy.noTimeWindow}
+                  href={scheduleHref}
+                />
+                <DetailStat icon={FiMapPin} label={copy.location} value={copy.openLocation} href={mapHref} />
+                <DetailStat icon={FiTag} label={copy.profession} value={professionLabel} />
+              </div>
             </section>
 
             <section className="mt-6 rounded-[32px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">

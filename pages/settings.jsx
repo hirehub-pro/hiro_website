@@ -21,7 +21,6 @@ import {
   FiInfo,
   FiLock,
   FiLogOut,
-  FiShield,
   FiUser,
 } from 'react-icons/fi';
 import { db } from '../lib/firebase';
@@ -62,7 +61,6 @@ export default function SettingsPage() {
   const copy = t.settings;
   const isRtl = dir === 'rtl';
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-  const [activeInfoPanel, setActiveInfoPanel] = useState('');
   const [notificationsBusy, setNotificationsBusy] = useState(false);
   const [scheduleSettings, setScheduleSettings] = useState({
     enabled: true,
@@ -131,33 +129,27 @@ export default function SettingsPage() {
       icon: FiUser,
       href: '/settings/account',
     },
-    ...(profile?.role === 'worker' ? [{
-      key: 'businessVerification',
-      label: copy.businessVerification,
-      icon: FiShield,
-      href: '/worker/verification',
-    }] : []),
-    ...(user && !user.isAnonymous && profile?.role === 'worker' ? [{
-      key: 'uniformFiles',
-      label: copy.generateUniformFiles,
-      subtitle: copy.generateUniformFilesSubtitle,
-      icon: FiArchive,
-      onClick: handleGenerateUniformFiles,
-      disabled: isGeneratingUniformFiles,
-    }] : []),
     {
       key: 'privacy',
       label: copy.privacyPolicy,
       icon: FiLock,
-      onClick: () => setActiveInfoPanel('privacy'),
+      href: '/privacy-policy',
     },
     {
       key: 'terms',
       label: copy.termsOfService,
       icon: FiFileText,
-      onClick: () => setActiveInfoPanel('terms'),
+      href: '/terms-of-service',
     },
   ];
+
+  const uniformFilesRows = user && !user.isAnonymous && profile?.role === 'worker' ? [{
+      key: 'uniformFiles',
+      label: copy.generateUniformFiles,
+      icon: FiArchive,
+      onClick: handleGenerateUniformFiles,
+      disabled: isGeneratingUniformFiles,
+    }] : [];
 
   const supportRows = useMemo(() => ([
     {
@@ -176,7 +168,7 @@ export default function SettingsPage() {
       key: 'about',
       label: copy.about,
       icon: FiInfo,
-      onClick: () => setActiveInfoPanel('about'),
+      href: '/about',
     },
   ]), [copy.about, copy.helpSupport, copy.reports]);
 
@@ -185,21 +177,6 @@ export default function SettingsPage() {
     { value: 'he', label: copy.hebrew },
     { value: 'ar', label: copy.arabic },
   ]), [copy.arabic, copy.english, copy.hebrew]);
-
-  const infoPanelContent = {
-    privacy: {
-      title: copy.privacyPolicy,
-      body: copy.privacyBody,
-    },
-    terms: {
-      title: copy.termsOfService,
-      body: copy.termsBody,
-    },
-    about: {
-      title: copy.about,
-      body: copy.aboutBody,
-    },
-  };
 
   if (loading) {
     return (
@@ -212,7 +189,6 @@ export default function SettingsPage() {
   if (!user) return null;
 
   const avatarName = profile?.name || user.displayName || 'Hiro User';
-  const currentPanel = activeInfoPanel ? infoPanelContent[activeInfoPanel] : null;
   const currentLanguageLabel = languageOptions.find((item) => item.value === locale)?.label || copy.english;
 
   async function handleNotificationsToggle() {
@@ -458,6 +434,15 @@ export default function SettingsPage() {
               </div>
             </div>
 
+            {uniformFilesRows.length > 0 ? (
+              <div>
+                <p className="mb-3 px-2 text-sm font-black uppercase tracking-[0.18em] text-gray-400">{copy.uniformFilesSection}</p>
+                <div className="overflow-hidden rounded-[34px] bg-white shadow-card">
+                  {uniformFilesRows.map(renderSettingsRow)}
+                </div>
+              </div>
+            ) : null}
+
             <div>
               <p className="mb-3 px-2 text-sm font-black uppercase tracking-[0.18em] text-gray-400">{copy.notificationsSection}</p>
               <div className="rounded-[34px] bg-white px-5 py-5 shadow-card">
@@ -661,31 +646,6 @@ export default function SettingsPage() {
           </button>
         </div>
 
-        {currentPanel && (
-          <div
-            className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/35 p-4 backdrop-blur-sm sm:items-center"
-            onClick={() => setActiveInfoPanel('')}
-          >
-            <div
-              className="w-full max-w-lg rounded-[32px] bg-white p-6 shadow-2xl"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h2 className="text-2xl font-extrabold text-gray-950">{currentPanel.title}</h2>
-                  <p className="mt-3 text-sm leading-7 text-gray-600">{currentPanel.body}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveInfoPanel('')}
-                  className="rounded-2xl bg-slate-100 px-3 py-2 text-sm font-bold text-gray-600"
-                >
-                  {t.common.close}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </main>
     </>
   );
