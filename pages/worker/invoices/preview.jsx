@@ -87,7 +87,17 @@ function formatFooterGeneratedAt(value) {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
-  }).format(value).replace(',', '');
+  }).format(value).replace(',', '').replace(/\./g, '/');
+}
+
+function formatFooterDueDate(value) {
+  const raw = String(value || '').trim();
+  const isoDateMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoDateMatch) {
+    const [, year, month, day] = isoDateMatch;
+    return `${day}/${month}/${year}`;
+  }
+  return raw.replace(/-/g, '/');
 }
 
 function buildInvoiceItemPages(items) {
@@ -1024,8 +1034,8 @@ export default function InvoicePreviewPage() {
                               </div>
                             </div>
                             <div className="mt-2 flex items-center justify-between gap-4 text-[15px] leading-[18px] text-[#536170]">
-                              <span>{invoice.dueDate || invoice.issueDate || ''}</span>
                               <span>{copy.paymentDueDate || copy.dueDate || ''}</span>
+                              <span>{formatFooterDueDate(invoice.dueDate || invoice.issueDate)}</span>
                             </div>
                           </div>
                         </div>
