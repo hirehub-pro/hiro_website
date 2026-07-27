@@ -1037,7 +1037,7 @@ export default function InvoicePreviewPage() {
                   ) : null}
 
                   <footer className="mt-auto shrink-0 px-[11px] pt-8 text-[#26313b]" dir="rtl">
-                    {isFinalPage ? (
+                    {isFinalPage && canRequestSignature ? (
                       <div className="mb-6 flex items-center justify-center gap-4 text-[13px] leading-4">
                         <span>חתימה:</span>
                         <span className="block h-[1px] w-[307px] bg-[#26313b]" />
