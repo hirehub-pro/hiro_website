@@ -129,6 +129,8 @@ function buildInvoiceItemPages(items) {
 }
 
 async function buildInvoicePdfBlob(element) {
+  await document.fonts?.ready;
+
   const captureElement = element.cloneNode(true);
   captureElement.style.position = 'fixed';
   captureElement.style.left = '-10000px';
@@ -722,11 +724,12 @@ export default function InvoicePreviewPage() {
   }
 
   function handlePrintInvoice() {
-    if (shouldUseStoredPdf) {
+    if (savedInvoiceUrl) {
       window.open(savedInvoiceUrl, '_blank', 'noopener,noreferrer');
       return;
     }
-    window.print();
+
+    toast.error('Save the invoice before printing.');
   }
 
   function handleSendInvoice() {
@@ -1036,7 +1039,7 @@ export default function InvoicePreviewPage() {
                     </div>
                   ) : null}
 
-                  <footer className="mt-auto shrink-0 px-[11px] pt-8 text-[#26313b]" dir="rtl">
+                  <footer className="invoice-footer mt-auto shrink-0 px-[11px] pt-8 text-[#26313b]" dir="rtl">
                     {isFinalPage && canRequestSignature ? (
                       <div className="mb-6 flex items-center justify-center gap-4 text-[13px] leading-4">
                         <span>חתימה:</span>
@@ -1050,12 +1053,22 @@ export default function InvoicePreviewPage() {
                           {isFinalPage ? (
                             <>
                               <p className="text-[21px] font-normal leading-6 text-black">חתימה דיגיטלית מאובטחת</p>
-                              <p className="mt-[7px] text-[11px] leading-4">מסמך זה מיועד לחתימה דיגיטלית באמצעות מערכת הירו</p>
+                              <div className="mt-[7px] flex w-full items-center justify-start gap-1.5 text-right text-[11px] leading-4">
+                                <p>מסמך ממוחשב הופק על ידי הירו</p>
+                                {/* The PDF canvas renderer needs the public asset URL directly. */}
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src="/web-app-manifest-192x192.png"
+                                  alt=""
+                                  aria-hidden="true"
+                                  className="h-5 w-5 shrink-0 rounded-[4px]"
+                                />
+                              </div>
                             </>
                           ) : null}
                         </div>
                         <div className="self-end text-left text-[11px] leading-4 text-[#26313b]">
-                          <p>{`הופק ב ${formatFooterGeneratedAt(generatedAt)} | ${docTypeLabel}`}</p>
+                          <p>{`הופק ב ${formatFooterGeneratedAt(generatedAt)} | ${docTypeLabel} ${invoice.invoiceNumber || '-'}`}</p>
                           <p className="text-[13px] leading-5">{`${pageIndex + 1} / ${invoiceItemPages.length}`}</p>
                         </div>
                       </div>
