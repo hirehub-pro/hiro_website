@@ -54,6 +54,18 @@ function detailLine(label, value) {
   return normalizedValue ? `${label}: ${normalizedValue}` : '';
 }
 
+function businessRegistrationLabel(dealerType) {
+  switch (String(dealerType || '').trim().toLowerCase()) {
+    case 'exempt':
+      return 'עוסק פטור';
+    case 'company':
+      return 'חברה בע״מ';
+    case 'licensed':
+    default:
+      return 'עוסק מורשה';
+  }
+}
+
 function getPdfFilePrefix(docType) {
   if (docType === 'quote') return 'quote';
   if (docType === 'work_order') return 'work_order';
@@ -918,11 +930,11 @@ export default function InvoicePreviewPage() {
                           <DetailCard
                             title={copy.clientDetails}
                             lines={[
-                              invoice.clientName || copy.emptyClient,
-                              detailLine(copy.clientId, invoice.clientId),
-                              detailLine(copy.clientEmail, invoice.clientEmail),
-                              invoice.clientPhone || '',
-                              invoice.clientCity || '',
+                              detailLine('לכבוד', invoice.clientName || copy.emptyClient),
+                              detailLine('מספר עוסק/ח.פ/ת.ז', invoice.clientId),
+                              detailLine('דוא״ל', invoice.clientEmail),
+                              detailLine('טלפון', invoice.clientPhone),
+                              detailLine('כתובת', invoice.clientCity),
                             ]}
                             tint="white"
                           />
@@ -932,10 +944,10 @@ export default function InvoicePreviewPage() {
                             title={copy.businessDetails}
                             lines={[
                               invoice.createdBy?.name || 'Hiro Pro',
-                              detailLine(copy.businessId, invoice.createdBy?.id),
-                              detailLine(copy.businessEmail, invoice.createdBy?.email),
-                              invoice.createdBy?.phone || '',
-                              invoice.createdBy?.city || '',
+                              detailLine(businessRegistrationLabel(invoice.createdBy?.dealerType), invoice.createdBy?.id),
+                              detailLine('כתובת העסק', invoice.createdBy?.address || invoice.createdBy?.city),
+                              detailLine('טלפון', invoice.createdBy?.phone),
+                              detailLine('דוא״ל', invoice.createdBy?.email),
                             ]}
                             tint="blue"
                           />

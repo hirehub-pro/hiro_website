@@ -736,7 +736,9 @@ export default function WorkerInvoicesPage() {
       locale,
       createdBy: {
         id: businessVerificationInfo?.businessId || profile?.businessId || user?.uid || '',
-        name: profile?.name || 'Hiro Pro',
+        name: businessVerificationInfo?.businessName || profile?.name || 'Hiro Pro',
+        dealerType: businessVerificationInfo?.dealerType || profile?.dealerType || '',
+        address: businessVerificationInfo?.address || profile?.town || profile?.city || '',
         phone: profile?.phone || '',
         email: profile?.email || user?.email || '',
         city: profile?.town || profile?.city || '',

@@ -1,0 +1,21 @@
+[debug] [2026-07-27T06:50:40.236Z] ----------------------------------------------------------------------
+[debug] [2026-07-27T06:50:40.238Z] Command:       /opt/homebrew/Cellar/node/25.9.0_2/bin/node /Users/raslan/.npm/_npx/ba4f1959e38407b5/node_modules/.bin/firebase deploy --only apphosting
+[debug] [2026-07-27T06:50:40.238Z] CLI Version:   15.24.0
+[debug] [2026-07-27T06:50:40.239Z] Platform:      darwin
+[debug] [2026-07-27T06:50:40.239Z] Node Version:  v25.9.0
+[debug] [2026-07-27T06:50:40.239Z] Detected Agent: unknown
+[debug] [2026-07-27T06:50:40.239Z] Time:          Mon Jul 27 2026 09:50:40 GMT+0300 (Israel Daylight Time)
+[debug] [2026-07-27T06:50:40.239Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-07-27T06:50:40.256Z] >>> [apiv2][query] GET https://firebase-public.firebaseio.com/cli.json [none]
+[debug] [2026-07-27T06:50:41.133Z] Object "/storage" in "firebase.json" has unknown property: {"additionalProperty":"bucket"}
+[debug] [2026-07-27T06:50:41.133Z] Field "/storage" in "firebase.json" is possibly invalid: must be array
+[debug] [2026-07-27T06:50:41.133Z] Field "/storage" in "firebase.json" is possibly invalid: must match a schema in anyOf
+[debug] [2026-07-27T06:50:41.137Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-07-27T06:50:41.138Z] > authorizing via signed-in user (my.hire.hub@gmail.com)
+[debug] [2026-07-27T06:50:41.138Z] [iam] checking project hire-hub-fe6c4 for permissions ["firebase.projects.get"]
+[debug] [2026-07-27T06:50:41.138Z] Checked if tokens are valid: false, expires at: 1784826378562
+[debug] [2026-07-27T06:50:41.138Z] Checked if tokens are valid: false, expires at: 1784826378562
+[debug] [2026-07-27T06:50:41.138Z] > refreshing access token with scopes: []
+[debug] [2026-07-27T06:50:41.139Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-07-27T06:50:41.139Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
