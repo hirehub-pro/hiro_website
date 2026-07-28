@@ -541,6 +541,13 @@ export default function SignInPage() {
                 {loading ? t.common.loading : 'Send reset'}
               </button>
             </div>
+
+            <Link
+              href="/contact"
+              className="mt-3 flex min-h-[48px] w-full items-center justify-center rounded-2xl border border-primary-100 px-4 text-center text-sm font-semibold text-primary transition hover:bg-primary-50"
+            >
+              {t.auth.noEmailAccess}
+            </Link>
           </div>
         </div>
       )}
