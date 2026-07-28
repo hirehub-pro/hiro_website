@@ -528,20 +528,17 @@ exports.syncVerifiedEmailByAddress = onCall({
     assertValidEmail(email);
 
     const authUser = await admin.auth().getUserByEmail(email);
-    if (authUser.emailVerified !== true) {
-      throw new HttpsError('failed-precondition', 'Verify the email address first.');
-    }
 
     await admin.firestore().doc(`users/${authUser.uid}`).set({
       email,
-      emailVerified: true,
+      emailVerified: authUser.emailVerified === true,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
 
     return {
       uid: authUser.uid,
       email,
-      emailVerified: true,
+      emailVerified: authUser.emailVerified === true,
     };
   } catch (error) {
     if (isHttpsError(error)) {

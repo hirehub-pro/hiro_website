@@ -103,12 +103,27 @@ export default function AuthActionPage() {
 
         await applyActionCode(auth, oobCode);
 
-        if (auth.currentUser) {
-          await auth.currentUser.reload();
+        // The action code is authoritative here. Do not let a refresh of a stale
+        // browser session prevent the server-side Firestore synchronization.
+        const verifiedEmail = actionEmail || normalizeEmail(auth.currentUser?.email);
+        if (!verifiedEmail) {
+          throw new Error('The verified email address was not available.');
         }
 
-        const verifiedEmail = normalizeEmail(auth.currentUser?.email || actionEmail);
-        if (auth.currentUser && verifiedEmail) {
+        if (auth.currentUser) {
+          try {
+            await auth.currentUser.reload();
+          } catch (error) {
+            // The callable below reads the authoritative user from Firebase Auth.
+          }
+        }
+
+        const currentUserEmail = normalizeEmail(auth.currentUser?.email);
+
+        // Only write from the browser when its refreshed Auth user agrees with the
+        // verified action code. The callable below syncs by the verified address,
+        // so it also covers links opened in another browser or device.
+        if (auth.currentUser && verifiedEmail && currentUserEmail === verifiedEmail) {
           await setDoc(doc(db, 'users', auth.currentUser.uid), {
             email: verifiedEmail,
             emailVerified: true,
