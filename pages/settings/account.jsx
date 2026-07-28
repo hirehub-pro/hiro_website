@@ -7,7 +7,6 @@ import {
   EmailAuthProvider,
   deleteUser,
   reauthenticateWithCredential,
-  updatePassword,
 } from 'firebase/auth';
 import { deleteDoc, doc } from 'firebase/firestore';
 import { FiBriefcase, FiChevronLeft, FiChevronRight, FiKey, FiMail, FiPhone, FiTrash2 } from 'react-icons/fi';
@@ -63,32 +62,6 @@ export default function AccountSettingsPage() {
     await reauthenticateWithCredential(auth.currentUser, credential);
   }
 
-  async function handleChangePassword() {
-    const nextPassword = window.prompt(accountCopy.passwordPrompt || 'Enter a new password.');
-    if (nextPassword === null) return;
-    if (nextPassword.length < 6) {
-      toast.error(accountCopy.weakPassword || 'Password should be at least 6 characters.');
-      return;
-    }
-
-    const confirmPassword = window.prompt(accountCopy.confirmPasswordPrompt || 'Confirm your new password.');
-    if (confirmPassword !== nextPassword) {
-      toast.error(accountCopy.passwordMismatch || 'Passwords do not match.');
-      return;
-    }
-
-    try {
-      setBusyAction('password');
-      await reauthenticateWithPassword();
-      await updatePassword(auth.currentUser, nextPassword);
-      toast.success(accountCopy.passwordUpdated || 'Password updated.');
-    } catch (error) {
-      toast.error(error?.message || accountCopy.updateError || 'Could not update account.');
-    } finally {
-      setBusyAction('');
-    }
-  }
-
   async function handleDeleteAccount() {
     const confirmed = window.confirm(accountCopy.deleteConfirm || 'Delete your account permanently? This cannot be undone.');
     if (!confirmed) return;
@@ -127,7 +100,7 @@ export default function AccountSettingsPage() {
       label: accountCopy.changePassword || 'Change password',
       subtitle: accountCopy.passwordSubtitle || 'Update your sign-in password.',
       icon: FiKey,
-      onClick: handleChangePassword,
+      href: '/settings/account/password',
     },
     {
       key: 'business',

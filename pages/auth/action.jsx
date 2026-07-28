@@ -2,10 +2,10 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import { applyActionCode, checkActionCode } from 'firebase/auth';
+import { applyActionCode, checkActionCode, confirmPasswordReset, verifyPasswordResetCode } from 'firebase/auth';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { FiAlertCircle, FiCheckCircle, FiLoader, FiMail } from 'react-icons/fi';
+import { FiAlertCircle, FiCheckCircle, FiKey, FiLoader, FiMail } from 'react-icons/fi';
 import { auth, db, functions as firebaseFunctions } from '../../lib/firebase';
 
 const SUPPORTED_EMAIL_ACTIONS = new Set(['verifyEmail', 'verifyAndChangeEmail']);
@@ -60,6 +60,11 @@ export default function AuthActionPage() {
   const router = useRouter();
   const [status, setStatus] = useState('loading');
   const [message, setMessage] = useState('Verifying your email...');
+  const [resetEmail, setResetEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [resetBusy, setResetBusy] = useState(false);
+  const [isPasswordResetFlow, setIsPasswordResetFlow] = useState(false);
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -69,6 +74,42 @@ export default function AuthActionPage() {
     async function handleActionCode() {
       const mode = String(router.query.mode || '');
       const oobCode = String(router.query.oobCode || '');
+
+      // Existing email templates use `mode=action` for more than one Firebase
+      // action. Ask Firebase what kind of code it is before deciding which UI to
+      // show, so verification links continue to work unchanged.
+      if (mode === 'resetPassword' || mode === 'action') {
+        if (!oobCode) {
+          if (!cancelled && mode === 'resetPassword') {
+            setStatus('error');
+            setMessage('This password reset link is invalid. Please request a new one.');
+          }
+          if (mode === 'resetPassword') return;
+        }
+
+        if (oobCode) {
+          try {
+            const email = await verifyPasswordResetCode(auth, oobCode);
+            if (!cancelled) {
+              setResetEmail(email);
+              setIsPasswordResetFlow(true);
+              setStatus('reset-ready');
+              setMessage('Choose a new password for your account.');
+            }
+            return;
+          } catch (error) {
+            // `mode=action` can also be an account-verification link. In that
+            // case this check fails and the existing verification flow continues.
+            if (mode === 'resetPassword') {
+              if (!cancelled) {
+                setStatus('error');
+                setMessage(getActionErrorMessage(error));
+              }
+              return;
+            }
+          }
+        }
+      }
 
       if (!SUPPORTED_EMAIL_ACTIONS.has(mode) || !oobCode) {
         try {
@@ -157,7 +198,36 @@ export default function AuthActionPage() {
 
   const isLoading = status === 'loading';
   const isSuccess = status === 'success';
-  const Icon = isLoading ? FiLoader : isSuccess ? FiCheckCircle : FiAlertCircle;
+  const isResetReady = status === 'reset-ready';
+  const isPasswordReset = isPasswordResetFlow || router.query.mode === 'resetPassword';
+  const Icon = isLoading ? FiLoader : (isSuccess ? FiCheckCircle : (isResetReady ? FiKey : FiAlertCircle));
+
+  async function handlePasswordReset(event) {
+    event.preventDefault();
+    const oobCode = String(router.query.oobCode || '');
+
+    if (newPassword.length < 6) {
+      setMessage('Your password must be at least 6 characters.');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setMessage('The passwords do not match.');
+      return;
+    }
+
+    try {
+      setResetBusy(true);
+      await confirmPasswordReset(auth, oobCode, newPassword);
+      setStatus('success');
+      setMessage('Your password has been updated. You can now sign in.');
+    } catch (error) {
+      setStatus('error');
+      setMessage(getActionErrorMessage(error));
+    } finally {
+      setResetBusy(false);
+    }
+  }
 
   return (
     <>
@@ -175,16 +245,30 @@ export default function AuthActionPage() {
             Hiro Account
           </div>
           <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-gray-950">
-            {isSuccess ? 'Email Updated' : isLoading ? 'Checking Link' : 'Link Problem'}
+            {isSuccess ? (isPasswordReset ? 'Password Updated' : 'Email Updated') : isResetReady ? 'Set New Password' : isLoading ? 'Checking Link' : 'Link Problem'}
           </h1>
           <p className="mt-3 text-sm font-semibold leading-6 text-gray-500">{message}</p>
 
-          <Link
-            href={isSuccess ? '/settings/account' : '/settings/account/email'}
-            className="btn-primary mt-6 flex w-full items-center justify-center"
-          >
-            {isSuccess ? 'Back to account settings' : 'Try again'}
-          </Link>
+          {isResetReady ? (
+            <form onSubmit={handlePasswordReset} className="mt-6 space-y-4 text-start">
+              <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700">{resetEmail}</p>
+              <label className="block">
+                <span className="mb-2 block text-sm font-semibold text-slate-700">New password</span>
+                <input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} autoComplete="new-password" disabled={resetBusy} className="input-field" />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-semibold text-slate-700">Confirm new password</span>
+                <input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" disabled={resetBusy} className="input-field" />
+              </label>
+              <button type="submit" disabled={resetBusy} className="btn-primary flex w-full items-center justify-center disabled:cursor-not-allowed disabled:opacity-60">
+                {resetBusy ? 'Updating password...' : 'Set new password'}
+              </button>
+            </form>
+          ) : (
+            <Link href={isSuccess ? (isPasswordReset ? '/auth/signin' : '/settings/account') : (isPasswordReset ? '/settings/account/password' : '/settings/account/email')} className="btn-primary mt-6 flex w-full items-center justify-center">
+              {isSuccess ? (isPasswordReset ? 'Sign in' : 'Back to account settings') : 'Request a new link'}
+            </Link>
+          )}
         </section>
       </main>
     </>
