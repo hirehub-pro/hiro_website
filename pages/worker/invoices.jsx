@@ -32,6 +32,13 @@ import {
   getInvoicePreviewStorageKey,
   todayKey,
 } from '../../lib/invoices';
+import {
+  claimInvoiceBuilderLock,
+  getInvoiceBuilderDeviceId,
+  releaseInvoiceBuilderLock,
+  renewInvoiceBuilderLock,
+  subscribeToInvoiceBuilderLock,
+} from '../../lib/invoice-builder-lock';
 
 function buildLineItem(index, description, currency) {
   return {
@@ -268,6 +275,7 @@ export default function WorkerInvoicesPage() {
   const [verificationChecked, setVerificationChecked] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState('');
   const [businessVerificationInfo, setBusinessVerificationInfo] = useState(null);
+  const [invoiceBuilderAccess, setInvoiceBuilderAccess] = useState('checking');
   const { showDueDate, showPaymentDetails, showPaymentType } = useMemo(
     () => documentTypeConfig(documentType),
     [documentType]
@@ -321,6 +329,59 @@ export default function WorkerInvoicesPage() {
       cancelled = true;
     };
   }, [isWorker, loading, profile?.businessVerificationStatus, user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid || !isWorker || !canUseInvoiceBuilder) {
+      setInvoiceBuilderAccess('checking');
+      return undefined;
+    }
+
+    const deviceId = getInvoiceBuilderDeviceId();
+    let active = true;
+    let unsubscribe = () => {};
+    let heartbeatId = null;
+
+    async function claimAccess() {
+      try {
+        const result = await claimInvoiceBuilderLock(user.uid, deviceId);
+        if (!active) {
+          if (result.allowed) {
+            releaseInvoiceBuilderLock(user.uid, deviceId).catch(() => {});
+          }
+          return;
+        }
+
+        setInvoiceBuilderAccess(result.allowed ? 'allowed' : 'blocked');
+        if (!result.allowed) return;
+
+        unsubscribe = subscribeToInvoiceBuilderLock(user.uid, (lock) => {
+          if (!active) return;
+          const isOwnedByThisDevice = lock?.deviceId === deviceId && Number(lock?.expiresAtMs || 0) > Date.now();
+          if (!isOwnedByThisDevice) setInvoiceBuilderAccess('blocked');
+        });
+
+        heartbeatId = window.setInterval(async () => {
+          try {
+            const renewal = await renewInvoiceBuilderLock(user.uid, deviceId);
+            if (active && !renewal.allowed) setInvoiceBuilderAccess('blocked');
+          } catch (error) {
+            // Keep the current page available during a temporary network interruption.
+          }
+        }, 20 * 1000);
+      } catch (error) {
+        if (active) setInvoiceBuilderAccess('blocked');
+      }
+    }
+
+    claimAccess();
+
+    return () => {
+      active = false;
+      unsubscribe();
+      if (heartbeatId) window.clearInterval(heartbeatId);
+      releaseInvoiceBuilderLock(user.uid, deviceId).catch(() => {});
+    };
+  }, [canUseInvoiceBuilder, isWorker, user?.uid]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !user) return;
@@ -592,7 +653,7 @@ export default function WorkerInvoicesPage() {
   const clientCompletion = [clientName, clientId, clientEmail, clientPhone, clientCity].filter(Boolean).length;
   const readyPayments = payments.filter((item) => item.type && Number(item.amount) > 0).length;
 
-  if (loading || (user && isWorker && !verificationChecked)) {
+  if (loading || (user && isWorker && (!verificationChecked || (canUseInvoiceBuilder && invoiceBuilderAccess === 'checking')))) {
     return (
       <div className="mx-auto flex min-h-[70vh] max-w-4xl items-center justify-center px-4">
         <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
@@ -652,6 +713,21 @@ export default function WorkerInvoicesPage() {
           </div>
         </main>
       </>
+    );
+  }
+
+  if (invoiceBuilderAccess !== 'allowed') {
+    return (
+      <main className="relative overflow-hidden px-4 py-6 md:py-8">
+        <div className="absolute inset-0 bg-mesh opacity-60" />
+        <div className="relative mx-auto max-w-3xl">
+          <Panel className="shadow-soft text-center">
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-primary/65">{copy.shortTitle}</p>
+            <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-gray-950 sm:text-4xl">{copy.deviceInUseTitle}</h1>
+            <p className="mt-3 text-sm leading-7 text-gray-500">{copy.deviceInUseBody}</p>
+          </Panel>
+        </div>
+      </main>
     );
   }
 
