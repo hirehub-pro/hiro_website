@@ -21,6 +21,7 @@ import {
   getRequestMediaItems,
   getRequestStatusClass,
   isPendingRequestExpired,
+  isWorkRequest,
   normalizeRequestDocument,
 } from '../lib/request-utils';
 
@@ -73,7 +74,9 @@ function RequestCard({ request, user, mode, highlighted, copy, locale }) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-extrabold text-slate-950">{request.title}</h2>
+            <h2 className="text-lg font-extrabold text-slate-950">
+              {isWorkRequest(request) ? copy.workRequest : request.title}
+            </h2>
             <span className={clsx('rounded-full px-3 py-1 text-xs font-bold capitalize ring-1', getRequestStatusClass(request.status))}>
               {getStatusLabel(copy, request.status)}
             </span>
@@ -291,13 +294,13 @@ export default function RequestsPage() {
     : copy.noSent;
 
   const stats = useMemo(() => {
-    const all = [...sentRequests, ...receivedRequests];
+    const requestsInActiveTab = activeTab === 'received' ? receivedRequests : sentRequests;
     return {
-      total: all.length,
-      pending: all.filter((request) => request.status === 'pending').length,
-      accepted: all.filter((request) => request.status === 'accepted').length,
+      total: requestsInActiveTab.length,
+      pending: requestsInActiveTab.filter((request) => request.status === 'pending').length,
+      accepted: requestsInActiveTab.filter((request) => request.status === 'accepted').length,
     };
-  }, [receivedRequests, sentRequests]);
+  }, [activeTab, receivedRequests, sentRequests]);
 
   if (loading || (!user && !loading)) {
     return (

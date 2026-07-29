@@ -710,7 +710,7 @@ export default function Header() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-3">
                         <p className="truncate text-sm font-extrabold text-gray-950">
-                          {notification.title}
+                          {notification.type === 'work_request' ? t.requests.workRequest : notification.title}
                         </p>
                         {!notification.read ? (
                           <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-primary" />

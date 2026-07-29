@@ -37,6 +37,7 @@ import {
   getRequestMediaItems,
   getRequestStatusClass,
   isPendingRequestExpired,
+  isWorkRequest,
   normalizeRequestDocument,
 } from '../../lib/request-utils';
 
@@ -220,7 +221,6 @@ export default function RequestDetailsPage() {
     [request]
   );
   const otherUserId = requestMode === 'received' ? request?.fromId : request?.workerId;
-  const otherUserName = requestMode === 'received' ? request?.fromName : request?.workerName;
   const roomId = user?.uid && otherUserId ? [user.uid, otherUserId].sort().join('_') : '';
   const mapHref = request?.mapUrl || (
     typeof request?.latitude === 'number' && typeof request?.longitude === 'number'
@@ -229,8 +229,8 @@ export default function RequestDetailsPage() {
   );
   const backHref = requestMode === 'received' ? '/requests?tab=received' : '/requests?tab=sent';
   const scheduleHref = user?.uid ? `/profile/${user.uid}/schedule` : '';
-  const requestTitle = request?.title === 'Work Request'
-    ? copy.workRequestFrom.replace('{name}', otherUserName || copy.unknownUser)
+  const requestTitle = isWorkRequest(request)
+    ? copy.workRequest
     : (request?.title || copy.workRequest);
   const professionLabel = useMemo(() => {
     const storedProfession = String(request?.profession || '').trim();
