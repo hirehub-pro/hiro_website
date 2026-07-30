@@ -103,6 +103,13 @@ function normalizeNineDigitInput(value) {
   return String(value || '').replace(/\D/g, '').slice(0, 9);
 }
 
+function getBankCode(value) {
+  const normalizedValue = String(value || '').trim();
+  const leadingCode = normalizedValue.match(/^(\d+)\s*-/);
+  const trailingCode = normalizedValue.match(/-\s*(\d+)$/);
+  return leadingCode?.[1] || trailingCode?.[1] || '';
+}
+
 function isValidClientTaxId(value) {
   const normalizedValue = String(value || '').trim();
   return normalizedValue === '' || normalizedValue === '0' || /^\d{9}$/.test(normalizedValue);
@@ -293,6 +300,8 @@ export default function WorkerInvoicesPage() {
   const [expandedLineItemId, setExpandedLineItemId] = useState(defaultLineItems[0]?.id || null);
   const [expandedPaymentId, setExpandedPaymentId] = useState(defaultPayments[0]?.id || null);
   const [openBankOptionsFor, setOpenBankOptionsFor] = useState(null);
+  const [openBranchOptionsFor, setOpenBranchOptionsFor] = useState(null);
+  const [bankBranchesById, setBankBranchesById] = useState({});
   const restoredDraftForUserRef = useRef('');
   const promptedCounterTypesRef = useRef({});
   const appliedClientPrefillRef = useRef('');
@@ -569,6 +578,40 @@ export default function WorkerInvoicesPage() {
     }
 
     loadVatPercent();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadBankBranches() {
+      try {
+        const response = await fetch('/snifim_he.xml');
+        if (!response.ok) throw new Error('Bank branches could not be loaded.');
+
+        const xml = new DOMParser().parseFromString(await response.text(), 'application/xml');
+        const nextBranchesById = Array.from(xml.querySelectorAll('branch')).reduce((branchesById, branch) => {
+          const bankId = String(branch.querySelector('id')?.textContent || '').trim();
+          const branchName = String(branch.querySelector('branch_name')?.textContent || '').trim();
+          const branchCode = String(branch.querySelector('branch_code')?.textContent || '').trim();
+          if (!bankId || !branchName || !branchCode) return branchesById;
+
+          const option = `${branchName} - ${branchCode}`;
+          if (!branchesById[bankId]) branchesById[bankId] = [];
+          if (!branchesById[bankId].includes(option)) branchesById[bankId].push(option);
+          return branchesById;
+        }, {});
+
+        if (!cancelled) setBankBranchesById(nextBranchesById);
+      } catch (error) {
+        if (!cancelled) setBankBranchesById({});
+      }
+    }
+
+    loadBankBranches();
 
     return () => {
       cancelled = true;
@@ -1236,7 +1279,7 @@ export default function WorkerInvoicesPage() {
               ) : null}
 
               {showPaymentDetails ? (
-              <Panel className={openBankOptionsFor ? 'relative z-30' : 'relative z-0'}>
+              <Panel className={openBankOptionsFor || openBranchOptionsFor ? 'relative z-30' : 'relative z-0'}>
                 <SectionTitle eyebrow={copy.paymentDetails} title={copy.paymentDetails} subtitle={copy.paymentDetailsSubtitle} />
                 <div className="space-y-4">
                   {payments.map((payment, index) => {
@@ -1244,6 +1287,11 @@ export default function WorkerInvoicesPage() {
                     const isExpanded = expandedPaymentId === payment.id;
                     const filteredBankOptions = bankOptions.filter((option) => (
                       option.toLocaleLowerCase().includes(String(payment.bankName || '').toLocaleLowerCase())
+                    ));
+                    const selectedBankCode = getBankCode(payment.bankName);
+                    const branchOptions = bankBranchesById[selectedBankCode] || [];
+                    const filteredBranchOptions = branchOptions.filter((option) => (
+                      option.toLocaleLowerCase().includes(String(payment.branch || '').toLocaleLowerCase())
                     ));
                     return (
                       <div key={payment.id} className="rounded-[30px] border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-primary/5 p-4 shadow-sm transition-colors hover:border-primary/20 sm:p-5">
@@ -1354,6 +1402,7 @@ export default function WorkerInvoicesPage() {
                                     value={payment.bankName}
                                     onChange={(event) => {
                                       updatePayment(payment.id, 'bankName', event.target.value);
+                                      updatePayment(payment.id, 'branch', '');
                                       setOpenBankOptionsFor(payment.id);
                                     }}
                                     onFocus={() => setOpenBankOptionsFor(payment.id)}
@@ -1380,6 +1429,7 @@ export default function WorkerInvoicesPage() {
                                           onMouseDown={(event) => event.preventDefault()}
                                           onClick={() => {
                                             updatePayment(payment.id, 'bankName', option);
+                                            updatePayment(payment.id, 'branch', '');
                                             setOpenBankOptionsFor(null);
                                           }}
                                           className="block w-full px-4 py-2 text-left text-sm font-medium text-slate-800 transition-colors hover:bg-sky-50 focus:bg-sky-50 focus:outline-none rtl:text-right"
@@ -1394,14 +1444,51 @@ export default function WorkerInvoicesPage() {
                                 </div>
                               </label>
                               <label className={floatingFieldClass(payment.branch)}>
-                                <span className="floating-field__label">{copy.branch}</span>
-                                <input
-                                  value={payment.branch}
-                                  onChange={(event) => updatePayment(payment.id, 'branch', event.target.value)}
-                                  placeholder=" "
-                                  aria-label={copy.branch}
-                                  className="input-field"
-                                />
+                                <div className="relative">
+                                  <span className="floating-field__label">{copy.branch}</span>
+                                  <input
+                                    value={payment.branch}
+                                    onChange={(event) => {
+                                      updatePayment(payment.id, 'branch', event.target.value);
+                                      setOpenBranchOptionsFor(payment.id);
+                                    }}
+                                    onFocus={() => setOpenBranchOptionsFor(payment.id)}
+                                    onBlur={() => setOpenBranchOptionsFor(null)}
+                                    onKeyDown={(event) => {
+                                      if (event.key === 'Escape') setOpenBranchOptionsFor(null);
+                                    }}
+                                    placeholder=" "
+                                    aria-label={copy.branch}
+                                    role="combobox"
+                                    aria-autocomplete="list"
+                                    aria-controls={`branch-options-${payment.id}`}
+                                    aria-expanded={openBranchOptionsFor === payment.id}
+                                    disabled={!selectedBankCode}
+                                    className="input-field disabled:cursor-not-allowed disabled:opacity-50"
+                                  />
+                                  {openBranchOptionsFor === payment.id && selectedBankCode ? (
+                                    <div id={`branch-options-${payment.id}`} className="absolute z-20 mt-2 max-h-56 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white py-1 shadow-lg" role="listbox" aria-label={copy.branch}>
+                                      {filteredBranchOptions.length > 0 ? filteredBranchOptions.map((option) => (
+                                        <button
+                                          key={option}
+                                          type="button"
+                                          role="option"
+                                          aria-selected={payment.branch === option}
+                                          onMouseDown={(event) => event.preventDefault()}
+                                          onClick={() => {
+                                            updatePayment(payment.id, 'branch', option);
+                                            setOpenBranchOptionsFor(null);
+                                          }}
+                                          className="block w-full px-4 py-2 text-left text-sm font-medium text-slate-800 transition-colors hover:bg-sky-50 focus:bg-sky-50 focus:outline-none rtl:text-right"
+                                        >
+                                          {option}
+                                        </button>
+                                      )) : (
+                                        <p className="px-4 py-3 text-sm text-slate-500">{copy.noResults || 'No matching branches'}</p>
+                                      )}
+                                    </div>
+                                  ) : null}
+                                </div>
                               </label>
                               <label className={floatingFieldClass(payment.accountNumber)}>
                                 <span className="floating-field__label">{copy.accountNumber}</span>
