@@ -59,6 +59,7 @@ function buildPayment(index, type, currency) {
     date: todayKey(),
     amount: 0,
     currency,
+    details: '',
     bankName: '',
     branch: '',
     accountNumber: '',
@@ -210,6 +211,25 @@ export default function WorkerInvoicesPage() {
   const [dealerTypeLoaded, setDealerTypeLoaded] = useState(profileDealerType === 'exempt');
 
   const currencyOptions = useMemo(() => ['ILS', 'USD', 'EUR'], []);
+  const bankOptions = useMemo(() => [
+    'יהב - 4',
+    'U-Bank - 26',
+    'בנק פאגי - 52',
+    'בנק אוצר החייל - 14',
+    'בנק וואן זירו - 18',
+    'מזרחי-טפחות - 20',
+    'מרכנתיל - 17',
+    'בנק מסד - 46',
+    'לאומי - 10',
+    'בנק ירושלים - 54',
+    'הפועלים - 12',
+    'דיסקונט - 11',
+    'הבינלאומי - 31',
+    'בנק הדואר - 9',
+    'סיטי בנק - 22',
+    'בנק פועלי אגודת ישראל - פאגי - 52',
+    'בנק ישראל - 99',
+  ], []);
   const vatModeOptions = useMemo(() => ([
     { value: 'before_vat', label: copy.beforeVat },
     { value: 'after_vat', label: copy.afterVat },
@@ -220,12 +240,15 @@ export default function WorkerInvoicesPage() {
     { value: 'fixed', label: '₪' },
   ]), []);
   const paymentTypeOptions = useMemo(() => ([
-    copy.bankTransfer,
     copy.cash,
     copy.card,
+    copy.bankTransfer,
     copy.bit,
+    copy.paybox,
+    copy.otherPaymentMethod,
+    copy.withholdingTax,
     copy.check,
-  ]), [copy.bankTransfer, copy.bit, copy.card, copy.cash, copy.check]);
+  ]), [copy.bankTransfer, copy.bit, copy.card, copy.cash, copy.check, copy.otherPaymentMethod, copy.paybox, copy.withholdingTax]);
   const effectiveDealerType = dealerType || profileDealerType;
   const isExemptDealer = effectiveDealerType === 'exempt';
   const documentTypeOptions = useMemo(() => ([
@@ -280,6 +303,7 @@ export default function WorkerInvoicesPage() {
     () => documentTypeConfig(documentType),
     [documentType]
   );
+  const isReceipt = documentType === 'receipt';
   const canUseInvoiceBuilder = verificationStatus === 'approved';
 
   function getDocumentTypeLabel(value) {
@@ -637,17 +661,17 @@ export default function WorkerInvoicesPage() {
   const discountRatio = subtotalBeforeDiscount > 0 ? invoiceDiscountAmount / subtotalBeforeDiscount : 0;
   const subtotal = Math.max(subtotalBeforeDiscount - invoiceDiscountAmount, 0);
   const vatAmount = Math.max(vatAmountBeforeDiscount * (1 - discountRatio), 0);
-  const total = useMemo(
+  const calculatedTotal = useMemo(
     () => subtotal + vatAmount,
     [subtotal, vatAmount]
   );
-  const roundedTotal = useMemo(() => Math.round(total), [total]);
-  const displayTotal = roundTotalEnabled ? roundedTotal : total;
-  const roundingAdjustment = displayTotal - total;
   const paidTotal = useMemo(
     () => payments.reduce((sum, item) => sum + (Number(item.amount) || 0), 0),
     [payments]
   );
+  const roundedTotal = useMemo(() => Math.round(calculatedTotal), [calculatedTotal]);
+  const displayTotal = isReceipt ? paidTotal : (roundTotalEnabled ? roundedTotal : calculatedTotal);
+  const roundingAdjustment = isReceipt ? 0 : displayTotal - calculatedTotal;
   const amountDue = Math.max(displayTotal - paidTotal, 0);
   const paymentCoverage = displayTotal > 0 ? Math.min((paidTotal / displayTotal) * 100, 100) : 0;
   const clientCompletion = [clientName, clientId, clientEmail, clientPhone, clientCity].filter(Boolean).length;
@@ -796,17 +820,17 @@ export default function WorkerInvoicesPage() {
       documentDescription,
       vatRate: Number(vatRate) || 0,
       notes,
-      discountType,
-      discountAmount: invoiceDiscountAmount,
-      discountInputAmount: Number(discountAmount) || 0,
-      subtotal,
-      subtotalBeforeDiscount,
-      vatAmount,
-      vatAmountBeforeDiscount,
+      discountType: isReceipt ? 'percent' : discountType,
+      discountAmount: isReceipt ? 0 : invoiceDiscountAmount,
+      discountInputAmount: isReceipt ? 0 : Number(discountAmount) || 0,
+      subtotal: isReceipt ? paidTotal : subtotal,
+      subtotalBeforeDiscount: isReceipt ? paidTotal : subtotalBeforeDiscount,
+      vatAmount: isReceipt ? 0 : vatAmount,
+      vatAmountBeforeDiscount: isReceipt ? 0 : vatAmountBeforeDiscount,
       total: displayTotal,
-      calculatedTotal: total,
+      calculatedTotal: isReceipt ? paidTotal : calculatedTotal,
       roundingAdjustment,
-      roundTotalEnabled,
+      roundTotalEnabled: isReceipt ? false : roundTotalEnabled,
       paidTotal,
       amountDue,
       locale,
@@ -819,7 +843,7 @@ export default function WorkerInvoicesPage() {
         email: profile?.email || user?.email || '',
         city: profile?.town || profile?.city || '',
       },
-      lineItems: lineItems.map((item, index) => ({
+      lineItems: isReceipt ? [] : lineItems.map((item, index) => ({
         ...item,
         vatMode: item.vatMode || 'before_vat',
         lineSubtotal: lineAmounts[index]?.subtotal || 0,
@@ -841,7 +865,7 @@ export default function WorkerInvoicesPage() {
       return false;
     }
 
-    const invalidLineIndex = lineItems.findIndex((item) => {
+    const invalidLineIndex = isReceipt ? -1 : lineItems.findIndex((item) => {
       const description = String(item?.description || '').trim();
       const quantity = Number(item?.quantity);
       const unitPrice = Number(item?.unitPrice);
@@ -869,7 +893,7 @@ export default function WorkerInvoicesPage() {
 
       const roundedTotal = Math.round(displayTotal * 100);
       const roundedPaidTotal = Math.round(paidTotal * 100);
-      if (roundedTotal !== roundedPaidTotal) {
+      if (!isReceipt && roundedTotal !== roundedPaidTotal) {
         toast.error(copy.paymentTotalMustMatch);
         return false;
       }
@@ -1059,6 +1083,7 @@ export default function WorkerInvoicesPage() {
                 </div>
               </Panel>
 
+              {!isReceipt ? (
               <Panel>
                 <SectionTitle eyebrow={copy.serviceLines} title={copy.serviceLines} />
                 <div className="space-y-4">
@@ -1209,6 +1234,7 @@ export default function WorkerInvoicesPage() {
                   {copy.addLine}
                 </button>
               </Panel>
+              ) : null}
 
               {showPaymentDetails ? (
               <Panel>
@@ -1240,7 +1266,7 @@ export default function WorkerInvoicesPage() {
                 </div>
                 <div className="space-y-4">
                   {payments.map((payment, index) => {
-                    const showBankFields = showPaymentType && (payment.type === copy.bankTransfer || payment.type === copy.check);
+                    const showBankFields = showPaymentType && payment.type === copy.bankTransfer;
                     const isExpanded = expandedPaymentId === payment.id;
                     return (
                       <div key={payment.id} className="rounded-[30px] border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-primary/5 p-4 shadow-sm transition-colors hover:border-primary/20 sm:p-5">
@@ -1289,7 +1315,7 @@ export default function WorkerInvoicesPage() {
  
                         {isExpanded ? (
                         <div onClick={(event) => event.stopPropagation()}>
-                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                        <div className="grid w-fit max-w-full gap-4 sm:grid-cols-[180px_150px] xl:grid-cols-[180px_150px_140px_560px]">
                           {showPaymentType ? (
                             <label className={floatingFieldClass(payment.type)}>
                               <div className="relative">
@@ -1329,19 +1355,15 @@ export default function WorkerInvoicesPage() {
                               className="input-field"
                             />
                           </label>
-                          <label className={floatingFieldClass(payment.currency)}>
-                            <div className="relative">
-                              <span className="floating-field__label">{copy.currency}</span>
-                              <select
-                                value={payment.currency}
-                                onChange={(event) => updatePayment(payment.id, 'currency', event.target.value)}
-                                aria-label={copy.currency}
-                                className="input-field appearance-none pr-10 rtl:pr-4 rtl:pl-10"
-                              >
-                                {currencyOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                              </select>
-                              <FiChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 rtl:right-auto rtl:left-3" />
-                            </div>
+                          <label className={floatingFieldClass(payment.details, 'sm:col-span-2 xl:col-span-1')}>
+                            <span className="floating-field__label">{copy.extraDetails}</span>
+                            <input
+                              value={payment.details || ''}
+                              onChange={(event) => updatePayment(payment.id, 'details', event.target.value)}
+                              placeholder=" "
+                              aria-label={copy.extraDetails}
+                              className="input-field"
+                            />
                           </label>
                         </div>
 
@@ -1349,14 +1371,20 @@ export default function WorkerInvoicesPage() {
                           <div className="mt-4 rounded-[24px] border border-slate-100 bg-white/80 p-4">
                             <div className="grid gap-4 lg:grid-cols-3">
                               <label className={floatingFieldClass(payment.bankName, 'lg:col-span-3 xl:col-span-1')}>
-                                <span className="floating-field__label">{copy.bankName}</span>
-                                <input
-                                  value={payment.bankName}
-                                  onChange={(event) => updatePayment(payment.id, 'bankName', event.target.value)}
-                                  placeholder=" "
-                                  aria-label={copy.bankName}
-                                  className="input-field"
-                                />
+                                <div className="relative">
+                                  <span className="floating-field__label">{copy.bankName}</span>
+                                  <input
+                                    list={`bank-options-${payment.id}`}
+                                    value={payment.bankName}
+                                    onChange={(event) => updatePayment(payment.id, 'bankName', event.target.value)}
+                                    placeholder=" "
+                                    aria-label={copy.bankName}
+                                    className="input-field"
+                                  />
+                                  <datalist id={`bank-options-${payment.id}`}>
+                                    {bankOptions.map((option) => <option key={option} value={option} />)}
+                                  </datalist>
+                                </div>
                               </label>
                               <label className={floatingFieldClass(payment.branch)}>
                                 <span className="floating-field__label">{copy.branch}</span>
@@ -1417,17 +1445,18 @@ export default function WorkerInvoicesPage() {
                     <div className="flex flex-wrap items-center gap-3">
                       <div>
                         <p className="text-lg font-bold text-gray-950">{formatCurrency(displayTotal, locale)}</p>
-                        {invoiceDiscountAmount > 0 ? (
+                        {!isReceipt && invoiceDiscountAmount > 0 ? (
                           <p className="mt-1 text-xs font-medium text-gray-400">
                             {copy.discountType}: -{formatCurrency(invoiceDiscountAmount, locale)}
                           </p>
                         ) : null}
-                        {roundTotalEnabled && Math.abs(roundingAdjustment) >= 0.01 ? (
+                        {!isReceipt && roundTotalEnabled && Math.abs(roundingAdjustment) >= 0.01 ? (
                           <p className="mt-1 text-xs font-medium text-gray-400">
                             {copy.roundingAdjustment}: {formatCurrency(roundingAdjustment, locale)}
                           </p>
                         ) : null}
                       </div>
+                      {!isReceipt ? (
                       <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
@@ -1470,6 +1499,7 @@ export default function WorkerInvoicesPage() {
                           />
                         </label>
                       </div>
+                      ) : null}
                     </div>
                   </div>
                   <div className="flex flex-col gap-3 sm:flex-row">

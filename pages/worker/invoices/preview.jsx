@@ -251,6 +251,7 @@ export default function InvoicePreviewPage() {
   const savedInvoiceFileName = invoice?.savedFileName || `${invoice?.invoiceNumber || 'invoice'}.pdf`;
   const shouldUseStoredPdf = openedFromSaved && Boolean(savedInvoiceUrl);
   const docType = normalizePreviewDocType(invoice?.documentType || invoice?.docType);
+  const isReceipt = docType === 'receipt';
   const canRequestTaxAllocation = docType === 'invoice' || docType === 'invoice_receipt';
   const canRequestSignature = docType === 'quote' || docType === 'work_order';
   const allocationNumber = taxAllocation?.confirmationNumber || invoice?.allocationNumber || invoice?.taxAuthorityAllocationNumber || '';
@@ -977,6 +978,7 @@ export default function InvoicePreviewPage() {
                     </div>
                   )}
 
+                  {!isReceipt ? (
                   <div className={`${isFirstPage ? 'mt-[37px]' : 'mt-8'} overflow-hidden rounded-[2px] border border-[#d7dee8]`} dir="ltr">
                     <div className="grid grid-cols-[1fr_80px_133px_133px] bg-[#2c92e5] text-center text-base leading-5 text-white">
                       <div className="border-white/20 px-2 py-2 sm:border-r sm:px-3" dir="rtl">{copy.description}</div>
@@ -1001,42 +1003,49 @@ export default function InvoicePreviewPage() {
                       })}
                     </div>
                   </div>
+                  ) : null}
 
                   {isFinalPage ? (
                     <div className="mt-6 flex justify-end" dir="ltr">
                       <div className="w-[347px]" dir="rtl">
                         <div className="rounded-[13px] border border-[#abd1f2] bg-[#dcebfa] p-[19px] text-[#0f172a]">
                           <div className="space-y-1 text-[15px] leading-[18px]">
-                            <div className="flex items-center justify-between gap-4">
-                              <span>{formatCurrency(subtotalBeforeDiscount, locale)}</span>
-                              <span>{copy.subtotal}</span>
-                            </div>
-                            {invoiceDiscountAmount > 0 ? (
+                            {!isReceipt ? (
+                            <>
+                              <div className="flex items-center justify-between gap-4">
+                                <span>{formatCurrency(subtotalBeforeDiscount, locale)}</span>
+                                <span>{copy.subtotal}</span>
+                              </div>
+                              {invoiceDiscountAmount > 0 ? (
                               <div className="flex items-center justify-between gap-4">
                                 <span>-{formatCurrency(invoiceDiscountAmount, locale)}</span>
                                 <span>{copy.discountType}</span>
                               </div>
-                            ) : null}
-                            <div className="flex items-center justify-between gap-4">
-                              <span>{formatCurrency(vatAmount, locale)}</span>
-                              <span>{copy.vatAmount}</span>
-                            </div>
-                            {invoice?.roundTotalEnabled && Math.abs(roundingAdjustment) >= 0.01 ? (
+                              ) : null}
+                              <div className="flex items-center justify-between gap-4">
+                                <span>{formatCurrency(vatAmount, locale)}</span>
+                                <span>{copy.vatAmount}</span>
+                              </div>
+                              {invoice?.roundTotalEnabled && Math.abs(roundingAdjustment) >= 0.01 ? (
                               <div className="flex items-center justify-between gap-4">
                                 <span>{formatCurrency(roundingAdjustment, locale)}</span>
                                 <span>{copy.roundingAdjustment}</span>
                               </div>
+                              ) : null}
+                            </>
                             ) : null}
-                            <div className="border-t border-[#9eb7ce] pt-2">
+                            <div className={isReceipt ? '' : 'border-t border-[#9eb7ce] pt-2'}>
                               <div className="flex items-center justify-between gap-4 text-xl font-bold leading-6 text-[#1454b2]">
                                 <span>{formatCurrency(total, locale)}</span>
-                                <span>{copy.total}</span>
+                                <span>{isReceipt ? copy.receiptPaidTotal : copy.total}</span>
                               </div>
                             </div>
-                            <div className="mt-2 flex items-center justify-between gap-4 text-[15px] leading-[18px] text-[#536170]">
-                              <span>{copy.paymentDueDate || copy.dueDate || ''}</span>
-                              <span>{formatFooterDueDate(invoice.dueDate || invoice.issueDate)}</span>
-                            </div>
+                            {!isReceipt ? (
+                              <div className="mt-2 flex items-center justify-between gap-4 text-[15px] leading-[18px] text-[#536170]">
+                                <span>{copy.paymentDueDate || copy.dueDate || ''}</span>
+                                <span>{formatFooterDueDate(invoice.dueDate || invoice.issueDate)}</span>
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                         {invoiceNotes ? (
