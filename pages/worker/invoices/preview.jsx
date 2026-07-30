@@ -100,6 +100,14 @@ function formatFooterDueDate(value) {
   return raw.replace(/-/g, '/');
 }
 
+function isBankTransferPayment(payment) {
+  const method = String(payment?.type || '').trim().toLocaleLowerCase();
+  return Boolean(payment?.bankName || payment?.branch || payment?.accountNumber)
+    || method.includes('bank')
+    || method.includes('העברה')
+    || method.includes('تحويل');
+}
+
 function buildInvoiceItemPages(items) {
   const normalizedItems = Array.isArray(items) ? items : [];
   if (normalizedItems.length <= SINGLE_INVOICE_PAGE_ITEM_LIMIT) {
@@ -346,7 +354,25 @@ export default function InvoicePreviewPage() {
   }, [canRequestTaxAllocation, user?.uid]);
 
   const lineItems = invoice?.lineItems || [];
-  const payments = invoice?.payments || [];
+  const payments = useMemo(() => (
+    Array.isArray(invoice?.payments) ? invoice.payments : []
+  ), [invoice?.payments]);
+  const receiptPaymentGroups = useMemo(() => {
+    const groups = new Map();
+
+    payments.forEach((payment, index) => {
+      const method = String(payment?.type || '').trim() || copy.paymentType;
+      const key = method.toLocaleLowerCase();
+      if (!groups.has(key)) {
+        groups.set(key, { method, payments: [], hasBankTransfer: false });
+      }
+      const group = groups.get(key);
+      group.payments.push({ ...payment, id: payment?.id || `${key}_${index}` });
+      group.hasBankTransfer = group.hasBankTransfer || isBankTransferPayment(payment);
+    });
+
+    return Array.from(groups.values());
+  }, [copy.paymentType, payments]);
   const subtotal = useMemo(() => Number(invoice?.subtotal) || 0, [invoice?.subtotal]);
   const subtotalBeforeDiscount = useMemo(() => Number(invoice?.subtotalBeforeDiscount ?? invoice?.subtotal) || 0, [invoice?.subtotal, invoice?.subtotalBeforeDiscount]);
   const invoiceDiscountAmount = useMemo(() => Number(invoice?.discountAmount) || 0, [invoice?.discountAmount]);
@@ -1003,6 +1029,50 @@ export default function InvoicePreviewPage() {
                       })}
                     </div>
                   </div>
+                  ) : null}
+
+                  {isReceipt && isFinalPage && receiptPaymentGroups.length > 0 ? (
+                    <div className="mt-6 space-y-4" dir="rtl">
+                      {receiptPaymentGroups.map((group) => (
+                        <section key={group.method} className="overflow-hidden rounded-[8px] border border-[#d7dee8]">
+                          <div className="bg-[#eaf4ff] px-4 py-2 text-right text-sm font-bold text-[#1454b2]">
+                            {`${copy.paymentType}: ${group.method}`}
+                          </div>
+                          <table className="w-full table-fixed border-collapse text-right text-[12px] leading-4 text-[#40434d]">
+                            <thead className="bg-[#f7fbff] text-[11px] font-bold text-[#536170]">
+                              <tr>
+                                <th className="border-b border-[#d7dee8] px-3 py-2">{copy.paymentDate}</th>
+                                <th className="border-b border-[#d7dee8] px-3 py-2">{copy.paymentAmount}</th>
+                                {group.hasBankTransfer ? (
+                                  <>
+                                    <th className="border-b border-[#d7dee8] px-3 py-2">{copy.bankName}</th>
+                                    <th className="border-b border-[#d7dee8] px-3 py-2">{copy.branch}</th>
+                                    <th className="border-b border-[#d7dee8] px-3 py-2">{copy.accountNumber}</th>
+                                  </>
+                                ) : null}
+                                <th className="border-b border-[#d7dee8] px-3 py-2">{copy.extraDetails}</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {group.payments.map((payment) => (
+                                <tr key={payment.id}>
+                                  <td className="border-b border-[#e6edf7] px-3 py-2">{formatFooterDueDate(payment.date)}</td>
+                                  <td className="border-b border-[#e6edf7] px-3 py-2 font-semibold">{formatCurrency(payment.amount, locale)}</td>
+                                  {group.hasBankTransfer ? (
+                                    <>
+                                      <td className="border-b border-[#e6edf7] px-3 py-2">{payment.bankName || '-'}</td>
+                                      <td className="border-b border-[#e6edf7] px-3 py-2">{payment.branch || '-'}</td>
+                                      <td className="border-b border-[#e6edf7] px-3 py-2">{payment.accountNumber || '-'}</td>
+                                    </>
+                                  ) : null}
+                                  <td className="border-b border-[#e6edf7] px-3 py-2">{payment.details || '-'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </section>
+                      ))}
+                    </div>
                   ) : null}
 
                   {isFinalPage ? (
