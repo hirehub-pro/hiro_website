@@ -292,6 +292,7 @@ export default function WorkerInvoicesPage() {
   const [payments, setPayments] = useState(defaultPayments);
   const [expandedLineItemId, setExpandedLineItemId] = useState(defaultLineItems[0]?.id || null);
   const [expandedPaymentId, setExpandedPaymentId] = useState(defaultPayments[0]?.id || null);
+  const [openBankOptionsFor, setOpenBankOptionsFor] = useState(null);
   const restoredDraftForUserRef = useRef('');
   const promptedCounterTypesRef = useRef({});
   const appliedClientPrefillRef = useRef('');
@@ -673,9 +674,7 @@ export default function WorkerInvoicesPage() {
   const displayTotal = isReceipt ? paidTotal : (roundTotalEnabled ? roundedTotal : calculatedTotal);
   const roundingAdjustment = isReceipt ? 0 : displayTotal - calculatedTotal;
   const amountDue = Math.max(displayTotal - paidTotal, 0);
-  const paymentCoverage = displayTotal > 0 ? Math.min((paidTotal / displayTotal) * 100, 100) : 0;
   const clientCompletion = [clientName, clientId, clientEmail, clientPhone, clientCity].filter(Boolean).length;
-  const readyPayments = payments.filter((item) => item.type && Number(item.amount) > 0).length;
 
   if (loading || (user && isWorker && (!verificationChecked || (canUseInvoiceBuilder && invoiceBuilderAccess === 'checking')))) {
     return (
@@ -1237,37 +1236,15 @@ export default function WorkerInvoicesPage() {
               ) : null}
 
               {showPaymentDetails ? (
-              <Panel>
+              <Panel className={openBankOptionsFor ? 'relative z-30' : 'relative z-0'}>
                 <SectionTitle eyebrow={copy.paymentDetails} title={copy.paymentDetails} subtitle={copy.paymentDetailsSubtitle} />
-                <div className="mb-5 grid gap-3 md:grid-cols-[1.2fr_0.8fr_0.8fr]">
-                  <div className="rounded-[24px] border border-primary/10 bg-primary/5 p-4">
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <p className="text-xs font-black uppercase tracking-[0.16em] text-primary/65">{copy.paymentDetails}</p>
-                        <p className="mt-2 text-2xl font-extrabold text-gray-950">{formatCurrency(paidTotal, locale)}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs font-semibold text-gray-500">{readyPayments}/{payments.length}</p>
-                        <p className="mt-1 text-xs font-bold uppercase tracking-[0.16em] text-gray-400">{copy.total}</p>
-                      </div>
-                    </div>
-                    <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/80">
-                      <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${paymentCoverage}%` }} />
-                    </div>
-                  </div>
-                  <div className="rounded-[24px] border border-emerald-100 bg-emerald-50/80 p-4">
-                    <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-700/75">{copy.total}</p>
-                    <p className="mt-2 text-2xl font-extrabold text-emerald-950">{formatCurrency(displayTotal, locale)}</p>
-                  </div>
-                  <div className="rounded-[24px] border border-amber-100 bg-amber-50/80 p-4">
-                    <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-700/75">{copy.amountDue}</p>
-                    <p className="mt-2 text-2xl font-extrabold text-amber-950">{formatCurrency(amountDue, locale)}</p>
-                  </div>
-                </div>
                 <div className="space-y-4">
                   {payments.map((payment, index) => {
                     const showBankFields = showPaymentType && payment.type === copy.bankTransfer;
                     const isExpanded = expandedPaymentId === payment.id;
+                    const filteredBankOptions = bankOptions.filter((option) => (
+                      option.toLocaleLowerCase().includes(String(payment.bankName || '').toLocaleLowerCase())
+                    ));
                     return (
                       <div key={payment.id} className="rounded-[30px] border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-primary/5 p-4 shadow-sm transition-colors hover:border-primary/20 sm:p-5">
                         <div
@@ -1374,16 +1351,46 @@ export default function WorkerInvoicesPage() {
                                 <div className="relative">
                                   <span className="floating-field__label">{copy.bankName}</span>
                                   <input
-                                    list={`bank-options-${payment.id}`}
                                     value={payment.bankName}
-                                    onChange={(event) => updatePayment(payment.id, 'bankName', event.target.value)}
+                                    onChange={(event) => {
+                                      updatePayment(payment.id, 'bankName', event.target.value);
+                                      setOpenBankOptionsFor(payment.id);
+                                    }}
+                                    onFocus={() => setOpenBankOptionsFor(payment.id)}
+                                    onBlur={() => setOpenBankOptionsFor(null)}
+                                    onKeyDown={(event) => {
+                                      if (event.key === 'Escape') setOpenBankOptionsFor(null);
+                                    }}
                                     placeholder=" "
                                     aria-label={copy.bankName}
+                                    role="combobox"
+                                    aria-autocomplete="list"
+                                    aria-controls={`bank-options-${payment.id}`}
+                                    aria-expanded={openBankOptionsFor === payment.id}
                                     className="input-field"
                                   />
-                                  <datalist id={`bank-options-${payment.id}`}>
-                                    {bankOptions.map((option) => <option key={option} value={option} />)}
-                                  </datalist>
+                                  {openBankOptionsFor === payment.id ? (
+                                    <div id={`bank-options-${payment.id}`} className="absolute z-20 mt-2 max-h-56 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white py-1 shadow-lg" role="listbox" aria-label={copy.bankName}>
+                                      {filteredBankOptions.length > 0 ? filteredBankOptions.map((option) => (
+                                        <button
+                                          key={option}
+                                          type="button"
+                                          role="option"
+                                          aria-selected={payment.bankName === option}
+                                          onMouseDown={(event) => event.preventDefault()}
+                                          onClick={() => {
+                                            updatePayment(payment.id, 'bankName', option);
+                                            setOpenBankOptionsFor(null);
+                                          }}
+                                          className="block w-full px-4 py-2 text-left text-sm font-medium text-slate-800 transition-colors hover:bg-sky-50 focus:bg-sky-50 focus:outline-none rtl:text-right"
+                                        >
+                                          {option}
+                                        </button>
+                                      )) : (
+                                        <p className="px-4 py-3 text-sm text-slate-500">{copy.noResults || 'No matching banks'}</p>
+                                      )}
+                                    </div>
+                                  ) : null}
                                 </div>
                               </label>
                               <label className={floatingFieldClass(payment.branch)}>
