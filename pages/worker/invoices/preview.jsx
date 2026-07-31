@@ -425,7 +425,7 @@ export default function InvoicePreviewPage() {
   const paymentTablePages = useMemo(() => {
     // Continuation pages only contain payment tables and a footer, so use the
     // remaining A4 space instead of reserving room for another document header.
-    const usableHeight = 850;
+    const usableHeight = 970;
     const firstPageTableKeys = new Set(firstPagePaymentTables.map((table) => `${table.method}_${table.part}`));
     const remainingTableParts = paymentTableParts.filter((table) => !firstPageTableKeys.has(`${table.method}_${table.part}`));
 
