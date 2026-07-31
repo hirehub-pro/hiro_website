@@ -383,6 +383,59 @@ export default function InvoicePreviewPage() {
 
     return Array.from(groups.values());
   }, [copy.paymentType, payments]);
+  const paymentTableParts = useMemo(() => {
+    const tableChromeHeight = 104;
+    const paymentRowHeight = 32;
+    const maxRowsPerTable = 19;
+    return receiptPaymentGroups.flatMap((group) => {
+      const parts = [];
+      for (let start = 0; start < group.payments.length; start += maxRowsPerTable) {
+        parts.push({
+          ...group,
+          payments: group.payments.slice(start, start + maxRowsPerTable),
+          part: start / maxRowsPerTable,
+          height: tableChromeHeight + (Math.min(maxRowsPerTable, group.payments.length - start) * paymentRowHeight) + 16,
+        });
+      }
+      return parts;
+    });
+  }, [receiptPaymentGroups]);
+
+  // Use spare room on the final invoice page before creating continuation pages.
+  // The estimate deliberately leaves room for the total panel and footer.
+  const firstPagePaymentCapacity = Math.max(
+    0,
+    (isReceipt ? 260 : 190) - (Math.min(lineItems.length, FINAL_INVOICE_PAGE_ITEM_LIMIT) * 26)
+  );
+  const firstPagePaymentTables = useMemo(() => {
+    const tables = [];
+    let usedHeight = 0;
+    for (const tablePart of paymentTableParts) {
+      if (usedHeight + tablePart.height > firstPagePaymentCapacity) break;
+      tables.push(tablePart);
+      usedHeight += tablePart.height;
+    }
+    return tables;
+  }, [firstPagePaymentCapacity, paymentTableParts]);
+
+  // Keep each payment table intact where possible, and fill each A4
+  // continuation page before starting the next one.
+  const paymentTablePages = useMemo(() => {
+    const usableHeight = 720;
+    const firstPageTableKeys = new Set(firstPagePaymentTables.map((table) => `${table.method}_${table.part}`));
+    const remainingTableParts = paymentTableParts.filter((table) => !firstPageTableKeys.has(`${table.method}_${table.part}`));
+
+    return remainingTableParts.reduce((pages, tablePart) => {
+      const currentPage = pages[pages.length - 1];
+      if (!currentPage || currentPage.height + tablePart.height > usableHeight) {
+        pages.push({ height: tablePart.height, tables: [tablePart] });
+      } else {
+        currentPage.height += tablePart.height;
+        currentPage.tables.push(tablePart);
+      }
+      return pages;
+    }, []);
+  }, [firstPagePaymentTables, paymentTableParts]);
   const subtotal = useMemo(() => Number(invoice?.subtotal) || 0, [invoice?.subtotal]);
   const subtotalBeforeDiscount = useMemo(() => Number(invoice?.subtotalBeforeDiscount ?? invoice?.subtotal) || 0, [invoice?.subtotal, invoice?.subtotalBeforeDiscount]);
   const invoiceDiscountAmount = useMemo(() => Number(invoice?.discountAmount) || 0, [invoice?.discountAmount]);
@@ -896,11 +949,41 @@ export default function InvoicePreviewPage() {
 
   const backHref = openedFromSaved ? '/worker/invoices/saved' : '/worker/invoices';
   const invoiceItemPages = shouldUseStoredPdf ? [] : buildInvoiceItemPages(lineItems);
-  const invoicePreviewPageCount = shouldUseStoredPdf ? 1 : invoiceItemPages.length;
+  const invoicePreviewPageCount = shouldUseStoredPdf ? 1 : invoiceItemPages.length + (isPaymentReceipt ? paymentTablePages.length : 0);
   const previewShellHeight = (
     (INVOICE_PREVIEW_HEIGHT * invoicePreviewPageCount)
     + (INVOICE_PREVIEW_PAGE_GAP * Math.max(invoicePreviewPageCount - 1, 0))
   ) * previewScale;
+
+  const renderPaymentTable = (group) => (
+    <section key={`${group.method}_${group.part ?? 0}`} className="overflow-hidden rounded-[8px] border border-[#d7dee8]">
+      <div className="bg-[#eaf4ff] px-4 py-2 text-right text-sm font-bold text-[#1454b2]">
+        {`${copy.paymentType}: ${group.method}`}
+      </div>
+      <table className="w-full table-fixed border-collapse text-right text-[12px] leading-4 text-[#40434d]">
+        <thead className="bg-[#f7fbff] text-[11px] font-bold text-[#536170]">
+          <tr>
+            <th className="border-b border-[#d7dee8] px-3 py-2">{copy.paymentDate}</th>
+            <th className="border-b border-[#d7dee8] px-3 py-2">{copy.paymentAmount}</th>
+            {group.hasBankTransfer ? <><th className="border-b border-[#d7dee8] px-3 py-2">{copy.bankName}</th><th className="border-b border-[#d7dee8] px-3 py-2">{copy.branch}</th><th className="border-b border-[#d7dee8] px-3 py-2">{copy.accountNumber}</th></> : null}
+            {group.hasCheck ? <th className="border-b border-[#d7dee8] px-3 py-2">{copy.checkNumber}</th> : null}
+            <th className="border-b border-[#d7dee8] px-3 py-2">{copy.extraDetails}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {group.payments.map((payment) => (
+            <tr key={payment.id}>
+              <td className="border-b border-[#e6edf7] px-3 py-2">{formatFooterDueDate(payment.date)}</td>
+              <td className="border-b border-[#e6edf7] px-3 py-2 font-semibold">{formatCurrency(payment.amount, locale)}</td>
+              {group.hasBankTransfer ? <><td className="border-b border-[#e6edf7] px-3 py-2">{payment.bankName || '-'}</td><td className="border-b border-[#e6edf7] px-3 py-2">{payment.branch || '-'}</td><td className="border-b border-[#e6edf7] px-3 py-2">{payment.accountNumber || '-'}</td></> : null}
+              {group.hasCheck ? <td className="border-b border-[#e6edf7] px-3 py-2">{payment.checkNumber || '-'}</td> : null}
+              <td className="border-b border-[#e6edf7] px-3 py-2">{payment.details || '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
 
   return (
     <>
@@ -954,7 +1037,8 @@ export default function InvoicePreviewPage() {
                 </div>
               </div>
             ) : (
-            invoiceItemPages.map((page, pageIndex) => {
+            <>
+            {invoiceItemPages.map((page, pageIndex) => {
               const isFirstPage = pageIndex === 0;
               const isFinalPage = pageIndex === invoiceItemPages.length - 1;
 
@@ -1015,7 +1099,7 @@ export default function InvoicePreviewPage() {
                   )}
 
                   {!isReceipt ? (
-                  <div className={`${isFirstPage ? 'mt-[37px]' : 'mt-8'} overflow-hidden rounded-[2px] border border-[#d7dee8]`} dir="ltr">
+                  <div className={`${isFirstPage ? 'mt-[37px]' : 'mt-8'} shrink-0 overflow-hidden rounded-[2px] border border-[#d7dee8]`} dir="ltr">
                     <div className="grid grid-cols-[1fr_80px_133px_133px] bg-[#2c92e5] text-center text-base leading-5 text-white">
                       <div className="border-white/20 px-2 py-2 sm:border-r sm:px-3" dir="rtl">{copy.description}</div>
                       <div className="border-white/20 px-2 py-2 sm:border-r sm:px-3" dir="rtl">{copy.quantity}</div>
@@ -1041,59 +1125,12 @@ export default function InvoicePreviewPage() {
                   </div>
                   ) : null}
 
-                  {isPaymentReceipt && isFinalPage && receiptPaymentGroups.length > 0 ? (
-                    <div className="mt-6 space-y-4" dir="rtl">
-                      <h3 className="text-right text-base font-bold text-[#26313b]">{copy.paymentMethods}</h3>
-                      {receiptPaymentGroups.map((group) => (
-                        <section key={group.method} className="overflow-hidden rounded-[8px] border border-[#d7dee8]">
-                          <div className="bg-[#eaf4ff] px-4 py-2 text-right text-sm font-bold text-[#1454b2]">
-                            {`${copy.paymentType}: ${group.method}`}
-                          </div>
-                          <table className="w-full table-fixed border-collapse text-right text-[12px] leading-4 text-[#40434d]">
-                            <thead className="bg-[#f7fbff] text-[11px] font-bold text-[#536170]">
-                              <tr>
-                                <th className="border-b border-[#d7dee8] px-3 py-2">{copy.paymentDate}</th>
-                                <th className="border-b border-[#d7dee8] px-3 py-2">{copy.paymentAmount}</th>
-                                {group.hasBankTransfer ? (
-                                  <>
-                                    <th className="border-b border-[#d7dee8] px-3 py-2">{copy.bankName}</th>
-                                    <th className="border-b border-[#d7dee8] px-3 py-2">{copy.branch}</th>
-                                    <th className="border-b border-[#d7dee8] px-3 py-2">{copy.accountNumber}</th>
-                                  </>
-                                ) : null}
-                                {group.hasCheck ? <th className="border-b border-[#d7dee8] px-3 py-2">{copy.checkNumber}</th> : null}
-                                <th className="border-b border-[#d7dee8] px-3 py-2">{copy.extraDetails}</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {group.payments.map((payment) => (
-                                <tr key={payment.id}>
-                                  <td className="border-b border-[#e6edf7] px-3 py-2">{formatFooterDueDate(payment.date)}</td>
-                                  <td className="border-b border-[#e6edf7] px-3 py-2 font-semibold">{formatCurrency(payment.amount, locale)}</td>
-                                  {group.hasBankTransfer ? (
-                                    <>
-                                      <td className="border-b border-[#e6edf7] px-3 py-2">{payment.bankName || '-'}</td>
-                                      <td className="border-b border-[#e6edf7] px-3 py-2">{payment.branch || '-'}</td>
-                                      <td className="border-b border-[#e6edf7] px-3 py-2">{payment.accountNumber || '-'}</td>
-                                    </>
-                                  ) : null}
-                                  {group.hasCheck ? <td className="border-b border-[#e6edf7] px-3 py-2">{payment.checkNumber || '-'}</td> : null}
-                                  <td className="border-b border-[#e6edf7] px-3 py-2">{payment.details || '-'}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </section>
-                      ))}
-                    </div>
-                  ) : null}
-
                   {isFinalPage ? (
                     <div className="mt-6 flex justify-end" dir="ltr">
                       <div className="w-[347px]" dir="rtl">
                         <div className="rounded-[13px] border border-[#abd1f2] bg-[#dcebfa] p-[19px] text-[#0f172a]">
                           <div className="space-y-1 text-[15px] leading-[18px]">
-                            {!isPaymentReceipt ? (
+                            {!isReceipt ? (
                             <>
                               <div className="flex items-center justify-between gap-4">
                                 <span>{formatCurrency(subtotalBeforeDiscount, locale)}</span>
@@ -1123,7 +1160,7 @@ export default function InvoicePreviewPage() {
                                 <span>{isReceipt ? copy.receiptPaidTotal : copy.total}</span>
                               </div>
                             </div>
-                            {!isReceipt ? (
+                            {!isPaymentReceipt ? (
                               <div className="mt-2 flex items-center justify-between gap-4 text-[15px] leading-[18px] text-[#536170]">
                                 <span>{copy.paymentDueDate || copy.dueDate || ''}</span>
                                 <span>{formatFooterDueDate(invoice.dueDate || invoice.issueDate)}</span>
@@ -1138,6 +1175,13 @@ export default function InvoicePreviewPage() {
                           </div>
                         ) : null}
                       </div>
+                    </div>
+                  ) : null}
+
+                  {isFinalPage && isPaymentReceipt && firstPagePaymentTables.length > 0 ? (
+                    <div className="mt-5 shrink-0 space-y-4" dir="rtl">
+                      <h3 className="text-right text-base font-bold text-[#26313b]">{copy.paymentMethods}</h3>
+                      {firstPagePaymentTables.map(renderPaymentTable)}
                     </div>
                   ) : null}
 
@@ -1178,7 +1222,20 @@ export default function InvoicePreviewPage() {
                   </footer>
                 </div>
               );
-            })
+            })}
+            {isPaymentReceipt ? paymentTablePages.map((page, pageIndex) => (
+              <div key={`payment_page_${pageIndex}`} className="invoice-preview-page relative flex h-[1123px] flex-col rounded-[2px] bg-white px-[57px] py-[57px] shadow-[0_14px_40px_rgba(15,23,42,0.35)] print:h-[297mm] print:break-after-page print:rounded-none print:shadow-none" dir="rtl">
+                <div className="rounded-2xl bg-[#dcebfa] px-[21px] py-4 text-right">
+                  <h2 className="text-[30px] font-light leading-[36px] text-[#1454b2]">{docTypeLabel}</h2>
+                  <p className="mt-2 text-base text-[#3f4d5f]">{`${copy.documentNo}: ${invoice.invoiceNumber || '-'}`}</p>
+                </div>
+                <div className="mt-8 shrink-0 space-y-4">
+                  <h3 className="mb-4 text-right text-base font-bold text-[#26313b]">{copy.paymentMethods}</h3>
+                  {page.tables.map(renderPaymentTable)}
+                </div>
+              </div>
+            )) : null}
+            </>
             )}
             </section>
           </div>
