@@ -423,9 +423,9 @@ export default function InvoicePreviewPage() {
   // Keep each payment table intact where possible, and fill each A4
   // continuation page before starting the next one.
   const paymentTablePages = useMemo(() => {
-    // The continuation-page header and footer leave roughly 800px for tables.
-    // Keep a small safety buffer, but do not open a new A4 page prematurely.
-    const usableHeight = 800;
+    // Continuation pages only contain payment tables and a footer, so use the
+    // remaining A4 space instead of reserving room for another document header.
+    const usableHeight = 850;
     const firstPageTableKeys = new Set(firstPagePaymentTables.map((table) => `${table.method}_${table.part}`));
     const remainingTableParts = paymentTableParts.filter((table) => !firstPageTableKeys.has(`${table.method}_${table.part}`));
 
@@ -1239,10 +1239,7 @@ export default function InvoicePreviewPage() {
             })}
             {isPaymentReceipt ? paymentTablePages.map((page, pageIndex) => (
               <div key={`payment_page_${pageIndex}`} className="invoice-preview-page relative flex h-[1123px] flex-col rounded-[2px] bg-white px-[57px] py-[57px] shadow-[0_14px_40px_rgba(15,23,42,0.35)] print:h-[297mm] print:break-after-page print:rounded-none print:shadow-none" dir="rtl">
-                <div className="rounded-2xl bg-[#dcebfa] px-[21px] py-4 text-right">
-                  <h2 className="whitespace-nowrap text-[30px] font-light leading-[36px] text-[#1454b2]">{documentHeaderLabel}</h2>
-                </div>
-                <div className="mt-8 shrink-0 space-y-4">
+                <div className="shrink-0 space-y-4">
                   <h3 className="mb-4 text-right text-base font-bold text-[#26313b]">{copy.paymentMethods}</h3>
                   {page.tables.map(renderPaymentTable)}
                 </div>
