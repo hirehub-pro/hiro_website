@@ -285,6 +285,8 @@ export default function InvoicePreviewPage() {
               ? copy.workOrderDoc
           : copy.receiptDoc
   );
+  const documentNumberWord = locale === 'he' ? 'מספר' : locale === 'ar' ? 'رقم' : 'Number';
+  const documentHeaderLabel = `${docTypeLabel} ${documentNumberWord} ${invoice?.invoiceNumber || '-'}`;
 
   useEffect(() => {
     if (!loading && !user) {
@@ -1051,10 +1053,9 @@ export default function InvoicePreviewPage() {
                   {isFirstPage ? (
                     <>
                       <div className="rounded-2xl bg-[#dcebfa] px-[21px] py-4 text-left">
-                        <h2 className="text-[37px] font-light leading-[42px] text-[#1454b2]">{docTypeLabel}</h2>
+                        <h2 className="whitespace-nowrap text-[37px] font-light leading-[42px] text-[#1454b2]">{documentHeaderLabel}</h2>
                         <p className="mt-1 text-[21px] font-light leading-[25px] text-[#485a71]">{copy.originalCopy}</p>
                         <div className="mt-3 leading-[21px] text-[#3f4d5f]">
-                          <p className="text-[19px]">{`${copy.documentNo}: ${invoice.invoiceNumber}`}</p>
                           {allocationNumber ? <p>{`${copy.taxAuthorityAllocationNumber}: ${allocationNumber}`}</p> : null}
                           <p className="text-base">{`${copy.issueDate}: ${invoice.issueDate}`}</p>
                         </div>
@@ -1091,9 +1092,8 @@ export default function InvoicePreviewPage() {
                     </>
                   ) : (
                     <div className="rounded-2xl bg-[#dcebfa] px-[21px] py-4 text-left">
-                      <h2 className="text-[30px] font-light leading-[36px] text-[#1454b2]">{docTypeLabel}</h2>
+                      <h2 className="whitespace-nowrap text-[30px] font-light leading-[36px] text-[#1454b2]">{documentHeaderLabel}</h2>
                       <div className="mt-2 flex items-center justify-between gap-6 text-[16px] leading-5 text-[#3f4d5f]" dir="rtl">
-                        <span>{`${copy.documentNo}: ${invoice.invoiceNumber || '-'}`}</span>
                         <span>{invoice.clientName || copy.emptyClient}</span>
                       </div>
                     </div>
@@ -1169,10 +1169,12 @@ export default function InvoicePreviewPage() {
                             ) : null}
                           </div>
                         </div>
-                        {invoiceNotes ? (
+                        {invoiceNotes && !isPaymentReceipt ? (
                           <div className="mt-3 text-right text-[13px] leading-5 text-[#3f4d5f]">
                             <p className="font-semibold text-[#26313b]">{copy.notes}</p>
-                            <p className="mt-1 whitespace-pre-line">{invoiceNotes}</p>
+                            <div className="mt-1 min-h-[46px] rounded-[8px] border border-[#d7dee8] bg-white px-3 py-2">
+                              <p className="whitespace-pre-line">{invoiceNotes}</p>
+                            </div>
                           </div>
                         ) : null}
                       </div>
@@ -1183,6 +1185,15 @@ export default function InvoicePreviewPage() {
                     <div className="mt-5 shrink-0 space-y-4" dir="rtl">
                       <h3 className="text-right text-base font-bold text-[#26313b]">{copy.paymentMethods}</h3>
                       {firstPagePaymentTables.map(renderPaymentTable)}
+                    </div>
+                  ) : null}
+
+                  {isFinalPage && isPaymentReceipt && paymentTablePages.length === 0 && invoiceNotes ? (
+                    <div className="mt-4 shrink-0 text-right text-[13px] leading-5 text-[#3f4d5f]" dir="rtl">
+                      <p className="font-semibold text-[#26313b]">{copy.notes}</p>
+                      <div className="mt-1 min-h-[46px] rounded-[8px] border border-[#d7dee8] bg-white px-3 py-2">
+                        <p className="whitespace-pre-line">{invoiceNotes}</p>
+                      </div>
                     </div>
                   ) : null}
 
@@ -1227,13 +1238,20 @@ export default function InvoicePreviewPage() {
             {isPaymentReceipt ? paymentTablePages.map((page, pageIndex) => (
               <div key={`payment_page_${pageIndex}`} className="invoice-preview-page relative flex h-[1123px] flex-col rounded-[2px] bg-white px-[57px] py-[57px] shadow-[0_14px_40px_rgba(15,23,42,0.35)] print:h-[297mm] print:break-after-page print:rounded-none print:shadow-none" dir="rtl">
                 <div className="rounded-2xl bg-[#dcebfa] px-[21px] py-4 text-right">
-                  <h2 className="text-[30px] font-light leading-[36px] text-[#1454b2]">{docTypeLabel}</h2>
-                  <p className="mt-2 text-base text-[#3f4d5f]">{`${copy.documentNo}: ${invoice.invoiceNumber || '-'}`}</p>
+                  <h2 className="whitespace-nowrap text-[30px] font-light leading-[36px] text-[#1454b2]">{documentHeaderLabel}</h2>
                 </div>
                 <div className="mt-8 shrink-0 space-y-4">
                   <h3 className="mb-4 text-right text-base font-bold text-[#26313b]">{copy.paymentMethods}</h3>
                   {page.tables.map(renderPaymentTable)}
                 </div>
+                {pageIndex === paymentTablePages.length - 1 && invoiceNotes ? (
+                  <div className="mt-4 shrink-0 text-right text-[13px] leading-5 text-[#3f4d5f]">
+                    <p className="font-semibold text-[#26313b]">{copy.notes}</p>
+                    <div className="mt-1 min-h-[46px] rounded-[8px] border border-[#d7dee8] bg-white px-3 py-2">
+                      <p className="whitespace-pre-line">{invoiceNotes}</p>
+                    </div>
+                  </div>
+                ) : null}
                 <footer className="invoice-footer mt-auto shrink-0 px-[11px] pt-8 text-[#26313b]" dir="rtl">
                   {pageIndex === paymentTablePages.length - 1 && canRequestSignature ? (
                     <div className="mb-6 flex items-center justify-center gap-4 text-[13px] leading-4">
