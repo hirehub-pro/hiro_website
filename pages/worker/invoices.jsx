@@ -260,6 +260,13 @@ export default function WorkerInvoicesPage() {
     copy.withholdingTax,
     copy.check,
   ]), [copy.bankTransfer, copy.bit, copy.card, copy.cash, copy.check, copy.otherPaymentMethod, copy.paybox, copy.withholdingTax]);
+  const cardTypeOptions = useMemo(() => ([
+    copy.diners,
+    copy.mastercard,
+    copy.visa,
+    copy.americanExpress,
+    copy.isracard,
+  ]), [copy.americanExpress, copy.diners, copy.isracard, copy.mastercard, copy.visa]);
   const effectiveDealerType = dealerType || profileDealerType;
   const isExemptDealer = effectiveDealerType === 'exempt';
   const documentTypeOptions = useMemo(() => ([
@@ -1525,14 +1532,19 @@ export default function WorkerInvoicesPage() {
                           <div className="mt-4 rounded-[24px] border border-slate-100 bg-white/80 p-4">
                             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_170px_150px]">
                               <label className={floatingFieldClass(payment.cardName)}>
-                                <span className="floating-field__label">{copy.cardName}</span>
-                                <input
-                                  value={payment.cardName}
-                                  onChange={(event) => updatePayment(payment.id, 'cardName', event.target.value)}
-                                  placeholder=" "
-                                  aria-label={copy.cardName}
-                                  className="input-field"
-                                />
+                                <div className="relative">
+                                  <span className="floating-field__label">{copy.cardName}</span>
+                                  <select
+                                    value={payment.cardName}
+                                    onChange={(event) => updatePayment(payment.id, 'cardName', event.target.value)}
+                                    aria-label={copy.cardName}
+                                    className="input-field appearance-none pr-10 rtl:pr-4 rtl:pl-10"
+                                  >
+                                    <option value="" disabled>{copy.selectCardType}</option>
+                                    {cardTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                                  </select>
+                                  <FiChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 rtl:right-auto rtl:left-3" />
+                                </div>
                               </label>
                               <label className={floatingFieldClass(payment.cardNumber)}>
                                 <span className="floating-field__label">{copy.cardNumber}</span>
