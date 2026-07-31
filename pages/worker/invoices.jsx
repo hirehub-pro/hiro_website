@@ -63,6 +63,10 @@ function buildPayment(index, type, currency) {
     bankName: '',
     branch: '',
     accountNumber: '',
+    cardName: '',
+    cardNumber: '',
+    cardExpiration: '',
+    numberOfPayments: 1,
   };
 }
 
@@ -1284,6 +1288,7 @@ export default function WorkerInvoicesPage() {
                 <div className="space-y-4">
                   {payments.map((payment, index) => {
                     const showBankFields = showPaymentType && payment.type === copy.bankTransfer;
+                    const showCardFields = showPaymentType && payment.type === copy.card;
                     const isExpanded = expandedPaymentId === payment.id;
                     const filteredBankOptions = bankOptions.filter((option) => (
                       option.toLocaleLowerCase().includes(String(payment.bankName || '').toLocaleLowerCase())
@@ -1510,6 +1515,76 @@ export default function WorkerInvoicesPage() {
                                   aria-label={copy.accountNumber}
                                   inputMode="numeric"
                                   pattern="[0-9]*"
+                                  className="input-field"
+                                />
+                              </label>
+                            </div>
+                          </div>
+                        ) : null}
+                        {showCardFields ? (
+                          <div className="mt-4 rounded-[24px] border border-slate-100 bg-white/80 p-4">
+                            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_170px_150px]">
+                              <label className={floatingFieldClass(payment.cardName)}>
+                                <span className="floating-field__label">{copy.cardName}</span>
+                                <input
+                                  value={payment.cardName}
+                                  onChange={(event) => updatePayment(payment.id, 'cardName', event.target.value)}
+                                  placeholder=" "
+                                  aria-label={copy.cardName}
+                                  className="input-field"
+                                />
+                              </label>
+                              <label className={floatingFieldClass(payment.cardNumber)}>
+                                <span className="floating-field__label">{copy.cardNumber}</span>
+                                <input
+                                  value={payment.cardNumber}
+                                  onChange={(event) => updatePayment(payment.id, 'cardNumber', event.target.value.replace(/\D/g, ''))}
+                                  placeholder=" "
+                                  aria-label={copy.cardNumber}
+                                  inputMode="numeric"
+                                  pattern="[0-9]*"
+                                  className="input-field"
+                                />
+                              </label>
+                              <label className={floatingFieldClass(payment.cardExpiration)}>
+                                <span className="floating-field__label">{copy.cardExpiration}</span>
+                                <input
+                                  type="text"
+                                  value={payment.cardExpiration}
+                                  onChange={(event) => {
+                                    let digits = event.target.value.replace(/\D/g, '').slice(0, 4);
+                                    if (digits.length === 1 && Number(digits) >= 2) {
+                                      digits = `0${digits}`;
+                                    }
+                                    if (digits.length >= 2 && (Number(digits.slice(0, 2)) < 1 || Number(digits.slice(0, 2)) > 12)) {
+                                      digits = digits[0] === '1' && Number(digits[1]) >= 3
+                                        ? `01${digits.slice(1)}`.slice(0, 4)
+                                        : digits.slice(0, 1);
+                                    }
+                                    const value = digits.length >= 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits;
+                                    updatePayment(payment.id, 'cardExpiration', value);
+                                  }}
+                                  aria-label={copy.cardExpiration}
+                                  inputMode="numeric"
+                                  maxLength={5}
+                                  className="input-field"
+                                />
+                              </label>
+                              <label className={floatingFieldClass(payment.numberOfPayments)}>
+                                <span className="floating-field__label">{copy.numberOfPayments}</span>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  step="1"
+                                  value={payment.numberOfPayments ?? 1}
+                                  onChange={(event) => {
+                                    const value = Number(event.target.value);
+                                    updatePayment(payment.id, 'numberOfPayments', Number.isFinite(value) && value >= 1 ? value : 1);
+                                  }}
+                                  onBlur={(event) => {
+                                    if (Number(event.target.value) < 1) updatePayment(payment.id, 'numberOfPayments', 1);
+                                  }}
+                                  aria-label={copy.numberOfPayments}
                                   className="input-field"
                                 />
                               </label>
