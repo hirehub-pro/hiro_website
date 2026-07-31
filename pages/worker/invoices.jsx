@@ -312,6 +312,7 @@ export default function WorkerInvoicesPage() {
   const [expandedPaymentId, setExpandedPaymentId] = useState(defaultPayments[0]?.id || null);
   const [openBankOptionsFor, setOpenBankOptionsFor] = useState(null);
   const [openBranchOptionsFor, setOpenBranchOptionsFor] = useState(null);
+  const [openCardOptionsFor, setOpenCardOptionsFor] = useState(null);
   const [bankBranchesById, setBankBranchesById] = useState({});
   const restoredDraftForUserRef = useRef('');
   const promptedCounterTypesRef = useRef({});
@@ -1290,7 +1291,7 @@ export default function WorkerInvoicesPage() {
               ) : null}
 
               {showPaymentDetails ? (
-              <Panel className={openBankOptionsFor || openBranchOptionsFor ? 'relative z-30' : 'relative z-0'}>
+              <Panel className={openBankOptionsFor || openBranchOptionsFor || openCardOptionsFor ? 'relative z-30' : 'relative z-0'}>
                 <SectionTitle eyebrow={copy.paymentDetails} title={copy.paymentDetails} subtitle={copy.paymentDetailsSubtitle} />
                 <div className="space-y-4">
                   {payments.map((payment, index) => {
@@ -1531,19 +1532,41 @@ export default function WorkerInvoicesPage() {
                         {showCardFields ? (
                           <div className="mt-4 rounded-[24px] border border-slate-100 bg-white/80 p-4">
                             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_170px_150px]">
-                              <label className={floatingFieldClass(payment.cardName)}>
+                              <label className={floatingFieldClass(payment.cardName || copy.selectCardType)}>
                                 <div className="relative">
                                   <span className="floating-field__label">{copy.cardName}</span>
-                                  <select
-                                    value={payment.cardName}
-                                    onChange={(event) => updatePayment(payment.id, 'cardName', event.target.value)}
+                                  <button
+                                    type="button"
+                                    onClick={() => setOpenCardOptionsFor((current) => current === payment.id ? null : payment.id)}
+                                    onBlur={() => setOpenCardOptionsFor(null)}
                                     aria-label={copy.cardName}
-                                    className="input-field appearance-none pr-10 rtl:pr-4 rtl:pl-10"
+                                    aria-haspopup="listbox"
+                                    aria-expanded={openCardOptionsFor === payment.id}
+                                    className="input-field flex items-center justify-between gap-3 text-left rtl:text-right"
                                   >
-                                    <option value="" disabled>{copy.selectCardType}</option>
-                                    {cardTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                                  </select>
-                                  <FiChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 rtl:right-auto rtl:left-3" />
+                                    <span className={payment.cardName ? 'text-slate-800' : 'text-slate-400'}>{payment.cardName || copy.selectCardType}</span>
+                                    <FiChevronDown className={clsx('h-4 w-4 shrink-0 text-gray-400 transition-transform', openCardOptionsFor === payment.id && 'rotate-180')} />
+                                  </button>
+                                  {openCardOptionsFor === payment.id ? (
+                                    <div className="absolute z-20 mt-2 max-h-56 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white py-1 shadow-lg" role="listbox" aria-label={copy.cardName}>
+                                      {cardTypeOptions.map((option) => (
+                                        <button
+                                          key={option}
+                                          type="button"
+                                          role="option"
+                                          aria-selected={payment.cardName === option}
+                                          onMouseDown={(event) => event.preventDefault()}
+                                          onClick={() => {
+                                            updatePayment(payment.id, 'cardName', option);
+                                            setOpenCardOptionsFor(null);
+                                          }}
+                                          className="block w-full px-4 py-2 text-left text-sm font-medium text-slate-800 transition-colors hover:bg-sky-50 focus:bg-sky-50 focus:outline-none rtl:text-right"
+                                        >
+                                          {option}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  ) : null}
                                 </div>
                               </label>
                               <label className={floatingFieldClass(payment.cardNumber)}>
