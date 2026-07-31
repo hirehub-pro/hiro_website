@@ -423,7 +423,9 @@ export default function InvoicePreviewPage() {
   // Keep each payment table intact where possible, and fill each A4
   // continuation page before starting the next one.
   const paymentTablePages = useMemo(() => {
-    const usableHeight = 720;
+    // The continuation-page header and footer leave roughly 800px for tables.
+    // Keep a small safety buffer, but do not open a new A4 page prematurely.
+    const usableHeight = 800;
     const firstPageTableKeys = new Set(firstPagePaymentTables.map((table) => `${table.method}_${table.part}`));
     const remainingTableParts = paymentTableParts.filter((table) => !firstPageTableKeys.has(`${table.method}_${table.part}`));
 
