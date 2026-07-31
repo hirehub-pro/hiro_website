@@ -1043,6 +1043,7 @@ export default function InvoicePreviewPage() {
 
                   {isPaymentReceipt && isFinalPage && receiptPaymentGroups.length > 0 ? (
                     <div className="mt-6 space-y-4" dir="rtl">
+                      <h3 className="text-right text-base font-bold text-[#26313b]">{copy.paymentMethods}</h3>
                       {receiptPaymentGroups.map((group) => (
                         <section key={group.method} className="overflow-hidden rounded-[8px] border border-[#d7dee8]">
                           <div className="bg-[#eaf4ff] px-4 py-2 text-right text-sm font-bold text-[#1454b2]">
