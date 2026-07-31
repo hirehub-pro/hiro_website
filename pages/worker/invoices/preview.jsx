@@ -268,6 +268,7 @@ export default function InvoicePreviewPage() {
   const shouldUseStoredPdf = openedFromSaved && Boolean(savedInvoiceUrl);
   const docType = normalizePreviewDocType(invoice?.documentType || invoice?.docType);
   const isReceipt = docType === 'receipt';
+  const isPaymentReceipt = isReceipt || docType === 'invoice_receipt';
   const canRequestTaxAllocation = docType === 'invoice' || docType === 'invoice_receipt';
   const canRequestSignature = docType === 'quote' || docType === 'work_order';
   const allocationNumber = taxAllocation?.confirmationNumber || invoice?.allocationNumber || invoice?.taxAuthorityAllocationNumber || '';
@@ -1040,7 +1041,7 @@ export default function InvoicePreviewPage() {
                   </div>
                   ) : null}
 
-                  {isReceipt && isFinalPage && receiptPaymentGroups.length > 0 ? (
+                  {isPaymentReceipt && isFinalPage && receiptPaymentGroups.length > 0 ? (
                     <div className="mt-6 space-y-4" dir="rtl">
                       {receiptPaymentGroups.map((group) => (
                         <section key={group.method} className="overflow-hidden rounded-[8px] border border-[#d7dee8]">
@@ -1091,7 +1092,7 @@ export default function InvoicePreviewPage() {
                       <div className="w-[347px]" dir="rtl">
                         <div className="rounded-[13px] border border-[#abd1f2] bg-[#dcebfa] p-[19px] text-[#0f172a]">
                           <div className="space-y-1 text-[15px] leading-[18px]">
-                            {!isReceipt ? (
+                            {!isPaymentReceipt ? (
                             <>
                               <div className="flex items-center justify-between gap-4">
                                 <span>{formatCurrency(subtotalBeforeDiscount, locale)}</span>
