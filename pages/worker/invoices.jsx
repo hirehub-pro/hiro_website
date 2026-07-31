@@ -63,6 +63,7 @@ function buildPayment(index, type, currency) {
     bankName: '',
     branch: '',
     accountNumber: '',
+    checkNumber: '',
     cardName: '',
     cardNumber: '',
     cardExpiration: '',
@@ -1295,7 +1296,8 @@ export default function WorkerInvoicesPage() {
                 <SectionTitle eyebrow={copy.paymentDetails} title={copy.paymentDetails} subtitle={copy.paymentDetailsSubtitle} />
                 <div className="space-y-4">
                   {payments.map((payment, index) => {
-                    const showBankFields = showPaymentType && payment.type === copy.bankTransfer;
+                    const showBankFields = showPaymentType && (payment.type === copy.bankTransfer || payment.type === copy.check);
+                    const showCheckNumber = payment.type === copy.check;
                     const showCardFields = showPaymentType && payment.type === copy.card;
                     const isExpanded = expandedPaymentId === payment.id;
                     const filteredBankOptions = bankOptions.filter((option) => (
@@ -1407,8 +1409,8 @@ export default function WorkerInvoicesPage() {
 
                         {showBankFields ? (
                           <div className="mt-4 rounded-[24px] border border-slate-100 bg-white/80 p-4">
-                            <div className="grid gap-4 lg:grid-cols-3">
-                              <label className={floatingFieldClass(payment.bankName, 'lg:col-span-3 xl:col-span-1')}>
+                            <div className="grid gap-4 lg:grid-cols-4">
+                              <label className={floatingFieldClass(payment.bankName)}>
                                 <div className="relative">
                                   <span className="floating-field__label">{copy.bankName}</span>
                                   <input
@@ -1526,6 +1528,20 @@ export default function WorkerInvoicesPage() {
                                   className="input-field"
                                 />
                               </label>
+                              {showCheckNumber ? (
+                                <label className={floatingFieldClass(payment.checkNumber)}>
+                                  <span className="floating-field__label">{copy.checkNumber}</span>
+                                  <input
+                                    value={payment.checkNumber}
+                                    onChange={(event) => updatePayment(payment.id, 'checkNumber', event.target.value.replace(/\D/g, ''))}
+                                    placeholder=" "
+                                    aria-label={copy.checkNumber}
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    className="input-field"
+                                  />
+                                </label>
+                              ) : null}
                             </div>
                           </div>
                         ) : null}

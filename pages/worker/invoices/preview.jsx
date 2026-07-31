@@ -108,6 +108,14 @@ function isBankTransferPayment(payment) {
     || method.includes('تحويل');
 }
 
+function isCheckPayment(payment) {
+  const method = String(payment?.type || '').trim().toLocaleLowerCase();
+  return Boolean(payment?.checkNumber)
+    || method.includes('check')
+    || method.includes('צ׳ק')
+    || method.includes('شيك');
+}
+
 function buildInvoiceItemPages(items) {
   const normalizedItems = Array.isArray(items) ? items : [];
   if (normalizedItems.length <= SINGLE_INVOICE_PAGE_ITEM_LIMIT) {
@@ -364,11 +372,12 @@ export default function InvoicePreviewPage() {
       const method = String(payment?.type || '').trim() || copy.paymentType;
       const key = method.toLocaleLowerCase();
       if (!groups.has(key)) {
-        groups.set(key, { method, payments: [], hasBankTransfer: false });
+        groups.set(key, { method, payments: [], hasBankTransfer: false, hasCheck: false });
       }
       const group = groups.get(key);
       group.payments.push({ ...payment, id: payment?.id || `${key}_${index}` });
       group.hasBankTransfer = group.hasBankTransfer || isBankTransferPayment(payment);
+      group.hasCheck = group.hasCheck || isCheckPayment(payment);
     });
 
     return Array.from(groups.values());
@@ -1050,6 +1059,7 @@ export default function InvoicePreviewPage() {
                                     <th className="border-b border-[#d7dee8] px-3 py-2">{copy.accountNumber}</th>
                                   </>
                                 ) : null}
+                                {group.hasCheck ? <th className="border-b border-[#d7dee8] px-3 py-2">{copy.checkNumber}</th> : null}
                                 <th className="border-b border-[#d7dee8] px-3 py-2">{copy.extraDetails}</th>
                               </tr>
                             </thead>
@@ -1065,6 +1075,7 @@ export default function InvoicePreviewPage() {
                                       <td className="border-b border-[#e6edf7] px-3 py-2">{payment.accountNumber || '-'}</td>
                                     </>
                                   ) : null}
+                                  {group.hasCheck ? <td className="border-b border-[#e6edf7] px-3 py-2">{payment.checkNumber || '-'}</td> : null}
                                   <td className="border-b border-[#e6edf7] px-3 py-2">{payment.details || '-'}</td>
                                 </tr>
                               ))}
