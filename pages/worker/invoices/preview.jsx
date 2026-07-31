@@ -1041,6 +1041,7 @@ export default function InvoicePreviewPage() {
             {invoiceItemPages.map((page, pageIndex) => {
               const isFirstPage = pageIndex === 0;
               const isFinalPage = pageIndex === invoiceItemPages.length - 1;
+              const isDocumentFinalPage = isFinalPage && paymentTablePages.length === 0;
 
               return (
                 <div
@@ -1186,7 +1187,7 @@ export default function InvoicePreviewPage() {
                   ) : null}
 
                   <footer className="invoice-footer mt-auto shrink-0 px-[11px] pt-8 text-[#26313b]" dir="rtl">
-                    {isFinalPage && canRequestSignature ? (
+                    {isDocumentFinalPage && canRequestSignature ? (
                       <div className="mb-6 flex items-center justify-center gap-4 text-[13px] leading-4">
                         <span>חתימה:</span>
                         <span className="block h-[1px] w-[307px] bg-[#26313b]" />
@@ -1196,7 +1197,7 @@ export default function InvoicePreviewPage() {
                     <div className="border-t border-[#26313b] pt-[13px]">
                       <div className="grid grid-cols-2 items-start gap-6">
                         <div className="text-right">
-                          {isFinalPage ? (
+                          {isDocumentFinalPage ? (
                             <>
                               <p className="text-[21px] font-normal leading-6 text-black">חתימה דיגיטלית מאובטחת</p>
                               <div className="mt-[7px] flex w-full items-center justify-start gap-1.5 text-right text-[11px] leading-4">
@@ -1215,7 +1216,7 @@ export default function InvoicePreviewPage() {
                         </div>
                         <div className="self-end text-left text-[11px] leading-4 text-[#26313b]">
                           <p>{`הופק ב ${formatFooterGeneratedAt(generatedAt)} | ${docTypeLabel} ${invoice.invoiceNumber || '-'}`}</p>
-                          <p className="text-[13px] leading-5">{`${pageIndex + 1} / ${invoiceItemPages.length}`}</p>
+                          <p className="text-[13px] leading-5">{`${pageIndex + 1} / ${invoicePreviewPageCount}`}</p>
                         </div>
                       </div>
                     </div>
@@ -1233,6 +1234,34 @@ export default function InvoicePreviewPage() {
                   <h3 className="mb-4 text-right text-base font-bold text-[#26313b]">{copy.paymentMethods}</h3>
                   {page.tables.map(renderPaymentTable)}
                 </div>
+                <footer className="invoice-footer mt-auto shrink-0 px-[11px] pt-8 text-[#26313b]" dir="rtl">
+                  {pageIndex === paymentTablePages.length - 1 && canRequestSignature ? (
+                    <div className="mb-6 flex items-center justify-center gap-4 text-[13px] leading-4">
+                      <span>חתימה:</span>
+                      <span className="block h-[1px] w-[307px] bg-[#26313b]" />
+                    </div>
+                  ) : null}
+                  <div className="border-t border-[#26313b] pt-[13px]">
+                    <div className="grid grid-cols-2 items-start gap-6">
+                      <div className="text-right">
+                        {pageIndex === paymentTablePages.length - 1 ? (
+                          <>
+                            <p className="text-[21px] font-normal leading-6 text-black">חתימה דיגיטלית מאובטחת</p>
+                            <div className="mt-[7px] flex w-full items-center justify-start gap-1.5 text-right text-[11px] leading-4">
+                              <p>מסמך ממוחשב הופק על ידי הירו</p>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src="/web-app-manifest-192x192.png" alt="" aria-hidden="true" className="h-5 w-5 shrink-0 rounded-[4px]" />
+                            </div>
+                          </>
+                        ) : null}
+                      </div>
+                      <div className="self-end text-left text-[11px] leading-4 text-[#26313b]">
+                        <p>{`הופק ב ${formatFooterGeneratedAt(generatedAt)} | ${docTypeLabel} ${invoice.invoiceNumber || '-'}`}</p>
+                        <p className="text-[13px] leading-5">{`${invoiceItemPages.length + pageIndex + 1} / ${invoicePreviewPageCount}`}</p>
+                      </div>
+                    </div>
+                  </div>
+                </footer>
               </div>
             )) : null}
             </>
