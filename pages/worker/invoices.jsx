@@ -1406,7 +1406,13 @@ export default function WorkerInvoicesPage() {
                                       setOpenBankOptionsFor(payment.id);
                                     }}
                                     onFocus={() => setOpenBankOptionsFor(payment.id)}
-                                    onBlur={() => setOpenBankOptionsFor(null)}
+                                    onBlur={() => {
+                                      if (!bankOptions.includes(payment.bankName)) {
+                                        updatePayment(payment.id, 'bankName', '');
+                                        updatePayment(payment.id, 'branch', '');
+                                      }
+                                      setOpenBankOptionsFor(null);
+                                    }}
                                     onKeyDown={(event) => {
                                       if (event.key === 'Escape') setOpenBankOptionsFor(null);
                                     }}
@@ -1453,7 +1459,12 @@ export default function WorkerInvoicesPage() {
                                       setOpenBranchOptionsFor(payment.id);
                                     }}
                                     onFocus={() => setOpenBranchOptionsFor(payment.id)}
-                                    onBlur={() => setOpenBranchOptionsFor(null)}
+                                    onBlur={() => {
+                                      if (!branchOptions.includes(payment.branch)) {
+                                        updatePayment(payment.id, 'branch', '');
+                                      }
+                                      setOpenBranchOptionsFor(null);
+                                    }}
                                     onKeyDown={(event) => {
                                       if (event.key === 'Escape') setOpenBranchOptionsFor(null);
                                     }}
@@ -1494,9 +1505,11 @@ export default function WorkerInvoicesPage() {
                                 <span className="floating-field__label">{copy.accountNumber}</span>
                                 <input
                                   value={payment.accountNumber}
-                                  onChange={(event) => updatePayment(payment.id, 'accountNumber', event.target.value)}
+                                  onChange={(event) => updatePayment(payment.id, 'accountNumber', event.target.value.replace(/\D/g, ''))}
                                   placeholder=" "
                                   aria-label={copy.accountNumber}
+                                  inputMode="numeric"
+                                  pattern="[0-9]*"
                                   className="input-field"
                                 />
                               </label>
