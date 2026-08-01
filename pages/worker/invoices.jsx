@@ -204,6 +204,8 @@ function documentTypeConfig(value) {
     case 'invoice_receipt':
     case 'tax_invoice_receipt':
       return { showDueDate: false, showPaymentDetails: true, showPaymentType: true };
+    case 'transaction_account':
+      return { showDueDate: true, showPaymentDetails: false, showPaymentType: false };
     case 'credit_note':
       return { showDueDate: false, showPaymentDetails: false, showPaymentType: false };
     default:
@@ -276,12 +278,13 @@ export default function WorkerInvoicesPage() {
     { value: 'receipt', label: copy.receiptDoc },
     { value: 'invoice', label: copy.taxInvoiceDoc },
     { value: 'invoice_receipt', label: copy.taxInvoiceReceiptDoc },
+    { value: 'transaction_account', label: copy.transactionAccountDoc },
     { value: 'credit_note', label: copy.creditNoteDoc },
   ].filter((option) => {
     if (!dealerTypeLoaded && isTaxInvoiceDocumentType(option.value)) return false;
     if (isExemptDealer && isTaxInvoiceDocumentType(option.value)) return false;
     return true;
-  })), [copy.creditNoteDoc, copy.quoteDoc, copy.receiptDoc, copy.taxInvoiceDoc, copy.taxInvoiceReceiptDoc, copy.workOrderDoc, dealerTypeLoaded, isExemptDealer]);
+  })), [copy.creditNoteDoc, copy.quoteDoc, copy.receiptDoc, copy.taxInvoiceDoc, copy.taxInvoiceReceiptDoc, copy.transactionAccountDoc, copy.workOrderDoc, dealerTypeLoaded, isExemptDealer]);
   const defaultLineItems = useMemo(
     () => [buildLineItem(0, copy.defaultLineDescription, 'ILS')],
     [copy.defaultLineDescription]

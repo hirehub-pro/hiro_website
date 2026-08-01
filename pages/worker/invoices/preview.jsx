@@ -69,6 +69,7 @@ function businessRegistrationLabel(dealerType) {
 function getPdfFilePrefix(docType) {
   if (docType === 'quote') return 'quote';
   if (docType === 'work_order') return 'work_order';
+  if (docType === 'transaction_account') return 'transaction_account';
   return 'invoice';
 }
 
@@ -290,8 +291,10 @@ export default function InvoicePreviewPage() {
           ? copy.creditNoteDoc
           : docType === 'quote'
             ? copy.quoteDoc
-            : docType === 'work_order'
-              ? copy.workOrderDoc
+          : docType === 'work_order'
+            ? copy.workOrderDoc
+            : docType === 'transaction_account'
+              ? copy.transactionAccountDoc
           : copy.receiptDoc
   );
   const documentNumberWord = locale === 'he' ? 'מספר' : locale === 'ar' ? 'رقم' : 'Number';
