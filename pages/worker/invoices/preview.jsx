@@ -116,6 +116,15 @@ function isCheckPayment(payment) {
     || method.includes('شيك');
 }
 
+function isCreditCardPayment(payment) {
+  const method = String(payment?.type || '').trim().toLocaleLowerCase();
+  return Boolean(payment?.cardName || payment?.cardNumber || payment?.cardExpiration)
+    || method.includes('creditcard')
+    || method.includes('credit card')
+    || method.includes('כרטיס')
+    || method.includes('بطاقة');
+}
+
 function buildInvoiceItemPages(items) {
   const normalizedItems = Array.isArray(items) ? items : [];
   if (normalizedItems.length <= SINGLE_INVOICE_PAGE_ITEM_LIMIT) {
@@ -375,12 +384,13 @@ export default function InvoicePreviewPage() {
       const method = String(payment?.type || '').trim() || copy.paymentType;
       const key = method.toLocaleLowerCase();
       if (!groups.has(key)) {
-        groups.set(key, { method, payments: [], hasBankTransfer: false, hasCheck: false });
+        groups.set(key, { method, payments: [], hasBankTransfer: false, hasCheck: false, hasCreditCard: false });
       }
       const group = groups.get(key);
       group.payments.push({ ...payment, id: payment?.id || `${key}_${index}` });
       group.hasBankTransfer = group.hasBankTransfer || isBankTransferPayment(payment);
       group.hasCheck = group.hasCheck || isCheckPayment(payment);
+      group.hasCreditCard = group.hasCreditCard || isCreditCardPayment(payment);
     });
 
     return Array.from(groups.values());
@@ -971,6 +981,7 @@ export default function InvoicePreviewPage() {
             <th className="border-b border-[#d7dee8] px-3 py-2">{copy.paymentAmount}</th>
             {group.hasBankTransfer ? <><th className="border-b border-[#d7dee8] px-3 py-2">{copy.bankName}</th><th className="border-b border-[#d7dee8] px-3 py-2">{copy.branch}</th><th className="border-b border-[#d7dee8] px-3 py-2">{copy.accountNumber}</th></> : null}
             {group.hasCheck ? <th className="border-b border-[#d7dee8] px-3 py-2">{copy.checkNumber}</th> : null}
+            {group.hasCreditCard ? <><th className="border-b border-[#d7dee8] px-3 py-2">{copy.cardName}</th><th className="border-b border-[#d7dee8] px-3 py-2">{copy.cardNumber}</th><th className="border-b border-[#d7dee8] px-3 py-2">{copy.cardExpiration}</th><th className="border-b border-[#d7dee8] px-3 py-2">{copy.numberOfPayments}</th></> : null}
             <th className="border-b border-[#d7dee8] px-3 py-2">{copy.extraDetails}</th>
           </tr>
         </thead>
@@ -981,6 +992,7 @@ export default function InvoicePreviewPage() {
               <td className="border-b border-[#e6edf7] px-3 py-2 font-semibold">{formatCurrency(payment.amount, locale)}</td>
               {group.hasBankTransfer ? <><td className="border-b border-[#e6edf7] px-3 py-2">{payment.bankName || '-'}</td><td className="border-b border-[#e6edf7] px-3 py-2">{payment.branch || '-'}</td><td className="border-b border-[#e6edf7] px-3 py-2">{payment.accountNumber || '-'}</td></> : null}
               {group.hasCheck ? <td className="border-b border-[#e6edf7] px-3 py-2">{payment.checkNumber || '-'}</td> : null}
+              {group.hasCreditCard ? <><td className="border-b border-[#e6edf7] px-3 py-2">{payment.cardName || '-'}</td><td className="border-b border-[#e6edf7] px-3 py-2">{payment.cardNumber || '-'}</td><td className="border-b border-[#e6edf7] px-3 py-2">{payment.cardExpiration || '-'}</td><td className="border-b border-[#e6edf7] px-3 py-2">{payment.numberOfPayments || 1}</td></> : null}
               <td className="border-b border-[#e6edf7] px-3 py-2">{payment.details || '-'}</td>
             </tr>
           ))}
