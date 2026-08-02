@@ -199,6 +199,7 @@ export default function SavedInvoicesPage() {
         || (selectedType === 'invoice' && normalizedType === 'invoice')
         || (selectedType === 'receipt' && normalizedType === 'receipt')
         || (selectedType === 'invoice_receipt' && normalizedType === 'invoice_receipt')
+        || (selectedType === 'transaction_account' && normalizedType === 'transaction_account')
         || (selectedType === 'credit_note' && normalizedType === 'credit_note')
         || (selectedType === 'quote' && normalizedType === 'quote')
         || (selectedType === 'work_order' && normalizedType === 'work_order');
@@ -253,6 +254,7 @@ export default function SavedInvoicesPage() {
     { key: 'invoice', label: copy.taxInvoiceDoc },
     { key: 'receipt', label: copy.receiptDoc },
     { key: 'invoice_receipt', label: copy.taxInvoiceReceiptDoc },
+    { key: 'transaction_account', label: copy.transactionAccountDoc },
     { key: 'credit_note', label: copy.creditNoteDoc },
     { key: 'quote', label: copy.quoteDoc },
     { key: 'work_order', label: copy.workOrderDoc },
@@ -335,6 +337,8 @@ export default function SavedInvoicesPage() {
                   ? copy.taxInvoiceDoc
                   : normalizedType === 'invoice_receipt'
                     ? copy.taxInvoiceReceiptDoc
+                    : normalizedType === 'transaction_account'
+                      ? copy.transactionAccountDoc
                     : normalizedType === 'credit_note'
                       ? copy.creditNoteDoc
                       : normalizedType === 'quote'
