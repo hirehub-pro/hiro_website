@@ -1249,6 +1249,12 @@ export default function ProfilePage({
                 {t.invoices.savedButton}
               </Link>
               <Link
+                href="/worker/clients"
+                className="shrink-0 rounded-2xl bg-violet-50 px-4 py-2.5 text-sm font-semibold text-violet-700 transition-colors hover:bg-violet-100"
+              >
+                {t.invoices.clientsButton}
+              </Link>
+              <Link
                 href="/worker/dashboard"
                 className="shrink-0 rounded-2xl bg-primary-50 px-4 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary-100"
               >

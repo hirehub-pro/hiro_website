@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, where } from 'firebase/firestore';
 import {
   FiCalendar,
   FiCheckCircle,
@@ -108,6 +108,14 @@ function normalizeNineDigitInput(value) {
   return String(value || '').replace(/\D/g, '').slice(0, 9);
 }
 
+function normalizeExternalClientNumber(value) {
+  return String(value || '').replace(/\D/g, '').slice(0, 10);
+}
+
+function createExternalClientNumber() {
+  return String(Math.floor(100000000 + Math.random() * 900000000));
+}
+
 function getBankCode(value) {
   const normalizedValue = String(value || '').trim();
   const leadingCode = normalizedValue.match(/^(\d+)\s*-/);
@@ -130,6 +138,27 @@ function hasFieldValue(value) {
 
 function floatingFieldClass(value, extraClassName = '') {
   return clsx('floating-field', hasFieldValue(value) && 'is-filled', extraClassName);
+}
+
+function normalizeSavedClient(clientDoc) {
+  const data = clientDoc.data() || {};
+  const name = String(data.name || data.clientName || data.fullName || '').trim();
+  const primaryEmail = Array.isArray(data.emails)
+    ? data.emails.find((email) => String(email || '').trim())
+    : '';
+  const primaryPhone = Array.isArray(data.phones)
+    ? data.phones.find((phone) => String(phone || '').trim())
+    : '';
+
+  return {
+    id: clientDoc.id,
+    name,
+    clientId: normalizeNineDigitInput(data.taxId || data.clientId || data.clientTaxId || data.businessId || ''),
+    email: String(primaryEmail || data.email || data.clientEmail || '').trim(),
+    phone: String(primaryPhone || data.phone || data.clientPhone || data.optionalPhone || '').trim(),
+    city: String(data.address || data.city || data.clientCity || data.town || data.clientAddress || '').trim(),
+    uid: String(data.uid || data.clientUid || '').trim(),
+  };
 }
 
 function normalizeLineItem(item, fallbackIndex = 0) {
@@ -303,6 +332,12 @@ export default function WorkerInvoicesPage() {
   const [clientPhone, setClientPhone] = useState('');
   const [clientCity, setClientCity] = useState('');
   const [clientUid, setClientUid] = useState('');
+  const [savedClients, setSavedClients] = useState([]);
+  const [clientSuggestionsOpen, setClientSuggestionsOpen] = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState('');
+  const [addClientOpen, setAddClientOpen] = useState(false);
+  const [savingClient, setSavingClient] = useState(false);
+  const [newClient, setNewClient] = useState({ name: '', clientId: '', email: '', phone: '', city: '', externalAccountingClientNumber: '' });
   const [documentType, setDocumentType] = useState('receipt');
   const [documentDescription, setDocumentDescription] = useState('');
   const [vatRate, setVatRate] = useState(18);
@@ -514,6 +549,36 @@ export default function WorkerInvoicesPage() {
   }, [dealerTypeLoaded, documentType, isExemptDealer]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function loadSavedClients() {
+      if (!user?.uid) return;
+
+      try {
+        const clientSnapshot = await getDocs(collection(db, 'users', user.uid, 'clients'));
+        if (!cancelled) {
+          setSavedClients(clientSnapshot.docs.map(normalizeSavedClient).filter((client) => client.name));
+        }
+      } catch (error) {
+        if (!cancelled) setSavedClients([]);
+      }
+    }
+
+    loadSavedClients();
+    return () => { cancelled = true; };
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!router.isReady || router.query.addClient !== '1') return;
+
+    setNewClient((current) => ({
+      ...current,
+      externalAccountingClientNumber: current.externalAccountingClientNumber || createExternalClientNumber(),
+    }));
+    setAddClientOpen(true);
+  }, [router.isReady, router.query.addClient]);
+
+  useEffect(() => {
     if (typeof window === 'undefined' || !user) return;
 
     const storageKey = getInvoiceClientPrefillStorageKey(user.uid);
@@ -530,10 +595,11 @@ export default function WorkerInvoicesPage() {
 
     const rawClientUid = typeof parsedPrefill?.clientUid === 'string' ? parsedPrefill.clientUid : '';
     const rawClientName = typeof parsedPrefill?.clientName === 'string' ? parsedPrefill.clientName : '';
+    const rawClientId = typeof parsedPrefill?.clientId === 'string' ? parsedPrefill.clientId : '';
     const rawClientEmail = typeof parsedPrefill?.clientEmail === 'string' ? parsedPrefill.clientEmail : '';
     const rawClientPhone = typeof parsedPrefill?.clientPhone === 'string' ? parsedPrefill.clientPhone : '';
     const rawClientCity = typeof parsedPrefill?.clientCity === 'string' ? parsedPrefill.clientCity : '';
-    const prefillKey = [rawClientUid, rawClientName, rawClientEmail, rawClientPhone, rawClientCity].join('|');
+    const prefillKey = [rawClientUid, rawClientName, rawClientId, rawClientEmail, rawClientPhone, rawClientCity].join('|');
 
     if (!prefillKey.trim() || appliedClientPrefillRef.current === prefillKey) {
       return;
@@ -564,7 +630,7 @@ export default function WorkerInvoicesPage() {
 
       setClientName(clientProfile?.name || rawClientName || '');
       setClientUid(rawClientUid);
-      setClientId(normalizeNineDigitInput(clientBusinessId || ''));
+      setClientId(normalizeNineDigitInput(clientBusinessId || rawClientId || ''));
       setClientEmail(clientProfile?.email || rawClientEmail || '');
       setClientPhone(clientProfile?.phone || clientProfile?.optionalPhone || rawClientPhone || '');
       setClientCity(clientProfile?.town || clientProfile?.city || rawClientCity || '');
@@ -578,6 +644,128 @@ export default function WorkerInvoicesPage() {
       cancelled = true;
     };
   }, [user]);
+
+  const matchingClients = useMemo(() => {
+    const query = clientName.trim().toLocaleLowerCase();
+    if (!query) return [];
+
+    return savedClients
+      .filter((client) => client.name.toLocaleLowerCase().includes(query))
+      .slice(0, 6);
+  }, [clientName, savedClients]);
+
+  function handleClientNameChange(value) {
+    setClientName(value);
+    setSelectedClientId('');
+    setClientUid('');
+    setClientId('');
+    setClientEmail('');
+    setClientPhone('');
+    setClientCity('');
+    setClientSuggestionsOpen(true);
+  }
+
+  function selectSavedClient(client) {
+    setClientName(client.name);
+    setSelectedClientId(client.id);
+    setClientUid(client.uid);
+    setClientId(client.clientId);
+    setClientEmail(client.email);
+    setClientPhone(client.phone);
+    setClientCity(client.city);
+    setClientSuggestionsOpen(false);
+  }
+
+  function clearUnselectedClient() {
+    if (selectedClientId) {
+      setClientSuggestionsOpen(false);
+      return;
+    }
+
+    setClientName('');
+    setClientSuggestionsOpen(false);
+  }
+
+  function closeAddClientDialog() {
+    if (savingClient) return;
+    setAddClientOpen(false);
+    setNewClient({ name: '', clientId: '', email: '', phone: '', city: '', externalAccountingClientNumber: '' });
+  }
+
+  async function saveNewClient(event) {
+    event.preventDefault();
+    if (!user?.uid || savingClient) return;
+
+    const name = newClient.name.trim();
+    if (!name) {
+      toast.error(copy.clientNameRequired);
+      return;
+    }
+
+    const externalAccountingClientNumber = normalizeExternalClientNumber(newClient.externalAccountingClientNumber);
+    if (!externalAccountingClientNumber) {
+      toast.error(copy.externalAccountingClientNumberRequired);
+      return;
+    }
+
+    const clientData = {
+      name,
+      nameLowercase: name.toLocaleLowerCase(),
+      taxId: normalizeNineDigitInput(newClient.clientId),
+      email: newClient.email.trim(),
+      phone: newClient.phone.trim(),
+      address: newClient.city.trim(),
+      externalClientNumber: externalAccountingClientNumber,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    try {
+      setSavingClient(true);
+      const clientsRef = collection(db, 'users', user.uid, 'clients');
+      const existingClientSnapshot = await getDocs(query(
+        clientsRef,
+        where('externalClientNumber', '==', externalAccountingClientNumber)
+      ));
+      if (!existingClientSnapshot.empty) {
+        toast.error(copy.externalAccountingClientNumberInUse);
+        return;
+      }
+
+      const clientRef = doc(clientsRef);
+      const numberRegistryRef = doc(db, 'users', user.uid, 'clientNumbers', externalAccountingClientNumber);
+      await runTransaction(db, async (transaction) => {
+        const registrySnapshot = await transaction.get(numberRegistryRef);
+        if (registrySnapshot.exists()) throw new Error('external-client-number-in-use');
+
+        transaction.set(clientRef, clientData);
+        transaction.set(numberRegistryRef, {
+          clientId: clientRef.id,
+          createdAt: serverTimestamp(),
+        });
+      });
+      const selectedClient = {
+        id: clientRef.id,
+        name,
+        clientId: clientData.taxId,
+        email: clientData.email,
+        phone: clientData.phone,
+        city: clientData.address,
+        uid: '',
+      };
+      setSavedClients((current) => [...current, selectedClient]);
+      selectSavedClient(selectedClient);
+      setAddClientOpen(false);
+      setNewClient({ name: '', clientId: '', email: '', phone: '', city: '', externalAccountingClientNumber: '' });
+      toast.success(copy.clientAdded);
+    } catch (error) {
+      toast.error(error?.message === 'external-client-number-in-use'
+        ? copy.externalAccountingClientNumberInUse
+        : copy.clientAddFailed);
+    } finally {
+      setSavingClient(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -1018,11 +1206,62 @@ export default function WorkerInvoicesPage() {
                       <FiUser className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 rtl:left-auto rtl:right-4" />
                       <input
                         value={clientName}
-                        onChange={(event) => setClientName(event.target.value)}
+                        onChange={(event) => handleClientNameChange(event.target.value)}
+                        onFocus={() => {
+                          if (!selectedClientId) setClientSuggestionsOpen(true);
+                        }}
+                        onBlur={clearUnselectedClient}
                         placeholder=" "
                         aria-label={copy.clientName}
+                        role="combobox"
+                        aria-autocomplete="list"
+                        aria-controls="invoice-client-suggestions"
+                        aria-expanded={clientSuggestionsOpen && matchingClients.length > 0}
                         className="input-field pl-12 rtl:pl-4 rtl:pr-12"
                       />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewClient((current) => ({
+                            ...current,
+                            externalAccountingClientNumber: current.externalAccountingClientNumber || createExternalClientNumber(),
+                          }));
+                          setAddClientOpen(true);
+                        }}
+                        aria-label={copy.addClient}
+                        className="absolute right-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-xl font-semibold leading-none text-primary transition-colors hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary/30 rtl:right-auto rtl:left-3"
+                      >
+                        +
+                      </button>
+                      {clientSuggestionsOpen && matchingClients.length > 0 ? (
+                        <div
+                          id="invoice-client-suggestions"
+                          role="listbox"
+                          className="absolute inset-x-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl"
+                        >
+                          {matchingClients.map((client) => (
+                            <button
+                              key={client.id}
+                              type="button"
+                              role="option"
+                              aria-selected={false}
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => selectSavedClient(client)}
+                              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-start transition-colors hover:bg-primary/5 focus:bg-primary/5 focus:outline-none"
+                            >
+                              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-extrabold text-primary">
+                                {client.name.slice(0, 1).toUpperCase()}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-bold text-slate-800">{client.name}</span>
+                                {client.email || client.phone || client.city ? (
+                                  <span className="block truncate text-xs font-medium text-slate-500">{[client.email, client.phone, client.city].filter(Boolean).join(' · ')}</span>
+                                ) : null}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                   </label>
                   <label className={floatingFieldClass(clientId, 'floating-field--icon')}>
@@ -1037,7 +1276,8 @@ export default function WorkerInvoicesPage() {
                         inputMode="numeric"
                         pattern="0|[0-9]{9}"
                         maxLength={9}
-                        className="input-field pl-12 rtl:pl-4 rtl:pr-12"
+                        disabled
+                        className="input-field cursor-not-allowed bg-slate-100 pl-12 text-slate-500 rtl:pl-4 rtl:pr-12"
                       />
                     </div>
                   </label>
@@ -1049,7 +1289,8 @@ export default function WorkerInvoicesPage() {
                       onChange={(event) => setClientEmail(event.target.value)}
                       placeholder=" "
                       aria-label={copy.clientEmail}
-                      className="input-field"
+                      disabled
+                      className="input-field cursor-not-allowed bg-slate-100 text-slate-500"
                     />
                   </label>
                   <label className={floatingFieldClass(clientPhone)}>
@@ -1059,7 +1300,8 @@ export default function WorkerInvoicesPage() {
                       onChange={(event) => setClientPhone(event.target.value)}
                       placeholder=" "
                       aria-label={copy.clientPhone}
-                      className="input-field"
+                      disabled
+                      className="input-field cursor-not-allowed bg-slate-100 text-slate-500"
                     />
                   </label>
                   <label className={floatingFieldClass(clientCity, 'md:col-span-2')}>
@@ -1069,7 +1311,8 @@ export default function WorkerInvoicesPage() {
                       onChange={(event) => setClientCity(event.target.value)}
                       placeholder=" "
                       aria-label={copy.city}
-                      className="input-field"
+                      disabled
+                      className="input-field cursor-not-allowed bg-slate-100 text-slate-500"
                     />
                   </label>
                 </div>
@@ -1756,6 +1999,53 @@ export default function WorkerInvoicesPage() {
           </div>
         </div>
       </main>
+
+      {addClientOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end bg-slate-950/35 p-0 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="add-client-title">
+          <form onSubmit={saveNewClient} className="w-full rounded-t-[28px] bg-white p-5 shadow-2xl sm:max-w-lg sm:rounded-[28px] sm:p-7">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-primary/65">{copy.clientsTitle}</p>
+                <h2 id="add-client-title" className="mt-1 text-2xl font-extrabold tracking-tight text-slate-950">{copy.addClient}</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-500">{copy.addClientSubtitle}</p>
+              </div>
+              <button type="button" onClick={closeAddClientDialog} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xl text-slate-500 transition hover:bg-slate-200" aria-label={t.common.cancel}>×</button>
+            </div>
+
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <label className="sm:col-span-2">
+                <span className="mb-1.5 block text-sm font-bold text-slate-700">{requiredPlaceholder(copy.clientName)}</span>
+                <input autoFocus required value={newClient.name} onChange={(event) => setNewClient((current) => ({ ...current, name: event.target.value }))} className="input-field" />
+              </label>
+              <label>
+                <span className="mb-1.5 block text-sm font-bold text-slate-700">{copy.clientId}</span>
+                <input value={newClient.clientId} onChange={(event) => setNewClient((current) => ({ ...current, clientId: normalizeNineDigitInput(event.target.value) }))} inputMode="numeric" maxLength={9} className="input-field" />
+              </label>
+              <label>
+                <span className="mb-1.5 block text-sm font-bold text-slate-700">{copy.clientPhone}</span>
+                <input value={newClient.phone} onChange={(event) => setNewClient((current) => ({ ...current, phone: event.target.value }))} className="input-field" />
+              </label>
+              <label className="sm:col-span-2">
+                <span className="mb-1.5 block text-sm font-bold text-slate-700">{copy.clientEmail}</span>
+                <input type="email" value={newClient.email} onChange={(event) => setNewClient((current) => ({ ...current, email: event.target.value }))} className="input-field" />
+              </label>
+              <label className="sm:col-span-2">
+                <span className="mb-1.5 block text-sm font-bold text-slate-700">{copy.city}</span>
+                <input value={newClient.city} onChange={(event) => setNewClient((current) => ({ ...current, city: event.target.value }))} className="input-field" />
+              </label>
+              <label className="sm:col-span-2">
+                <span className="mb-1.5 block text-sm font-bold text-slate-700">{requiredPlaceholder(copy.externalAccountingClientNumber)}</span>
+                <input required value={newClient.externalAccountingClientNumber} onChange={(event) => setNewClient((current) => ({ ...current, externalAccountingClientNumber: normalizeExternalClientNumber(event.target.value) }))} inputMode="numeric" minLength={1} maxLength={10} className="input-field bg-[#eef0ff]" />
+              </label>
+            </div>
+
+            <div className="mt-7 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button type="button" onClick={closeAddClientDialog} disabled={savingClient} className="btn-ghost justify-center">{t.common.cancel}</button>
+              <button type="submit" disabled={savingClient} className="btn-primary justify-center disabled:cursor-wait disabled:opacity-70">{savingClient ? t.common.loading : copy.saveClient}</button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </>
   );
 }
