@@ -13,6 +13,7 @@ import { storage } from '../../../lib/firebase';
 import { createDocumentSigningLink } from '../../../lib/documentSigning';
 import { getAllocationNumberMinAmountBeforeVat, saveUserInvoice } from '../../../lib/firestore';
 import { formatCurrency, getInvoicePreviewStorageKey } from '../../../lib/invoices';
+import { completeInvoiceSave } from '../../../lib/invoice-save-workflow.mjs';
 import {
   createTaxAuthorityAuthorizationUrl,
   getTaxAuthorityConnectionStatus,
@@ -273,6 +274,7 @@ export default function InvoicePreviewPage() {
   const [signingLinkLoading, setSigningLinkLoading] = useState(false);
   const [previewScale, setPreviewScale] = useState(1);
   const invoiceContentRef = useRef(null);
+  const saveInFlightRef = useRef(false);
   const savedInvoiceUrl = invoice?.savedInvoiceUrl || '';
   const savedInvoiceFileName = invoice?.savedFileName || `${invoice?.invoiceNumber || 'invoice'}.pdf`;
   const shouldUseStoredPdf = openedFromSaved && Boolean(savedInvoiceUrl);
@@ -326,8 +328,8 @@ export default function InvoicePreviewPage() {
   }, [user]);
 
   useEffect(() => {
-    setIsSaved(openedFromSaved);
-  }, [openedFromSaved]);
+    setIsSaved(openedFromSaved || Boolean(invoice?.savedInvoiceUrl && invoice?.invoiceDocId));
+  }, [invoice?.invoiceDocId, invoice?.savedInvoiceUrl, openedFromSaved]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -517,42 +519,6 @@ export default function InvoicePreviewPage() {
     });
   }
 
-  async function refreshSavedInvoicePdf(nextInvoice) {
-    if (!user?.uid || !nextInvoice || !invoiceContentRef.current) return nextInvoice;
-
-    await waitForPaint();
-
-    const createdAtMs = Date.now();
-    const fileName = nextInvoice.savedFileName || `invoice_${user.uid}_${createdAtMs}.pdf`;
-    const storagePath = nextInvoice.savedStoragePath || `invoices/${user.uid}/${fileName}`;
-    const pdfBlob = await buildInvoicePdfBlob(invoiceContentRef.current);
-    const uploadedSnapshot = await uploadBytes(
-      storageRef(storage, storagePath),
-      pdfBlob,
-      { contentType: 'application/pdf' }
-    );
-    const url = await getDownloadURL(uploadedSnapshot.ref);
-    const refreshedInvoice = {
-      ...nextInvoice,
-      savedFileName: fileName,
-      savedInvoiceUrl: url,
-      savedStoragePath: storagePath,
-    };
-
-    await saveUserInvoice(user.uid, {
-      ...refreshedInvoice,
-      docType,
-      savedFileName: fileName,
-      savedInvoiceUrl: url,
-      savedStoragePath: storagePath,
-    });
-
-    setInvoice(refreshedInvoice);
-    window.localStorage.setItem(getInvoicePreviewStorageKey(user.uid), JSON.stringify(refreshedInvoice));
-
-    return refreshedInvoice;
-  }
-
   async function handleConnectTaxAuthority() {
     if (taxActionLoading) return;
 
@@ -621,36 +587,6 @@ export default function InvoicePreviewPage() {
     };
   }
 
-  async function requestAllocationForInvoice(savedInvoice) {
-    const allocation = await requestTaxInvoiceAllocation(buildTaxAuthorityInvoicePayload(savedInvoice));
-    const nextInvoice = invoice ? {
-      ...invoice,
-      ...(savedInvoice || {}),
-      taxAuthorityAllocation: allocation,
-      allocationNumber: allocation.confirmationNumber || '',
-      taxAuthorityAllocationNumber: allocation.confirmationNumber || '',
-    } : null;
-
-    setTaxAllocation(allocation);
-    setInvoice((current) => (current ? {
-      ...current,
-      ...(savedInvoice || {}),
-      taxAuthorityAllocation: allocation,
-      allocationNumber: allocation.confirmationNumber || '',
-      taxAuthorityAllocationNumber: allocation.confirmationNumber || '',
-    } : current));
-
-    if (nextInvoice && typeof window !== 'undefined') {
-      window.localStorage.setItem(getInvoicePreviewStorageKey(user.uid), JSON.stringify(nextInvoice));
-    }
-
-    if (!shouldUseStoredPdf && nextInvoice) {
-      await refreshSavedInvoicePdf(nextInvoice);
-    }
-
-    return nextInvoice;
-  }
-
   async function shouldAttemptAllocation() {
     const customerVatNumber = String(invoice?.clientId || '').replace(/\D/g, '');
     const hasCustomerVatNumber = Boolean(customerVatNumber) && customerVatNumber !== '0';
@@ -668,40 +604,75 @@ export default function InvoicePreviewPage() {
     };
   }
 
-  async function saveInvoiceWithAllocation({ continueWithoutAllocation = false } = {}) {
+  async function saveInvoiceWithAllocation() {
     if (!user?.uid || !invoice || shouldUseStoredPdf) return;
 
     const allocationCheck = await shouldAttemptAllocation();
-    if (!allocationCheck.shouldAttempt || continueWithoutAllocation) {
+    if (!allocationCheck.shouldAttempt) {
       await saveInvoiceRecord();
       toast.success(copy.savedInvoiceStored);
       return;
     }
 
-    let savedInvoice = null;
-
-    try {
+    if (allocationCheck.shouldAttempt) {
       const latestStatus = taxStatus?.connected ? taxStatus : await getTaxAuthorityConnectionStatus();
       setTaxStatus(latestStatus);
       if (!latestStatus?.connected) {
         setAllocationConnectionPrompt(allocationCheck);
         return;
       }
-
-      savedInvoice = await saveInvoiceRecord();
-      await requestAllocationForInvoice(savedInvoice);
-      toast.success('Tax Authority allocation number received.');
-    } catch (error) {
-      toast.error(error?.message || t.common.error);
-      if (savedInvoice) {
-        toast.success(copy.savedInvoiceStored);
-      }
     }
+
+    if (!invoiceContentRef.current) {
+      throw new Error('Missing invoice preview content');
+    }
+
+    const createdAtMs = Date.now();
+    const fileName = `${getPdfFilePrefix(docType)}_${user.uid}_${createdAtMs}.pdf`;
+    const storagePath = `invoices/${user.uid}/${fileName}`;
+    const nextInvoice = await completeInvoiceSave({
+      invoice: { ...invoice, docType },
+      requiresAllocation: allocationCheck.shouldAttempt,
+      requestAllocation: async (currentInvoice) => {
+        const payload = buildTaxAuthorityInvoicePayload(currentInvoice);
+        // Omitting the top-level invoiceDocId prevents the allocation callable
+        // from creating the final invoice document before its PDF is ready.
+        const { invoiceDocId: omittedInvoiceDocId, ...allocationPayload } = payload;
+        void omittedInvoiceDocId;
+        return requestTaxInvoiceAllocation(allocationPayload);
+      },
+      renderAllocation: async (allocatedInvoice, allocation) => {
+        setTaxAllocation(allocation);
+        setInvoice(allocatedInvoice);
+        await waitForPaint();
+      },
+      generatePdf: () => buildInvoicePdfBlob(invoiceContentRef.current),
+      uploadPdf: ({ pdfBlob, storagePath: targetPath }) => uploadBytes(
+        storageRef(storage, targetPath),
+        pdfBlob,
+        { contentType: 'application/pdf' }
+      ),
+      getDownloadUrl: (uploadedSnapshot) => getDownloadURL(uploadedSnapshot.ref),
+      persistInvoice: (payload) => saveUserInvoice(user.uid, payload),
+      fileName,
+      storagePath,
+    });
+
+    setInvoice(nextInvoice);
+    setIsSaved(true);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(getInvoicePreviewStorageKey(user.uid), JSON.stringify(nextInvoice));
+    }
+    if (allocationCheck.shouldAttempt) {
+      toast.success('Tax Authority allocation number received.');
+    }
+    toast.success(copy.savedInvoiceStored);
   }
 
   async function handleSaveInvoice() {
-    if (!user?.uid || !invoice || saving || isSaved || shouldUseStoredPdf) return;
+    if (!user?.uid || !invoice || saving || saveInFlightRef.current || isSaved || shouldUseStoredPdf) return;
 
+    saveInFlightRef.current = true;
     setSaving(true);
     setTaxActionLoading(true);
     try {
@@ -709,6 +680,7 @@ export default function InvoicePreviewPage() {
     } catch (error) {
       toast.error(error?.message || t.common.error);
     } finally {
+      saveInFlightRef.current = false;
       setSaving(false);
       setTaxActionLoading(false);
     }
@@ -717,21 +689,6 @@ export default function InvoicePreviewPage() {
   async function handleConnectFromAllocationPrompt() {
     setAllocationConnectionPrompt(null);
     await handleConnectTaxAuthority();
-  }
-
-  async function handleContinueWithoutAllocation() {
-    setAllocationConnectionPrompt(null);
-    if (!isSaved) {
-      setSaving(true);
-      try {
-        await saveInvoiceWithAllocation({ continueWithoutAllocation: true });
-      } finally {
-        setSaving(false);
-      }
-      return;
-    }
-
-    toast.success(copy.savedInvoiceStored);
   }
 
   function isLikelyMobileShareDevice() {
@@ -1403,11 +1360,11 @@ export default function InvoicePreviewPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={handleContinueWithoutAllocation}
+                  onClick={() => setAllocationConnectionPrompt(null)}
                   disabled={saving}
                   className="inline-flex items-center justify-center rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:text-slate-400"
                 >
-                  {copy.continueWithoutAllocation}
+                  {t.common.cancel}
                 </button>
               </div>
             </div>

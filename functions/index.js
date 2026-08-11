@@ -649,8 +649,10 @@ exports.requestTaxInvoiceAllocation = onCall({
 }, async (request) => {
   const uid = getAuthenticatedUid(request);
   const identity = await loadApprovedBusinessIdentity(uid);
-  const invoiceDocId = String(request.data?.invoiceDocId || '').trim();
   const invoice = request.data?.invoice || {};
+  const persistedInvoiceDocId = String(request.data?.invoiceDocId || '').trim();
+  const invoiceDocId = persistedInvoiceDocId
+    || String(invoice.invoice_id || invoice.invoiceId || '').trim();
 
   if (!invoiceDocId) {
     throw new HttpsError('invalid-argument', 'Missing invoiceDocId.');
@@ -723,13 +725,18 @@ exports.requestTaxInvoiceAllocation = onCall({
     response: responseData,
   };
 
-  const invoiceRef = await findInvoiceRef(uid, invoiceDocId);
-  await invoiceRef.set({
-    taxAuthorityAllocation: result,
-    allocationNumber: confirmationNumber,
-    taxAuthorityAllocationNumber: confirmationNumber,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  }, { merge: true });
+  // Web saves omit the top-level invoiceDocId so allocation can finish before
+  // the final invoice document is created. Existing callers that explicitly
+  // provide it keep the previous persistence behavior.
+  if (persistedInvoiceDocId) {
+    const invoiceRef = await findInvoiceRef(uid, persistedInvoiceDocId);
+    await invoiceRef.set({
+      taxAuthorityAllocation: result,
+      allocationNumber: confirmationNumber,
+      taxAuthorityAllocationNumber: confirmationNumber,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  }
 
   return result;
 });
