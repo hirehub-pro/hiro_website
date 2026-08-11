@@ -9,6 +9,7 @@ import {
   signInAnonymously,
   signInWithPhoneNumber,
   RecaptchaVerifier,
+  reauthenticateWithCredential,
   signOut,
   updateProfile,
 } from 'firebase/auth';
@@ -104,6 +105,7 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [phoneConfirmation, setPhoneConfirmation] = useState(null);
+  const [invoiceBuilderVerifiedUid, setInvoiceBuilderVerifiedUid] = useState('');
 
   async function syncAuthEmailToUserProfile(firebaseUser, userProfile) {
     const authEmail = String(firebaseUser?.email || '').trim();
@@ -150,6 +152,7 @@ export function AuthProvider({ children }) {
       } else {
         setUser(null);
         setProfile(null);
+        setInvoiceBuilderVerifiedUid('');
       }
       setLoading(false);
     });
@@ -180,6 +183,36 @@ export function AuthProvider({ children }) {
         // Keep the original auth error below.
       }
 
+      if (
+        error?.code === 'auth/invalid-credential' ||
+        error?.code === 'auth/wrong-password' ||
+        error?.code === 'auth/user-not-found'
+      ) {
+        throw new Error('The phone number or password is incorrect.');
+      }
+
+      throw new Error(getFirebaseAuthMessage(error));
+    }
+  }
+
+  async function verifyInvoiceBuilderIdentity(phoneNumber, password) {
+    const firebaseUser = auth.currentUser;
+    const submittedPhone = String(phoneNumber || '').trim();
+    const storedPhone = String(profile?.phone || firebaseUser?.phoneNumber || '').trim();
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    const accountPhone = normalizePhoneNumber(storedPhone);
+    const email = String(firebaseUser?.email || profile?.email || '').trim();
+
+    if (!firebaseUser || !email || !submittedPhone || !storedPhone || normalizedPhone !== accountPhone) {
+      throw new Error('The phone number or password is incorrect.');
+    }
+
+    try {
+      const credential = EmailAuthProvider.credential(email, password);
+      await reauthenticateWithCredential(firebaseUser, credential);
+      setInvoiceBuilderVerifiedUid(firebaseUser.uid);
+      return true;
+    } catch (error) {
       if (
         error?.code === 'auth/invalid-credential' ||
         error?.code === 'auth/wrong-password' ||
@@ -526,6 +559,7 @@ export function AuthProvider({ children }) {
   }
 
   async function logOut() {
+    setInvoiceBuilderVerifiedUid('');
     await signOut(auth);
     setProfile(null);
   }
@@ -545,6 +579,8 @@ export function AuthProvider({ children }) {
         isCustomer,
         signInWithEmail,
         verifyPhonePassword,
+        verifyInvoiceBuilderIdentity,
+        invoiceBuilderIdentityVerified: Boolean(user?.uid && invoiceBuilderVerifiedUid === user.uid),
         getPasswordResetEmailHint,
         sendPasswordResetForPhone,
         signUpWithEmail,

@@ -244,7 +244,14 @@ function documentTypeConfig(value) {
 
 export default function WorkerInvoicesPage() {
   const router = useRouter();
-  const { user, profile, isWorker, loading } = useAuth();
+  const {
+    user,
+    profile,
+    isWorker,
+    loading,
+    verifyInvoiceBuilderIdentity,
+    invoiceBuilderIdentityVerified,
+  } = useAuth();
   const { t, locale } = useLanguage();
   const copy = t.invoices;
   const verificationCopy = t.businessVerification;
@@ -252,6 +259,9 @@ export default function WorkerInvoicesPage() {
   const profileDealerType = String(profile?.dealerType || '').trim().toLowerCase();
   const [dealerType, setDealerType] = useState(profileDealerType);
   const [dealerTypeLoaded, setDealerTypeLoaded] = useState(profileDealerType === 'exempt');
+  const [identityPhone, setIdentityPhone] = useState('');
+  const [identityPassword, setIdentityPassword] = useState('');
+  const [verifyingIdentity, setVerifyingIdentity] = useState(false);
 
   const currencyOptions = useMemo(() => ['ILS', 'USD', 'EUR'], []);
   const bankOptions = useMemo(() => [
@@ -416,7 +426,7 @@ export default function WorkerInvoicesPage() {
   }, [isWorker, loading, profile?.businessVerificationStatus, user?.uid]);
 
   useEffect(() => {
-    if (!user?.uid || !isWorker || !canUseInvoiceBuilder) {
+    if (!user?.uid || !isWorker || !canUseInvoiceBuilder || !invoiceBuilderIdentityVerified) {
       setInvoiceBuilderAccess('checking');
       return undefined;
     }
@@ -466,7 +476,27 @@ export default function WorkerInvoicesPage() {
       if (heartbeatId) window.clearInterval(heartbeatId);
       releaseInvoiceBuilderLock(user.uid, deviceId).catch(() => {});
     };
-  }, [canUseInvoiceBuilder, isWorker, user?.uid]);
+  }, [canUseInvoiceBuilder, invoiceBuilderIdentityVerified, isWorker, user?.uid]);
+
+  async function handleIdentityVerification(event) {
+    event.preventDefault();
+
+    if (!identityPhone.trim() || !identityPassword) {
+      toast.error(copy.identityRequiredError);
+      return;
+    }
+
+    setVerifyingIdentity(true);
+    try {
+      await verifyInvoiceBuilderIdentity(identityPhone, identityPassword);
+      setIdentityPassword('');
+      toast.success(copy.identityVerifiedSuccess);
+    } catch (error) {
+      toast.error(copy.identityVerificationError);
+    } finally {
+      setVerifyingIdentity(false);
+    }
+  }
 
   useEffect(() => {
     if (typeof window === 'undefined' || !user) return;
@@ -923,7 +953,13 @@ export default function WorkerInvoicesPage() {
   const amountDue = Math.max(displayTotal - paidTotal, 0);
   const clientCompletion = [clientName, clientId, clientEmail, clientPhone, clientCity].filter(Boolean).length;
 
-  if (loading || (user && isWorker && (!verificationChecked || (canUseInvoiceBuilder && invoiceBuilderAccess === 'checking')))) {
+  if (
+    loading ||
+    (user && isWorker && (
+      !verificationChecked ||
+      (canUseInvoiceBuilder && invoiceBuilderIdentityVerified && invoiceBuilderAccess === 'checking')
+    ))
+  ) {
     return (
       <div className="mx-auto flex min-h-[70vh] max-w-4xl items-center justify-center px-4">
         <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
@@ -979,6 +1015,61 @@ export default function WorkerInvoicesPage() {
                   {copy.verificationBlockedCta}
                 </button>
               </div>
+            </Panel>
+          </div>
+        </main>
+      </>
+    );
+  }
+
+  if (!invoiceBuilderIdentityVerified) {
+    return (
+      <>
+        <Head>
+          <title>{`Hiro | ${copy.title}`}</title>
+        </Head>
+
+        <main className="relative overflow-hidden px-4 py-6 md:py-8">
+          <div className="absolute inset-0 bg-mesh opacity-60" />
+          <div className="absolute left-0 top-10 h-64 w-64 rounded-full bg-amber-200/30 blur-3xl" />
+          <div className="absolute right-0 top-0 h-72 w-72 rounded-full bg-sky-200/25 blur-3xl" />
+
+          <div className="relative mx-auto max-w-xl">
+            <Panel className="shadow-soft">
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-primary/65">{copy.shortTitle}</p>
+              <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-gray-950 sm:text-4xl">{copy.identityVerificationTitle}</h1>
+              <p className="mt-3 text-sm leading-7 text-gray-500">{copy.identityVerificationBody}</p>
+
+              <form className="mt-7 space-y-4" onSubmit={handleIdentityVerification}>
+                <label className="block">
+                  <span className="mb-2 block text-sm font-bold text-gray-700">{copy.identityPhoneLabel}</span>
+                  <input
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    value={identityPhone}
+                    onChange={(event) => setIdentityPhone(event.target.value)}
+                    className="input-field"
+                    disabled={verifyingIdentity}
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-2 block text-sm font-bold text-gray-700">{copy.identityPasswordLabel}</span>
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    value={identityPassword}
+                    onChange={(event) => setIdentityPassword(event.target.value)}
+                    className="input-field"
+                    disabled={verifyingIdentity}
+                  />
+                </label>
+
+                <button type="submit" className="btn-primary w-full" disabled={verifyingIdentity}>
+                  {verifyingIdentity ? copy.identityVerifying : copy.identityVerifyCta}
+                </button>
+              </form>
             </Panel>
           </div>
         </main>
