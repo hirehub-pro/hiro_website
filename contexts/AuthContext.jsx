@@ -26,6 +26,10 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { getUserProfile } from '../lib/firestore';
+import {
+  sendInvoiceBuilderEmailCode,
+  verifyInvoiceBuilderEmailCode,
+} from '../lib/invoice-builder-verification';
 
 const AuthContext = createContext(null);
 
@@ -210,8 +214,8 @@ export function AuthProvider({ children }) {
     try {
       const credential = EmailAuthProvider.credential(email, password);
       await reauthenticateWithCredential(firebaseUser, credential);
-      setInvoiceBuilderVerifiedUid(firebaseUser.uid);
-      return true;
+      await firebaseUser.getIdToken(true);
+      return sendInvoiceBuilderEmailCode();
     } catch (error) {
       if (
         error?.code === 'auth/invalid-credential' ||
@@ -223,6 +227,20 @@ export function AuthProvider({ children }) {
 
       throw new Error(getFirebaseAuthMessage(error));
     }
+  }
+
+  async function confirmInvoiceBuilderEmailCode(code) {
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) {
+      throw new Error('Sign in again before verifying the code.');
+    }
+
+    const result = await verifyInvoiceBuilderEmailCode(code);
+    if (result?.verified !== true) {
+      throw new Error('The verification code could not be confirmed.');
+    }
+    setInvoiceBuilderVerifiedUid(firebaseUser.uid);
+    return true;
   }
 
   async function getPasswordResetEmailHint(phoneNumber) {
@@ -580,6 +598,7 @@ export function AuthProvider({ children }) {
         signInWithEmail,
         verifyPhonePassword,
         verifyInvoiceBuilderIdentity,
+        confirmInvoiceBuilderEmailCode,
         invoiceBuilderIdentityVerified: Boolean(user?.uid && invoiceBuilderVerifiedUid === user.uid),
         getPasswordResetEmailHint,
         sendPasswordResetForPhone,

@@ -50,6 +50,25 @@ function createEmailCode() {
   return String(crypto.randomInt(100000, 1000000));
 }
 
+function maskEmail(email) {
+  const [localPart, domain] = normalizeEmail(email).split('@');
+  if (!localPart || !domain) return '';
+  const visible = localPart.length > 2 ? `${localPart[0]}${'*'.repeat(localPart.length - 2)}${localPart.at(-1)}` : `${localPart[0]}*`;
+  return `${visible}@${domain}`;
+}
+
+function requireRecentAuthentication(request, maxAgeSeconds = 5 * 60) {
+  const authenticatedAt = Number(request.auth?.token?.auth_time || 0);
+  const signInProvider = String(request.auth?.token?.firebase?.sign_in_provider || '');
+  if (
+    !authenticatedAt ||
+    signInProvider !== 'password' ||
+    Math.floor(Date.now() / 1000) - authenticatedAt > maxAgeSeconds
+  ) {
+    throw new HttpsError('unauthenticated', 'Enter your phone number and password again.');
+  }
+}
+
 function isHttpsError(error) {
   return error instanceof HttpsError || Boolean(error?.code && typeof error.message === 'string' && error.httpErrorCode);
 }
@@ -451,6 +470,107 @@ exports.sendAccountEmailCode = onCall({
     }
     console.error('sendAccountEmailCode failed.', { code: error?.code, message: error?.message, stack: error?.stack });
     throw new HttpsError('internal', 'Could not send verification code.');
+  }
+});
+
+exports.sendInvoiceBuilderEmailCode = onCall({
+  region: TAX_FUNCTION_REGION,
+}, async (request) => {
+  try {
+    const uid = getSignedInUid(request);
+    requireRecentAuthentication(request);
+    const { currentEmail } = await loadAccountEmailState(uid);
+    if (!currentEmail) {
+      throw new HttpsError('failed-precondition', 'Your account does not have an email address.');
+    }
+
+    const codeRef = admin.firestore().doc(`users/${uid}/invoice_builder_email_codes/current`);
+    const existingSnap = await codeRef.get();
+    const lastSentAtMs = existingSnap.data()?.createdAt?.toMillis?.() || 0;
+    if (lastSentAtMs && Date.now() - lastSentAtMs < 60 * 1000) {
+      throw new HttpsError('resource-exhausted', 'Please wait before requesting another code.');
+    }
+
+    const code = createEmailCode();
+    const mailRef = admin.firestore().collection('mail').doc();
+    const batch = admin.firestore().batch();
+    batch.set(codeRef, {
+      email: currentEmail,
+      codeHash: hashEmailCode(code),
+      attempts: 0,
+      verified: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
+    });
+    batch.set(mailRef, {
+      to: currentEmail,
+      message: {
+        subject: 'Hiro invoice builder verification code',
+        text: `Your Hiro invoice builder verification code is ${code}. It expires in 10 minutes.`,
+        html: `<p>Your Hiro invoice builder verification code is:</p><p style="font-size:28px;font-weight:700;letter-spacing:4px;">${code}</p><p>It expires in 10 minutes.</p>`,
+      },
+      metadata: {
+        uid,
+        purpose: 'invoice_builder',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+    });
+    await batch.commit();
+
+    return { sent: true, emailHint: maskEmail(currentEmail) };
+  } catch (error) {
+    if (isHttpsError(error)) throw error;
+    console.error('sendInvoiceBuilderEmailCode failed.', { code: error?.code, message: error?.message, stack: error?.stack });
+    throw new HttpsError('internal', 'Could not send the invoice builder verification code.');
+  }
+});
+
+exports.verifyInvoiceBuilderEmailCode = onCall({
+  region: TAX_FUNCTION_REGION,
+}, async (request) => {
+  try {
+    const uid = getSignedInUid(request);
+    const code = String(request.data?.code || '').replace(/\D/g, '');
+    if (!/^\d{6}$/.test(code)) {
+      throw new HttpsError('invalid-argument', 'Enter the 6-digit verification code.');
+    }
+
+    const codeRef = admin.firestore().doc(`users/${uid}/invoice_builder_email_codes/current`);
+    await admin.firestore().runTransaction(async (transaction) => {
+      const codeSnap = await transaction.get(codeRef);
+      const codeData = codeSnap.data() || {};
+      const expiresAtMs = codeData.expiresAt?.toMillis?.() || 0;
+      const attempts = Number(codeData.attempts || 0);
+
+      if (!codeSnap.exists || expiresAtMs < Date.now()) {
+        throw new HttpsError('failed-precondition', 'The verification code expired. Start again to request a new code.');
+      }
+      if (attempts >= 5) {
+        throw new HttpsError('resource-exhausted', 'Too many attempts. Start again to request a new code.');
+      }
+      if (codeData.codeHash !== hashEmailCode(code)) {
+        transaction.update(codeRef, {
+          attempts: admin.firestore.FieldValue.increment(1),
+          lastAttemptAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return false;
+      }
+
+      transaction.update(codeRef, {
+        verified: true,
+        verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return true;
+    }).then((verified) => {
+      if (!verified) {
+        throw new HttpsError('failed-precondition', 'The verification code is incorrect.');
+      }
+    });
+    return { verified: true };
+  } catch (error) {
+    if (isHttpsError(error)) throw error;
+    console.error('verifyInvoiceBuilderEmailCode failed.', { code: error?.code, message: error?.message, stack: error?.stack });
+    throw new HttpsError('internal', 'Could not verify the invoice builder email code.');
   }
 });
 

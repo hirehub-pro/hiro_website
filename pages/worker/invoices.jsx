@@ -250,6 +250,7 @@ export default function WorkerInvoicesPage() {
     isWorker,
     loading,
     verifyInvoiceBuilderIdentity,
+    confirmInvoiceBuilderEmailCode,
     invoiceBuilderIdentityVerified,
   } = useAuth();
   const { t, locale } = useLanguage();
@@ -262,6 +263,9 @@ export default function WorkerInvoicesPage() {
   const [identityPhone, setIdentityPhone] = useState('');
   const [identityPassword, setIdentityPassword] = useState('');
   const [verifyingIdentity, setVerifyingIdentity] = useState(false);
+  const [identityCodeSent, setIdentityCodeSent] = useState(false);
+  const [identityEmailHint, setIdentityEmailHint] = useState('');
+  const [identityEmailCode, setIdentityEmailCode] = useState('');
 
   const currencyOptions = useMemo(() => ['ILS', 'USD', 'EUR'], []);
   const bankOptions = useMemo(() => [
@@ -488,11 +492,33 @@ export default function WorkerInvoicesPage() {
 
     setVerifyingIdentity(true);
     try {
-      await verifyInvoiceBuilderIdentity(identityPhone, identityPassword);
+      const result = await verifyInvoiceBuilderIdentity(identityPhone, identityPassword);
       setIdentityPassword('');
+      setIdentityEmailHint(result?.emailHint || '');
+      setIdentityCodeSent(true);
+      toast.success(copy.identityCodeSentSuccess);
+    } catch (error) {
+      toast.error(error?.message || copy.identityVerificationError);
+    } finally {
+      setVerifyingIdentity(false);
+    }
+  }
+
+  async function handleIdentityCodeVerification(event) {
+    event.preventDefault();
+    const code = identityEmailCode.replace(/\D/g, '');
+    if (code.length !== 6) {
+      toast.error(copy.identityCodeRequiredError);
+      return;
+    }
+
+    setVerifyingIdentity(true);
+    try {
+      await confirmInvoiceBuilderEmailCode(code);
+      setIdentityEmailCode('');
       toast.success(copy.identityVerifiedSuccess);
     } catch (error) {
-      toast.error(copy.identityVerificationError);
+      toast.error(error?.message || copy.identityCodeVerificationError);
     } finally {
       setVerifyingIdentity(false);
     }
@@ -1040,36 +1066,73 @@ export default function WorkerInvoicesPage() {
               <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-gray-950 sm:text-4xl">{copy.identityVerificationTitle}</h1>
               <p className="mt-3 text-sm leading-7 text-gray-500">{copy.identityVerificationBody}</p>
 
-              <form className="mt-7 space-y-4" onSubmit={handleIdentityVerification}>
-                <label className="block">
-                  <span className="mb-2 block text-sm font-bold text-gray-700">{copy.identityPhoneLabel}</span>
-                  <input
-                    type="tel"
-                    inputMode="tel"
-                    autoComplete="tel"
-                    value={identityPhone}
-                    onChange={(event) => setIdentityPhone(event.target.value)}
-                    className="input-field"
+              {identityCodeSent ? (
+                <form className="mt-7 space-y-4" onSubmit={handleIdentityCodeVerification}>
+                  <p className="rounded-2xl bg-primary/5 px-4 py-3 text-sm leading-6 text-gray-600">
+                    {copy.identityCodeSentBody.replace('{email}', identityEmailHint || copy.identityYourEmail)}
+                  </p>
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-bold text-gray-700">{copy.identityCodeLabel}</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      value={identityEmailCode}
+                      onChange={(event) => setIdentityEmailCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                      className="input-field text-center text-xl tracking-[0.35em]"
+                      disabled={verifyingIdentity}
+                      autoFocus
+                    />
+                  </label>
+                  <button type="submit" className="btn-primary w-full" disabled={verifyingIdentity}>
+                    {verifyingIdentity ? copy.identityVerifyingCode : copy.identityVerifyCodeCta}
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full text-sm font-bold text-primary"
+                    onClick={() => {
+                      setIdentityCodeSent(false);
+                      setIdentityEmailCode('');
+                      setIdentityPassword('');
+                    }}
                     disabled={verifyingIdentity}
-                  />
-                </label>
+                  >
+                    {copy.identityStartAgain}
+                  </button>
+                </form>
+              ) : (
+                <form className="mt-7 space-y-4" onSubmit={handleIdentityVerification}>
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-bold text-gray-700">{copy.identityPhoneLabel}</span>
+                    <input
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      value={identityPhone}
+                      onChange={(event) => setIdentityPhone(event.target.value)}
+                      className="input-field"
+                      disabled={verifyingIdentity}
+                    />
+                  </label>
 
-                <label className="block">
-                  <span className="mb-2 block text-sm font-bold text-gray-700">{copy.identityPasswordLabel}</span>
-                  <input
-                    type="password"
-                    autoComplete="current-password"
-                    value={identityPassword}
-                    onChange={(event) => setIdentityPassword(event.target.value)}
-                    className="input-field"
-                    disabled={verifyingIdentity}
-                  />
-                </label>
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-bold text-gray-700">{copy.identityPasswordLabel}</span>
+                    <input
+                      type="password"
+                      autoComplete="current-password"
+                      value={identityPassword}
+                      onChange={(event) => setIdentityPassword(event.target.value)}
+                      className="input-field"
+                      disabled={verifyingIdentity}
+                    />
+                  </label>
 
-                <button type="submit" className="btn-primary w-full" disabled={verifyingIdentity}>
-                  {verifyingIdentity ? copy.identityVerifying : copy.identityVerifyCta}
-                </button>
-              </form>
+                  <button type="submit" className="btn-primary w-full" disabled={verifyingIdentity}>
+                    {verifyingIdentity ? copy.identityVerifying : copy.identityVerifyCta}
+                  </button>
+                </form>
+              )}
             </Panel>
           </div>
         </main>
