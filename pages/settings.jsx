@@ -14,7 +14,9 @@ import {
   FiChevronDown,
   FiChevronLeft,
   FiChevronRight,
+  FiCheckCircle,
   FiClock,
+  FiDownloadCloud,
   FiFileText,
   FiGlobe,
   FiHelpCircle,
@@ -25,6 +27,7 @@ import {
 } from 'react-icons/fi';
 import { db } from '../lib/firebase';
 import { BkmvExportService } from '../lib/bkmvExportService';
+import { sendUniformFilesEmail, uploadUniformFiles } from '../lib/uniform-files-email';
 import { registerForPushNotifications } from '../lib/notifications';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -34,24 +37,6 @@ const datePromptPattern = /^\d{4}-\d{2}-\d{2}$/;
 
 function getAvatarFallback(name) {
   return String(name || 'H').trim().charAt(0).toUpperCase() || 'H';
-}
-
-function downloadBlobFile(file) {
-  const url = URL.createObjectURL(file.blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = file.name;
-  link.rel = 'noopener';
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
-}
-
-function wait(ms) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
 }
 
 export default function SettingsPage() {
@@ -70,6 +55,18 @@ export default function SettingsPage() {
   });
   const [scheduleBusy, setScheduleBusy] = useState(false);
   const [isGeneratingUniformFiles, setIsGeneratingUniformFiles] = useState(false);
+  const [uniformFilesProgress, setUniformFilesProgress] = useState({
+    isOpen: false,
+    status: 'generating',
+    value: 0,
+    error: '',
+  });
+  const [uniformFilesForm, setUniformFilesForm] = useState({
+    isOpen: false,
+    recipientEmail: '',
+    fromDate: '',
+    toDate: '',
+  });
 
   useEffect(() => {
     if (!loading && !user) {
@@ -90,6 +87,18 @@ export default function SettingsPage() {
 
     setNotificationsEnabled(savedPreference === 'true' && browserGranted);
   }, []);
+
+  useEffect(() => {
+    if (!isGeneratingUniformFiles || typeof window === 'undefined') return undefined;
+
+    const warnBeforeLeaving = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
+  }, [isGeneratingUniformFiles]);
 
   useEffect(() => {
     const loadScheduleSettings = async () => {
@@ -276,18 +285,27 @@ export default function SettingsPage() {
     saveScheduleSettings(nextSettings);
   }
 
-  async function handleGenerateUniformFiles() {
+  function handleGenerateUniformFiles() {
     if (!user || user.isAnonymous || profile?.role !== 'worker' || isGeneratingUniformFiles) return;
     if (typeof window === 'undefined') return;
 
-    const recipientEmail = window.prompt(copy.uniformFilesEmailPrompt, user.email || '');
-    if (recipientEmail === null) return;
+    setUniformFilesForm({
+      isOpen: true,
+      recipientEmail: user.email || '',
+      fromDate: new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10),
+      toDate: new Date().toISOString().slice(0, 10),
+    });
+  }
 
-    const fromDate = window.prompt(copy.uniformFilesFromDatePrompt, new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10));
-    if (fromDate === null) return;
+  async function handleUniformFilesSubmit(event) {
+    event.preventDefault();
+    if (!user || user.isAnonymous || profile?.role !== 'worker' || isGeneratingUniformFiles) return;
 
-    const toDate = window.prompt(copy.uniformFilesToDatePrompt, new Date().toISOString().slice(0, 10));
-    if (toDate === null) return;
+    const { recipientEmail, fromDate, toDate } = uniformFilesForm;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail.trim())) {
+      toast.error(copy.uniformFilesInvalidEmail);
+      return;
+    }
 
     if (!datePromptPattern.test(fromDate) || !datePromptPattern.test(toDate) || fromDate > toDate) {
       toast.error(copy.uniformFilesInvalidDateRange);
@@ -295,39 +313,31 @@ export default function SettingsPage() {
     }
 
     try {
+      setUniformFilesForm((current) => ({ ...current, isOpen: false }));
       setIsGeneratingUniformFiles(true);
+      setUniformFilesProgress({ isOpen: true, status: 'generating', value: 12, error: '' });
       const result = await BkmvExportService.exportForUser({ user, fromDate, toDate });
-      result.files.forEach(downloadBlobFile);
-      await wait(1200);
+      setUniformFilesProgress({ isOpen: true, status: 'uploading', value: 62, error: '' });
+      const uploadedFiles = await uploadUniformFiles(user.uid, result.files);
+      setUniformFilesProgress({ isOpen: true, status: 'sending', value: 86, error: '' });
+      await sendUniformFilesEmail({
+        recipientEmail: recipientEmail.trim(),
+        files: uploadedFiles,
+      });
 
-      if (recipientEmail.trim()) {
-        const subject = encodeURIComponent(copy.uniformFilesEmailSubject);
-        const body = encodeURIComponent([
-          copy.uniformFilesEmailBody,
-          '',
-          `${copy.uniformFilesGeneratedFiles}:`,
-          ...result.files.map((file) => `- ${file.name}`),
-        ].join('\n'));
-        const mailUrl = `mailto:${encodeURIComponent(recipientEmail.trim())}?subject=${subject}&body=${body}`;
-        try {
-          window.location.href = mailUrl;
-        } catch (error) {
-          throw new Error(copy.uniformFilesEmailError);
-        }
-      }
-
+      setUniformFilesProgress({ isOpen: true, status: 'complete', value: 100, error: '' });
       toast.success(copy.uniformFilesSuccess);
     } catch (error) {
-      console.error('Failed to generate uniform files:', error);
+      let errorMessage = error?.message || copy.uniformFilesError;
       if (error?.code === 'missing-business-details') {
-        toast.error(copy.uniformFilesMissingBusiness);
+        errorMessage = copy.uniformFilesMissingBusiness;
       } else if (error?.code === 'no-documents') {
-        toast.error(copy.uniformFilesNoDocuments);
-      } else if (String(error?.message || '').includes(copy.uniformFilesEmailError)) {
-        toast.error(copy.uniformFilesEmailError);
-      } else {
-        toast.error(error?.message || copy.uniformFilesError);
+        errorMessage = copy.uniformFilesNoDocuments;
+      } else if (String(error?.code || '').startsWith('functions/')) {
+        errorMessage = error?.message && error.message !== 'internal' ? error.message : copy.uniformFilesEmailError;
       }
+      setUniformFilesProgress({ isOpen: true, status: 'error', value: 100, error: errorMessage });
+      toast.error(errorMessage);
     } finally {
       setIsGeneratingUniformFiles(false);
     }
@@ -647,6 +657,172 @@ export default function SettingsPage() {
         </div>
 
       </main>
+
+      {uniformFilesForm.isOpen ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-slate-950/45 p-0 backdrop-blur-sm sm:items-center sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="uniform-files-form-title"
+          data-testid="uniform-files-form-modal"
+        >
+          <form
+            onSubmit={handleUniformFilesSubmit}
+            className="w-full max-w-lg rounded-t-[34px] bg-white px-6 pb-7 pt-6 shadow-2xl sm:rounded-[34px] sm:p-8"
+          >
+            <div className="flex items-start gap-4">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[20px] bg-primary-50 text-primary">
+                <FiCalendar className="h-7 w-7" aria-hidden="true" />
+              </div>
+              <div className="min-w-0 flex-1 text-start">
+                <h2 id="uniform-files-form-title" className="text-2xl font-extrabold tracking-tight text-gray-950">
+                  {copy.uniformFilesFormTitle}
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-gray-500">{copy.uniformFilesFormHint}</p>
+              </div>
+            </div>
+
+            <div className="mt-7 space-y-5">
+              <label className="block text-start">
+                <span className="mb-2 block text-sm font-bold text-gray-700">{copy.uniformFilesEmailLabel}</span>
+                <input
+                  type="email"
+                  required
+                  value={uniformFilesForm.recipientEmail}
+                  onChange={(event) => setUniformFilesForm((current) => ({ ...current, recipientEmail: event.target.value }))}
+                  className="input-field"
+                  autoComplete="email"
+                />
+              </label>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <label className="block text-start">
+                  <span className="mb-2 block text-sm font-bold text-gray-700">{copy.uniformFilesFromDateLabel}</span>
+                  <input
+                    type="date"
+                    required
+                    value={uniformFilesForm.fromDate}
+                    max={uniformFilesForm.toDate || undefined}
+                    onChange={(event) => setUniformFilesForm((current) => ({ ...current, fromDate: event.target.value }))}
+                    className="input-field"
+                    dir="ltr"
+                  />
+                </label>
+                <label className="block text-start">
+                  <span className="mb-2 block text-sm font-bold text-gray-700">{copy.uniformFilesToDateLabel}</span>
+                  <input
+                    type="date"
+                    required
+                    value={uniformFilesForm.toDate}
+                    min={uniformFilesForm.fromDate || undefined}
+                    onChange={(event) => setUniformFilesForm((current) => ({ ...current, toDate: event.target.value }))}
+                    className="input-field"
+                    dir="ltr"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="mt-7 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setUniformFilesForm((current) => ({ ...current, isOpen: false }))}
+                className="rounded-2xl bg-slate-100 px-5 py-3.5 text-base font-extrabold text-gray-700 transition-colors hover:bg-slate-200"
+              >
+                {copy.uniformFilesFormCancel}
+              </button>
+              <button
+                type="submit"
+                className="rounded-2xl bg-primary px-5 py-3.5 text-base font-extrabold text-white transition-colors hover:bg-primary-700"
+              >
+                {copy.uniformFilesFormGenerate}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      {uniformFilesProgress.isOpen ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-slate-950/45 p-0 backdrop-blur-sm sm:items-center sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="uniform-files-progress-title"
+          data-testid="uniform-files-progress-modal"
+        >
+          <div className="w-full max-w-md rounded-t-[34px] bg-white px-6 pb-7 pt-6 shadow-2xl sm:rounded-[34px] sm:p-8">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[22px] bg-primary-50 text-primary">
+              {uniformFilesProgress.status === 'complete' ? (
+                <FiCheckCircle className="h-8 w-8" aria-hidden="true" />
+              ) : uniformFilesProgress.status === 'error' ? (
+                <FiAlertTriangle className="h-8 w-8 text-red-500" aria-hidden="true" />
+              ) : (
+                <FiDownloadCloud className="h-8 w-8" aria-hidden="true" />
+              )}
+            </div>
+
+            <div className="mt-5 text-center" aria-live="polite">
+              <h2 id="uniform-files-progress-title" className="text-2xl font-extrabold tracking-tight text-gray-950">
+                {uniformFilesProgress.status === 'generating' && copy.uniformFilesProgressGenerating}
+                {uniformFilesProgress.status === 'uploading' && copy.uniformFilesProgressUploading}
+                {uniformFilesProgress.status === 'sending' && copy.uniformFilesProgressSending}
+                {uniformFilesProgress.status === 'complete' && copy.uniformFilesProgressComplete}
+                {uniformFilesProgress.status === 'error' && copy.uniformFilesProgressError}
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-gray-500">
+                {uniformFilesProgress.status === 'error'
+                  ? uniformFilesProgress.error
+                  : uniformFilesProgress.status === 'complete'
+                    ? copy.uniformFilesProgressCompleteHint
+                    : copy.uniformFilesProgressStay}
+              </p>
+            </div>
+
+            <div className="mt-7">
+              <div className="mb-2 flex items-center justify-between text-xs font-bold text-gray-500">
+                <span>{copy.uniformFilesProgressLabel}</span>
+                <span dir="ltr">{uniformFilesProgress.value}%</span>
+              </div>
+              <div
+                className="h-3 overflow-hidden rounded-full bg-slate-100"
+                role="progressbar"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow={uniformFilesProgress.value}
+                aria-label={copy.uniformFilesProgressLabel}
+              >
+                <div
+                  className={clsx(
+                    'h-full rounded-full transition-all duration-500 ease-out',
+                    uniformFilesProgress.status === 'error' ? 'bg-red-500' : 'bg-primary'
+                  )}
+                  style={{ width: `${uniformFilesProgress.value}%` }}
+                />
+              </div>
+            </div>
+
+            {isGeneratingUniformFiles ? (
+              <div className="mt-6 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-start text-sm font-semibold leading-6 text-amber-900">
+                <FiAlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+                <span>{copy.uniformFilesProgressWarning}</span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setUniformFilesProgress((current) => ({ ...current, isOpen: false }))}
+                className={clsx(
+                  'mt-6 w-full rounded-2xl px-5 py-3.5 text-base font-extrabold text-white transition-colors',
+                  uniformFilesProgress.status === 'error'
+                    ? 'bg-red-500 hover:bg-red-600'
+                    : 'bg-primary hover:bg-primary-700'
+                )}
+              >
+                {copy.uniformFilesProgressClose}
+              </button>
+            )}
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }
