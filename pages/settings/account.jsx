@@ -1,24 +1,10 @@
 import Head from 'next/head';
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/router';
-import toast from 'react-hot-toast';
-import {
-  EmailAuthProvider,
-  deleteUser,
-  reauthenticateWithCredential,
-} from 'firebase/auth';
-import { deleteDoc, doc } from 'firebase/firestore';
 import { FiBriefcase, FiChevronLeft, FiChevronRight, FiKey, FiMail, FiPhone, FiTrash2 } from 'react-icons/fi';
-import { auth, db } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
-
-function getAuthProviderIds(user) {
-  return Array.isArray(user?.providerData)
-    ? user.providerData.map((provider) => provider.providerId)
-    : [];
-}
 
 export default function AccountSettingsPage() {
   const router = useRouter();
@@ -27,18 +13,12 @@ export default function AccountSettingsPage() {
   const copy = t.settings;
   const accountCopy = copy.accountSettings || {};
   const isRtl = dir === 'rtl';
-  const [busyAction, setBusyAction] = useState('');
 
   useEffect(() => {
     if (!loading && !user) {
       router.replace(`/auth/signin?next=${encodeURIComponent('/settings/account')}`);
     }
   }, [loading, router, user]);
-
-  const hasPasswordProvider = useMemo(
-    () => getAuthProviderIds(user).includes('password'),
-    [user]
-  );
 
   if (loading) {
     return (
@@ -49,36 +29,6 @@ export default function AccountSettingsPage() {
   }
 
   if (!user) return null;
-
-  async function reauthenticateWithPassword() {
-    if (!hasPasswordProvider || !user.email) return;
-
-    const currentPassword = window.prompt(accountCopy.currentPasswordPrompt || 'Enter your current password.');
-    if (!currentPassword) {
-      throw new Error(accountCopy.currentPasswordRequired || 'Current password is required.');
-    }
-
-    const credential = EmailAuthProvider.credential(user.email, currentPassword);
-    await reauthenticateWithCredential(auth.currentUser, credential);
-  }
-
-  async function handleDeleteAccount() {
-    const confirmed = window.confirm(accountCopy.deleteConfirm || 'Delete your account permanently? This cannot be undone.');
-    if (!confirmed) return;
-
-    try {
-      setBusyAction('delete');
-      await reauthenticateWithPassword();
-      await deleteDoc(doc(db, 'users', user.uid));
-      await deleteUser(auth.currentUser);
-      toast.success(accountCopy.accountDeleted || 'Account deleted.');
-      router.push('/');
-    } catch (error) {
-      toast.error(error?.message || accountCopy.deleteError || 'Could not delete account.');
-    } finally {
-      setBusyAction('');
-    }
-  }
 
   const actionRows = [
     {
@@ -114,7 +64,7 @@ export default function AccountSettingsPage() {
       label: accountCopy.deleteAccount || 'Delete account',
       subtitle: accountCopy.deleteSubtitle || 'Permanently remove your account.',
       icon: FiTrash2,
-      onClick: handleDeleteAccount,
+      href: '/settings/account/account_delete',
       danger: true,
     },
   ];
@@ -149,7 +99,6 @@ export default function AccountSettingsPage() {
         key={item.key}
         type="button"
         onClick={item.onClick}
-        disabled={Boolean(busyAction)}
         className={className}
       >
         <div className="flex min-w-0 flex-1 items-center gap-4">{content}</div>
