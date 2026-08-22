@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { FiFacebook, FiX } from 'react-icons/fi';
-import { FaGooglePlay, FaApple } from 'react-icons/fa';
+import { FaGooglePlay, FaApple, FaWhatsapp } from 'react-icons/fa';
 import { useLanguage } from '../../contexts/LanguageContext';
 
 export default function SiteFooter() {
@@ -49,7 +49,17 @@ export default function SiteFooter() {
                 <FiFacebook className="h-4.5 w-4.5" />
               </a>
 
-              
+              {/* WhatsApp */}
+              <a
+                href="https://wa.me/972542978614"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="WhatsApp"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/20 bg-white/10 text-blue-50/90 transition-all duration-200 hover:-translate-y-0.5 hover:border-white/40 hover:bg-white/15 hover:text-white"
+              >
+                <FaWhatsapp className="h-4.5 w-4.5" />
+              </a>
+
             <div className="flex items-center gap-2.5">
               {/* X*/}
               <a

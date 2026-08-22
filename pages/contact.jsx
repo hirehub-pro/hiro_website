@@ -3,11 +3,13 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { HiArrowRight, HiChatAlt2, HiMail, HiShieldCheck, HiSparkles } from 'react-icons/hi';
+import { FaWhatsapp } from 'react-icons/fa';
 import clsx from 'clsx';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 
-const supportEmail = 'my.hire.hub@gmail.com';
+const supportEmail = 'support@hiro-services.com';
+const whatsappHref = 'https://wa.me/972542978614';
 
 export default function ContactPage() {
   const { user } = useAuth();
@@ -36,6 +38,13 @@ export default function ContactPage() {
         href: supportChatHref,
         label: t.messages.title,
         icon: HiChatAlt2,
+      },
+      {
+        title: copy.cardWhatsAppTitle,
+        body: copy.cardWhatsAppBody,
+        href: whatsappHref,
+        label: '054-297-8614',
+        icon: FaWhatsapp,
       },
       {
         title: copy.cardCommunityTitle,
@@ -111,7 +120,7 @@ export default function ContactPage() {
                 </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+              <div className="grid gap-3 sm:grid-cols-2">
                 {contactCards.map(({ title, body, href, label, icon: Icon }) => {
                   const isInternal = href.startsWith('/');
                   const cardClassName = 'glass-blue rounded-[28px] p-5 text-white/95 transition-transform duration-200 hover:-translate-y-1';
@@ -135,7 +144,13 @@ export default function ContactPage() {
                       {content}
                     </Link>
                   ) : (
-                    <a key={title} href={href} className={cardClassName}>
+                    <a
+                      key={title}
+                      href={href}
+                      target={href.startsWith('http') ? '_blank' : undefined}
+                      rel={href.startsWith('http') ? 'noreferrer' : undefined}
+                      className={cardClassName}
+                    >
                       {content}
                     </a>
                   );
