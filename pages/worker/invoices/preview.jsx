@@ -9,6 +9,7 @@ import { useLanguage } from '../../../contexts/LanguageContext';
 import { createDocumentSigningLink } from '../../../lib/documentSigning';
 import { getAllocationNumberMinAmountBeforeVat, previewUserInvoice, saveUserInvoice } from '../../../lib/firestore';
 import { formatCurrency, getInvoicePreviewStorageKey } from '../../../lib/invoices';
+import { buildTaxAuthorityInvoicePayload } from '../../../lib/taxAuthorityInvoicePayload';
 import {
   createTaxInvoiceDraft,
   createTaxAuthorityAuthorizationUrl,
@@ -466,60 +467,17 @@ export default function InvoicePreviewPage() {
     }
   }
 
-  function buildTaxAuthorityInvoicePayload(savedInvoice, authorityStatus = taxStatus) {
+  function buildAllocationPayload(authorityStatus = taxStatus) {
     const businessId = String(
       authorityStatus?.businessId || invoice?.createdBy?.id || ''
     ).replace(/\D/g, '');
-    const customerVatNumber = String(invoice?.clientId || '').replace(/\D/g, '');
-    const rawSequence = String(invoice?.invoiceNumber || '').match(/(\d+)(?!.*\d)/)?.[1] || '';
-    const documentNumber = /^\d{4}-\d{4,}$/.test(String(invoice?.invoiceNumber || ''))
-      ? String(invoice.invoiceNumber)
-      : `${String(invoice?.issueDate || new Date().toISOString()).slice(0, 4)}-${rawSequence.padStart(4, '0')}`;
-    const invoiceDocId = savedInvoice?.invoiceDocId || savedInvoice?.savedFirestoreId || `${docType}_${documentNumber}`;
-    const paymentAmount = Number(invoice?.subtotal) || Math.max((Number(invoice?.total) || 0) - (Number(invoice?.vatAmount) || 0), 0);
-    const amountBeforeDiscount = Number(invoice?.subtotalBeforeDiscount ?? invoice?.subtotal) || paymentAmount;
-    const discountAmount = Number(invoice?.discountAmount) || 0;
-    const invoiceVatAmount = Number(invoice?.vatAmount) || 0;
-    const paymentAmountIncludingVat = Number(invoice?.total) || paymentAmount + invoiceVatAmount;
-
-    return {
-      invoiceDocId,
-      invoice: {
-        invoice_id: invoiceDocId,
-        invoice_type: 305,
-        vat_number: Number(businessId),
-        user_name: invoice?.createdBy?.name || 'Hiro Pro',
-        invoice_reference_number: documentNumber,
-        customer_vat_number: customerVatNumber ? Number(customerVatNumber) : 0,
-        customer_name: invoice?.clientName || '',
-        invoice_date: invoice?.issueDate || new Date().toISOString().slice(0, 10),
-        invoice_issuance_date: invoice?.issueDate || new Date().toISOString().slice(0, 10),
-        accounting_software_number: Number(process.env.NEXT_PUBLIC_TAX_ACCOUNTING_SOFTWARE_NUMBER || 987654321),
-        amount_before_discount: amountBeforeDiscount,
-        discount: discountAmount,
-        payment_amount: paymentAmount,
-        vat_amount: invoiceVatAmount,
-        payment_amount_including_vat: paymentAmountIncludingVat,
-        invoice_note: invoice?.notes || '',
-        action: 0,
-        items: lineItems.map((item, index) => {
-          const quantity = Number(item?.quantity) || 0;
-          const rawUnitPrice = Number(item?.unitPrice) || 0;
-          const totalAmount = Number(item?.lineSubtotal ?? quantity * rawUnitPrice) || 0;
-          const pricePerUnit = quantity > 0 ? totalAmount / quantity : Number(item?.unitPrice) || 0;
-          return {
-            index: index + 1,
-            description: item?.description || 'Service',
-            quantity,
-            price_per_unit: pricePerUnit,
-            discount: 0,
-            total_amount: totalAmount,
-            vat_rate: item?.vatMode === 'no_vat' ? 0 : Number(invoice?.vatRate) || 0,
-            vat_amount: Number(item?.lineVatAmount ?? totalAmount * ((Number(invoice?.vatRate) || 0) / 100)) || 0,
-          };
-        }),
-      },
-    };
+    const payload = buildTaxAuthorityInvoicePayload({
+      invoice,
+      docType,
+      businessId,
+      accountingSoftwareNumber: process.env.NEXT_PUBLIC_TAX_ACCOUNTING_SOFTWARE_NUMBER,
+    });
+    return payload;
   }
 
   async function shouldAttemptAllocation() {
@@ -560,7 +518,7 @@ export default function InvoicePreviewPage() {
       }
     }
 
-    const payload = buildTaxAuthorityInvoicePayload(invoice, authorityStatus);
+    const payload = buildAllocationPayload(authorityStatus);
     if (!/^\d{9}$/.test(String(payload?.invoice?.vat_number || ''))) {
       throw new Error('Your verified 9-digit business VAT ID is required before requesting an allocation number.');
     }
