@@ -4,12 +4,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import { FiArrowLeft, FiDownload, FiEdit3, FiExternalLink, FiPrinter, FiSend, FiShare2 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useLanguage } from '../../../contexts/LanguageContext';
 import { createDocumentSigningLink } from '../../../lib/documentSigning';
-import { getAllocationNumberMinAmountBeforeVat, saveUserInvoice } from '../../../lib/firestore';
+import { getAllocationNumberMinAmountBeforeVat, previewUserInvoice, saveUserInvoice } from '../../../lib/firestore';
 import { formatCurrency, getInvoicePreviewStorageKey } from '../../../lib/invoices';
 import {
   createTaxInvoiceDraft,
@@ -63,13 +61,6 @@ function businessRegistrationLabel(dealerType) {
     default:
       return 'עוסק מורשה';
   }
-}
-
-function getPdfFilePrefix(docType) {
-  if (docType === 'quote') return 'quote';
-  if (docType === 'work_order') return 'work_order';
-  if (docType === 'transaction_account') return 'transaction_account';
-  return 'invoice';
 }
 
 function normalizePreviewDocType(value) {
@@ -163,101 +154,9 @@ function buildInvoiceItemPages(items) {
   return pages;
 }
 
-async function buildInvoicePdfBlob(element) {
-  await document.fonts?.ready;
-
-  const captureElement = element.cloneNode(true);
-  captureElement.style.position = 'fixed';
-  captureElement.style.left = '-10000px';
-  captureElement.style.top = '0';
-  captureElement.style.width = `${INVOICE_PREVIEW_WIDTH}px`;
-  captureElement.style.minHeight = `${INVOICE_PREVIEW_HEIGHT}px`;
-  captureElement.style.height = 'auto';
-  captureElement.style.maxWidth = 'none';
-  captureElement.style.transform = 'none';
-  captureElement.style.transformOrigin = 'top left';
-  captureElement.style.gap = '0';
-  captureElement.querySelectorAll('.invoice-preview-page').forEach((page) => {
-    page.style.boxShadow = 'none';
-  });
-  document.body.appendChild(captureElement);
-
-  let canvas;
-  try {
-    const captureHeight = Math.max(
-      INVOICE_PREVIEW_HEIGHT,
-      captureElement.scrollHeight,
-      captureElement.getBoundingClientRect().height
-    );
-
-    canvas = await html2canvas(captureElement, {
-      backgroundColor: '#ffffff',
-      scale: Math.min(1.5, Math.max(1.15, window.devicePixelRatio || 1)),
-      useCORS: true,
-      logging: false,
-      width: INVOICE_PREVIEW_WIDTH,
-      height: captureHeight,
-      windowWidth: INVOICE_PREVIEW_WIDTH,
-      windowHeight: captureHeight,
-    });
-  } finally {
-    captureElement.remove();
-  }
-
-  const pdfWidth = 595.28;
-  const pdfHeight = 841.89;
-  const pdf = new jsPDF({
-    compress: true,
-    format: 'a4',
-    orientation: 'portrait',
-    unit: 'pt',
-  });
-
-  const canvasPageHeight = Math.floor(canvas.width * (pdfHeight / pdfWidth));
-  const pageCanvas = document.createElement('canvas');
-  const pageContext = pageCanvas.getContext('2d');
-  if (!pageContext) {
-    throw new Error('Could not prepare invoice PDF pages');
-  }
-  pageCanvas.width = canvas.width;
-
-  let renderedHeight = 0;
-  let pageIndex = 0;
-
-  while (renderedHeight < canvas.height) {
-    const sliceHeight = Math.min(canvasPageHeight, canvas.height - renderedHeight);
-    pageCanvas.height = sliceHeight;
-    pageContext.clearRect(0, 0, pageCanvas.width, pageCanvas.height);
-    pageContext.drawImage(
-      canvas,
-      0,
-      renderedHeight,
-      canvas.width,
-      sliceHeight,
-      0,
-      0,
-      canvas.width,
-      sliceHeight
-    );
-
-    if (pageIndex > 0) {
-      pdf.addPage();
-    }
-
-    const pageImageData = pageCanvas.toDataURL('image/jpeg', 0.88);
-    const renderedPdfHeight = (sliceHeight / canvasPageHeight) * pdfHeight;
-    pdf.addImage(pageImageData, 'JPEG', 0, 0, pdfWidth, renderedPdfHeight, undefined, 'FAST');
-
-    renderedHeight += sliceHeight;
-    pageIndex += 1;
-  }
-
-  return pdf.output('blob');
-}
-
 export default function InvoicePreviewPage() {
   const router = useRouter();
-  const { user, isWorker, loading } = useAuth();
+  const { user, isWorker, loading, invoiceBuilderIdentityVerified } = useAuth();
   const { t, locale, dir } = useLanguage();
   const copy = t.invoices;
   const isRtl = dir === 'rtl';
@@ -270,12 +169,20 @@ export default function InvoicePreviewPage() {
   const [taxAllocation, setTaxAllocation] = useState(null);
   const [allocationConnectionPrompt, setAllocationConnectionPrompt] = useState(null);
   const [signingLinkLoading, setSigningLinkLoading] = useState(false);
+  const [serverPreviewUrl, setServerPreviewUrl] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState('');
   const [previewScale, setPreviewScale] = useState(1);
-  const invoiceContentRef = useRef(null);
   const saveInFlightRef = useRef(false);
+  const previewUrlRef = useRef('');
   const savedInvoiceUrl = invoice?.savedInvoiceUrl || '';
   const savedInvoiceFileName = invoice?.savedFileName || `${invoice?.invoiceNumber || 'invoice'}.pdf`;
   const shouldUseStoredPdf = openedFromSaved && Boolean(savedInvoiceUrl);
+  const hasSavedDocument = Boolean(savedInvoiceUrl && invoice?.invoiceDocId);
+  const savedDocumentProxyUrl = hasSavedDocument
+    ? `/api/document-pdf?url=${encodeURIComponent(savedInvoiceUrl)}`
+    : '';
+  const activePdfUrl = hasSavedDocument ? savedDocumentProxyUrl : serverPreviewUrl;
   const docType = normalizePreviewDocType(invoice?.documentType || invoice?.docType);
   const isReceipt = docType === 'receipt';
   const isPaymentReceipt = isReceipt || docType === 'invoice_receipt';
@@ -328,6 +235,54 @@ export default function InvoicePreviewPage() {
   useEffect(() => {
     setIsSaved(openedFromSaved || Boolean(invoice?.savedInvoiceUrl && invoice?.invoiceDocId));
   }, [invoice?.invoiceDocId, invoice?.savedInvoiceUrl, openedFromSaved]);
+
+  useEffect(() => {
+    if (!user?.uid || !invoice || shouldUseStoredPdf || hasSavedDocument) return undefined;
+
+    let cancelled = false;
+    setPreviewLoading(true);
+    setPreviewError('');
+
+    async function loadServerPreview() {
+      try {
+        if (!invoiceBuilderIdentityVerified) {
+          throw new Error('Verify your identity in the Invoice Builder before generating a document.');
+        }
+
+        const { pdfBase64 } = await previewUserInvoice(user.uid, { ...invoice, docType });
+        const binary = window.atob(pdfBase64);
+        const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+        const nextUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+
+        if (cancelled) {
+          URL.revokeObjectURL(nextUrl);
+          return;
+        }
+
+        if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = nextUrl;
+        setServerPreviewUrl(nextUrl);
+      } catch (error) {
+        if (!cancelled) {
+          const message = error?.message || 'Could not generate the document preview.';
+          setPreviewError(message);
+          toast.error(message);
+        }
+      } finally {
+        if (!cancelled) setPreviewLoading(false);
+      }
+    }
+
+    loadServerPreview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [docType, hasSavedDocument, invoice, invoiceBuilderIdentityVerified, shouldUseStoredPdf, user?.uid]);
+
+  useEffect(() => () => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -493,12 +448,6 @@ export default function InvoicePreviewPage() {
     return nextInvoice;
   }
 
-  function waitForPaint() {
-    return new Promise((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(resolve));
-    });
-  }
-
   async function handleConnectTaxAuthority() {
     if (taxActionLoading) return;
 
@@ -517,8 +466,10 @@ export default function InvoicePreviewPage() {
     }
   }
 
-  function buildTaxAuthorityInvoicePayload(savedInvoice) {
-    const businessId = String(taxStatus?.businessId || '').replace(/\D/g, '');
+  function buildTaxAuthorityInvoicePayload(savedInvoice, authorityStatus = taxStatus) {
+    const businessId = String(
+      authorityStatus?.businessId || invoice?.createdBy?.id || ''
+    ).replace(/\D/g, '');
     const customerVatNumber = String(invoice?.clientId || '').replace(/\D/g, '');
     const rawSequence = String(invoice?.invoiceNumber || '').match(/(\d+)(?!.*\d)/)?.[1] || '';
     const documentNumber = /^\d{4}-\d{4,}$/.test(String(invoice?.invoiceNumber || ''))
@@ -598,16 +549,21 @@ export default function InvoicePreviewPage() {
       return;
     }
 
+    let authorityStatus = taxStatus;
     if (allocationCheck.shouldAttempt) {
       const latestStatus = taxStatus?.connected ? taxStatus : await getTaxAuthorityConnectionStatus();
       setTaxStatus(latestStatus);
+      authorityStatus = latestStatus;
       if (!latestStatus?.connected) {
         setAllocationConnectionPrompt(allocationCheck);
         return;
       }
     }
 
-    const payload = buildTaxAuthorityInvoicePayload(invoice);
+    const payload = buildTaxAuthorityInvoicePayload(invoice, authorityStatus);
+    if (!/^\d{9}$/.test(String(payload?.invoice?.vat_number || ''))) {
+      throw new Error('Your verified 9-digit business VAT ID is required before requesting an allocation number.');
+    }
     const paymentMethod = (value) => {
       const normalized = String(value || '').toLowerCase();
       if (/cash|מזומן|نقد/.test(normalized)) return 'cash';
@@ -927,6 +883,38 @@ export default function InvoicePreviewPage() {
     );
   }
 
+  if (!activePdfUrl && !previewError) {
+    return (
+      <>
+        <Head>
+          <title>{`Hiro | ${copy.previewPdfTitle}`}</title>
+        </Head>
+        <main className="flex min-h-screen items-center justify-center bg-[#eef0f4] px-4" dir={dir}>
+          <div className="flex flex-col items-center gap-4 rounded-[28px] bg-white px-8 py-10 text-center shadow-card">
+            <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+            <p className="text-sm font-semibold text-slate-600">{previewLoading ? t.common.loading : copy.preview}</p>
+          </div>
+        </main>
+      </>
+    );
+  }
+
+  if (previewError) {
+    return (
+      <>
+        <Head>
+          <title>{`Hiro | ${copy.previewPdfTitle}`}</title>
+        </Head>
+        <main className="flex min-h-screen items-center justify-center bg-[#eef0f4] px-4" dir={dir}>
+          <div className="max-w-lg rounded-[28px] bg-white px-8 py-10 text-center shadow-card">
+            <p className="text-sm font-semibold text-rose-700">{previewError}</p>
+            <Link href="/worker/invoices" className="mt-5 inline-flex text-sm font-bold text-primary">{copy.backToEditor}</Link>
+          </div>
+        </main>
+      </>
+    );
+  }
+
   const backHref = openedFromSaved ? '/worker/invoices/saved' : '/worker/invoices';
   const invoiceItemPages = shouldUseStoredPdf ? [] : buildInvoiceItemPages(lineItems);
   const invoicePreviewPageCount = shouldUseStoredPdf ? 1 : invoiceItemPages.length + (isPaymentReceipt ? paymentTablePages.length : 0);
@@ -992,13 +980,12 @@ export default function InvoicePreviewPage() {
             }}
           >
             <section
-              ref={invoiceContentRef}
               className="invoice-preview-frame flex w-[794px] max-w-none flex-col gap-6 print:w-[210mm] print:max-w-none print:gap-0"
               style={{
                 '--invoice-preview-scale': previewScale,
               }}
             >
-            {shouldUseStoredPdf ? (
+            {activePdfUrl ? (
               <div className="px-4 py-5 sm:px-14 sm:py-14">
                 <div className="rounded-[22px] bg-[#dcebfa] px-5 py-5 sm:px-7 sm:py-6">
                   <h2 className="text-2xl font-light text-[#2e63b2] sm:text-4xl">{docTypeLabel}</h2>
@@ -1012,8 +999,8 @@ export default function InvoicePreviewPage() {
 
                 <div className="mt-6 rounded-[18px] border border-[#d7dee8] bg-[#f8fbff] p-3">
                   <iframe
-                    src={savedInvoiceUrl}
-                    title={savedInvoiceFileName}
+                    src={activePdfUrl}
+                    title={hasSavedDocument ? savedInvoiceFileName : 'Document preview'}
                     className="h-[75vh] w-full rounded-[12px] border-0 bg-white"
                   />
                 </div>
@@ -1279,9 +1266,9 @@ export default function InvoicePreviewPage() {
               <button
                 type="button"
                 onClick={handleSaveInvoice}
-                disabled={saving || isSaved || shouldUseStoredPdf}
+                disabled={saving || isSaved || shouldUseStoredPdf || previewLoading || !activePdfUrl}
                 className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-sm font-bold transition-colors sm:px-5 ${
-                  saving || isSaved || shouldUseStoredPdf
+                  saving || isSaved || shouldUseStoredPdf || previewLoading || !activePdfUrl
                     ? 'border-[#bfd7f5] bg-[#f4f9ff] text-slate-400'
                     : 'border-[#2a7bd4] bg-white text-[#2a7bd4] hover:bg-[#f5faff]'
                 }`}

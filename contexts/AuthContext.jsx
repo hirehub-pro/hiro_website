@@ -232,6 +232,14 @@ export function AuthProvider({ children }) {
     return true;
   }
 
+  function enableInvoiceBuilderDevelopmentAccess() {
+    if (process.env.NODE_ENV !== 'development' || !auth.currentUser) {
+      throw new Error('Development invoice builder access is unavailable.');
+    }
+
+    setInvoiceBuilderVerifiedUid(auth.currentUser.uid);
+  }
+
   async function getPasswordResetEmailHint(phoneNumber) {
     const userDoc = await getUserDocByPhone(phoneNumber);
     const email = String(userDoc?.data()?.email || '').trim();
@@ -576,6 +584,7 @@ export function AuthProvider({ children }) {
         verifyPhonePassword,
         verifyInvoiceBuilderIdentity,
         confirmInvoiceBuilderEmailCode,
+        enableInvoiceBuilderDevelopmentAccess,
         invoiceBuilderIdentityVerified: Boolean(user?.uid && invoiceBuilderVerifiedUid === user.uid),
         getPasswordResetEmailHint,
         sendPasswordResetForPhone,

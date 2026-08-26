@@ -17,7 +17,7 @@ import {
 } from 'react-icons/fi';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
-import { db } from '../../lib/firebase';
+import { auth, db } from '../../lib/firebase';
 import {
   getNextUserDocumentNumber,
   getSystemVatPercent,
@@ -34,7 +34,7 @@ import {
 } from '../../lib/invoices';
 import {
   claimInvoiceBuilderLock,
-  getInvoiceBuilderDeviceId,
+  getInvoiceBuilderLockIdentity,
   releaseInvoiceBuilderLock,
   renewInvoiceBuilderLock,
   subscribeToInvoiceBuilderLock,
@@ -251,6 +251,7 @@ export default function WorkerInvoicesPage() {
     loading,
     verifyInvoiceBuilderIdentity,
     confirmInvoiceBuilderEmailCode,
+    enableInvoiceBuilderDevelopmentAccess,
     invoiceBuilderIdentityVerified,
   } = useAuth();
   const { t, locale } = useLanguage();
@@ -372,14 +373,16 @@ export default function WorkerInvoicesPage() {
   const appliedClientPrefillRef = useRef('');
   const [verificationChecked, setVerificationChecked] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState('');
+  const [accountApproved, setAccountApproved] = useState(false);
   const [businessVerificationInfo, setBusinessVerificationInfo] = useState(null);
   const [invoiceBuilderAccess, setInvoiceBuilderAccess] = useState('checking');
+  const [invoiceBuilderLockError, setInvoiceBuilderLockError] = useState('');
   const { showDueDate, showPaymentDetails, showPaymentType } = useMemo(
     () => documentTypeConfig(documentType),
     [documentType]
   );
   const isReceipt = documentType === 'receipt';
-  const canUseInvoiceBuilder = verificationStatus === 'approved';
+  const canUseInvoiceBuilder = accountApproved && verificationStatus === 'approved';
 
   function getDocumentTypeLabel(value) {
     return documentTypeOptions.find((option) => option.value === value)?.label || copy.documentType;
@@ -403,22 +406,26 @@ export default function WorkerInvoicesPage() {
 
     async function ensureVerificationInfo() {
       try {
-        const verificationInfo = await getUserVerificationInfo(user.uid);
+        const [userSnap, verificationInfo] = await Promise.all([
+          getDoc(doc(db, 'users', user.uid)),
+          getUserVerificationInfo(user.uid),
+        ]);
         if (cancelled) return;
 
         const verificationStatus = String(
           verificationInfo?.businessVerificationStatus
           || verificationInfo?.status
-          || profile?.businessVerificationStatus
           || ''
         ).trim().toLowerCase();
 
         setBusinessVerificationInfo(verificationInfo);
+        setAccountApproved(userSnap.exists() && userSnap.data()?.isapproved === true);
         setVerificationStatus(verificationInfo ? (verificationStatus || 'pending') : 'not_submitted');
         setVerificationChecked(true);
       } catch (error) {
         if (!cancelled) {
           setBusinessVerificationInfo(null);
+          setAccountApproved(false);
           setVerificationStatus('not_submitted');
           setVerificationChecked(true);
         }
@@ -430,7 +437,7 @@ export default function WorkerInvoicesPage() {
     return () => {
       cancelled = true;
     };
-  }, [isWorker, loading, profile?.businessVerificationStatus, user?.uid]);
+  }, [isWorker, loading, user?.uid]);
 
   useEffect(() => {
     if (!user?.uid || !isWorker || !canUseInvoiceBuilder || !invoiceBuilderIdentityVerified) {
@@ -438,17 +445,18 @@ export default function WorkerInvoicesPage() {
       return undefined;
     }
 
-    const deviceId = getInvoiceBuilderDeviceId();
+    const lockIdentity = getInvoiceBuilderLockIdentity();
     let active = true;
     let unsubscribe = () => {};
     let heartbeatId = null;
 
     async function claimAccess() {
       try {
-        const result = await claimInvoiceBuilderLock(user.uid, deviceId);
+        setInvoiceBuilderLockError('');
+        const result = await claimInvoiceBuilderLock(user.uid, lockIdentity);
         if (!active) {
           if (result.allowed) {
-            releaseInvoiceBuilderLock(user.uid, deviceId).catch(() => {});
+            releaseInvoiceBuilderLock(user.uid, lockIdentity).catch(() => {});
           }
           return;
         }
@@ -458,20 +466,40 @@ export default function WorkerInvoicesPage() {
 
         unsubscribe = subscribeToInvoiceBuilderLock(user.uid, (lock) => {
           if (!active) return;
-          const isOwnedByThisDevice = lock?.deviceId === deviceId && Number(lock?.expiresAtMs || 0) > Date.now();
-          if (!isOwnedByThisDevice) setInvoiceBuilderAccess('blocked');
+          const isOwnedByThisSession = lock?.sessionId === lockIdentity.sessionId &&
+            Number(lock?.expiresAt?.toMillis?.() || lock?.expiresAtMs || 0) > Date.now();
+          if (!isOwnedByThisSession) setInvoiceBuilderAccess('blocked');
         });
 
         heartbeatId = window.setInterval(async () => {
           try {
-            const renewal = await renewInvoiceBuilderLock(user.uid, deviceId);
+            const renewal = await renewInvoiceBuilderLock(user.uid, lockIdentity);
             if (active && !renewal.allowed) setInvoiceBuilderAccess('blocked');
           } catch (error) {
             // Keep the current page available during a temporary network interruption.
           }
         }, 20 * 1000);
       } catch (error) {
-        if (active) setInvoiceBuilderAccess('blocked');
+        if (active) {
+          const diagnostics = [
+            `Firestore lock transaction: ${error?.code || 'unknown-error'}: ${error?.message || 'Could not claim the Invoice Builder lock.'}`,
+            `Page user UID: ${user.uid || '(missing)'}`,
+            `Firebase Auth UID: ${auth.currentUser?.uid || '(missing)'}`,
+            `Firebase project ID: ${auth.app?.options?.projectId || '(missing)'}`,
+          ];
+
+          try {
+            const tokenResult = auth.currentUser ? await auth.currentUser.getIdTokenResult(true) : null;
+            diagnostics.push(`Forced token refresh: ${tokenResult ? 'succeeded' : 'no signed-in Firebase user'}`);
+            diagnostics.push(`Token audience: ${tokenResult?.claims?.aud || '(missing)'}`);
+            diagnostics.push(`Token expiry: ${tokenResult?.expirationTime || '(missing)'}`);
+          } catch (tokenError) {
+            diagnostics.push(`Forced token refresh: ${tokenError?.code || 'unknown-error'}: ${tokenError?.message || 'failed'}`);
+          }
+
+          setInvoiceBuilderLockError(diagnostics.join('\n'));
+          setInvoiceBuilderAccess('blocked');
+        }
       }
     }
 
@@ -481,7 +509,7 @@ export default function WorkerInvoicesPage() {
       active = false;
       unsubscribe();
       if (heartbeatId) window.clearInterval(heartbeatId);
-      releaseInvoiceBuilderLock(user.uid, deviceId).catch(() => {});
+      releaseInvoiceBuilderLock(user.uid, lockIdentity).catch(() => {});
     };
   }, [canUseInvoiceBuilder, invoiceBuilderIdentityVerified, isWorker, user?.uid]);
 
@@ -1134,6 +1162,16 @@ export default function WorkerInvoicesPage() {
                   <button type="submit" className="btn-primary w-full" disabled={verifyingIdentity}>
                     {verifyingIdentity ? copy.identityVerifying : copy.identityVerifyCta}
                   </button>
+
+                  {process.env.NODE_ENV === 'development' ? (
+                    <button
+                      type="button"
+                      onClick={enableInvoiceBuilderDevelopmentAccess}
+                      className="w-full text-sm font-bold text-amber-700"
+                    >
+                      Temporary: open Invoice Builder without verification
+                    </button>
+                  ) : null}
                 </form>
               )}
             </Panel>
@@ -1152,6 +1190,11 @@ export default function WorkerInvoicesPage() {
             <p className="text-xs font-black uppercase tracking-[0.18em] text-primary/65">{copy.shortTitle}</p>
             <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-gray-950 sm:text-4xl">{copy.deviceInUseTitle}</h1>
             <p className="mt-3 text-sm leading-7 text-gray-500">{copy.deviceInUseBody}</p>
+            {process.env.NODE_ENV === 'development' && invoiceBuilderLockError ? (
+              <pre className="mt-5 overflow-x-auto rounded-2xl border border-rose-200 bg-rose-50 p-4 text-left text-xs leading-5 text-rose-900 whitespace-pre-wrap">
+                {invoiceBuilderLockError}
+              </pre>
+            ) : null}
           </Panel>
         </div>
       </main>

@@ -48836,3 +48836,18 @@
 ├─────────┼──────────────────────────┼────────────────────────────────────────────────────────┼────────────────┼──────────┼─────────┼─────────────────────┤
 │ hirehub │ hirehub-pro-hiro_website │ https://hirehub--hire-hub-fe6c4.us-central1.hosted.app │ us-central1    │ Disabled │ N/A     │ 2026-08-22 13:34:39 │
 └─────────┴──────────────────────────┴────────────────────────────────────────────────────────┴────────────────┴──────────┴─────────┴─────────────────────┘
+[debug] [2026-08-26T13:04:59.004Z] ----------------------------------------------------------------------
+[debug] [2026-08-26T13:04:59.007Z] Command:       /opt/homebrew/Cellar/node/25.9.0_2/bin/node /Users/raslan/.npm/_npx/ba4f1959e38407b5/node_modules/.bin/firebase use
+[debug] [2026-08-26T13:04:59.007Z] CLI Version:   15.28.1
+[debug] [2026-08-26T13:04:59.007Z] Platform:      darwin
+[debug] [2026-08-26T13:04:59.007Z] Node Version:  v25.9.0
+[debug] [2026-08-26T13:04:59.007Z] Detected Agent: codex_cli
+[debug] [2026-08-26T13:04:59.007Z] Time:          Wed Aug 26 2026 16:04:59 GMT+0300 (Israel Daylight Time)
+[debug] [2026-08-26T13:04:59.008Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-08-26T13:04:59.126Z] Object "/storage" in "firebase.json" has unknown property: {"additionalProperty":"bucket"}
+[debug] [2026-08-26T13:04:59.126Z] Field "/storage" in "firebase.json" is possibly invalid: must be array
+[debug] [2026-08-26T13:04:59.126Z] Field "/storage" in "firebase.json" is possibly invalid: must match a schema in anyOf
+[debug] [2026-08-26T13:04:59.129Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-08-26T13:04:59.129Z] > authorizing via signed-in user (my.hire.hub@gmail.com)
+[info] hire-hub-fe6c4
