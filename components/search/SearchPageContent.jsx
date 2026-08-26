@@ -759,6 +759,7 @@ export default function SearchPageContent({ categorySlug = '', profession: initi
 
         {categoryProfession ? (
           <ProfessionSeoSections
+            key={categoryProfession.slug}
             profession={categoryProfession}
             locale={locale}
             relatedProfessions={relatedProfessions}

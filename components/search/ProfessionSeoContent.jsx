@@ -1,6 +1,8 @@
 import Link from 'next/link';
+import { useState } from 'react';
 import {
   HiCheckCircle,
+  HiChevronDown,
   HiChevronRight,
   HiLocationMarker,
   HiOutlineCheck,
@@ -56,6 +58,10 @@ export function ProfessionHero({ profession, locale = 'he' }) {
 
 export function ProfessionSeoSections({ profession, locale = 'he', relatedProfessions = [] }) {
   const content = getProfessionPageContent(profession, locale);
+  const [showAllServices, setShowAllServices] = useState(false);
+  const [showAllQuestions, setShowAllQuestions] = useState(false);
+  const hasMoreServices = content.services.length > 4;
+  const hasMoreQuestions = content.questions.length > 4;
 
   return (
     <div className="mt-12 border-t border-slate-200/80 pt-8">
@@ -66,13 +72,27 @@ export function ProfessionSeoSections({ profession, locale = 'he', relatedProfes
           </h2>
           <p className="mt-2 text-sm leading-6 text-slate-500">{content.servicesIntro}</p>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
-          {content.services.map((service) => (
-            <div key={service} className="flex items-center gap-2.5 rounded-xl border border-slate-200/70 bg-white px-3.5 py-3 text-sm font-semibold text-slate-700">
+          {content.services.map((service, index) => (
+            <div
+              key={service}
+              className={`${!showAllServices && index >= 4 ? 'hidden' : 'flex'} items-center gap-2.5 rounded-xl border border-slate-200/70 bg-white px-3.5 py-3 text-sm font-semibold text-slate-700`}
+            >
               <HiCheckCircle className="h-4.5 w-4.5 shrink-0 text-primary" />
               {service}
             </div>
           ))}
           </div>
+          {hasMoreServices ? (
+            <button
+              type="button"
+              onClick={() => setShowAllServices((current) => !current)}
+              aria-expanded={showAllServices}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-bold text-primary transition hover:bg-primary-50"
+            >
+              {showAllServices ? content.showLess : content.showMore}
+              <HiChevronDown className={`h-4 w-4 transition-transform ${showAllServices ? 'rotate-180' : ''}`} />
+            </button>
+          ) : null}
         </section>
 
         <section aria-labelledby="choose-professional">
@@ -101,8 +121,8 @@ export function ProfessionSeoSections({ profession, locale = 'he', relatedProfes
           {content.questionsTitle}
         </h2>
         <div className="divide-y divide-slate-200">
-          {content.questions.map(([question, answer]) => (
-            <details key={question} className="group py-4">
+          {content.questions.map(([question, answer], index) => (
+            <details key={question} hidden={!showAllQuestions && index >= 4} className="group py-4">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-extrabold text-slate-900">
                 {question}
                 <span className="text-slate-400 transition group-open:rotate-90 group-open:text-primary">
@@ -113,6 +133,17 @@ export function ProfessionSeoSections({ profession, locale = 'he', relatedProfes
             </details>
           ))}
         </div>
+        {hasMoreQuestions ? (
+          <button
+            type="button"
+            onClick={() => setShowAllQuestions((current) => !current)}
+            aria-expanded={showAllQuestions}
+            className="mx-auto my-2 flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-bold text-primary transition hover:bg-white/70"
+          >
+            {showAllQuestions ? content.showLess : content.showMore}
+            <HiChevronDown className={`h-4 w-4 transition-transform ${showAllQuestions ? 'rotate-180' : ''}`} />
+          </button>
+        ) : null}
       </section>
 
       {relatedProfessions.length > 0 ? (

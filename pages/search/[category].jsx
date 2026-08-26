@@ -31,6 +31,15 @@ export default function SearchCategoryPage({
       areaServed: { '@type': 'Country', name: 'Israel' },
       provider: { '@type': 'Organization', '@id': 'https://hiro-services.com/#organization', name: 'Hiro' },
     },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: seo.questions.map(([question, answer]) => ({
+        '@type': 'Question',
+        name: question,
+        acceptedAnswer: { '@type': 'Answer', text: answer },
+      })),
+    },
   ];
 
   return (
