@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
 import Image from 'next/image';
 import { useRouter } from 'next/router';
@@ -11,9 +11,15 @@ import { FiCalendar, FiCheck, FiClock, FiFilter, FiMapPin, FiRefreshCw, FiSearch
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { buildCommunityPostPath } from '../lib/profile-routing';
-import { getBlogPosts, createBlogPost, toggleBlogPostLike } from '../lib/firestore';
-import { db, storage } from '../lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { createBlogPost, toggleBlogPostLike } from '../lib/firestore';
+import { storage } from '../lib/firebase';
+import { getProfessions } from '../lib/professions';
+import {
+  getCachedCommunityPosts,
+  loadMoreCommunityPosts,
+  revalidateCommunityPosts,
+  setCachedCommunityPosts,
+} from '../lib/community-posts';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getCommunityPageSeo } from '../lib/page-seo';
 import { absoluteUrl } from '../lib/seo-locale';
@@ -143,8 +149,11 @@ export default function CommunityPage() {
   const [sortBy, setSortBy] = useState('newest');
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [posts, setPosts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [posts, setPosts] = useState(function () { return getCachedCommunityPosts().posts; });
+  const [loading, setLoading] = useState(function () { return getCachedCommunityPosts().posts.length === 0; });
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(function () { return getCachedCommunityPosts().hasMore; });
   const [showPublish, setShowPublish] = useState(false);
   const [professionOptions, setProfessionOptions] = useState([]);
   const [professionsLoading, setProfessionsLoading] = useState(false);
@@ -182,21 +191,39 @@ export default function CommunityPage() {
     { value: 'nearest', label: t.community.sortNearest },
   ];
 
-  async function loadPosts() {
-    setLoading(true);
+  const loadPosts = useCallback(async function ({ force = false } = {}) {
+    if (getCachedCommunityPosts().posts.length === 0) setLoading(true);
+    setRefreshing(true);
     try {
-      const data = await getBlogPosts();
-      setPosts(data);
+      const nextFeed = await revalidateCommunityPosts({ force });
+      setPosts(nextFeed.posts);
+      setHasMore(nextFeed.hasMore);
     } catch (err) {
       toast.error('Failed to load posts');
     } finally {
       setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  async function loadMorePosts() {
+    if (loadingMore || !hasMore) return;
+
+    setLoadingMore(true);
+    try {
+      const nextFeed = await loadMoreCommunityPosts();
+      setPosts(nextFeed.posts);
+      setHasMore(nextFeed.hasMore);
+    } catch (err) {
+      toast.error('Failed to load more posts');
+    } finally {
+      setLoadingMore(false);
     }
   }
 
   useEffect(function () {
     loadPosts();
-  }, []);
+  }, [loadPosts]);
 
   useEffect(function () {
     let isMounted = true;
@@ -204,9 +231,9 @@ export default function CommunityPage() {
     async function loadProfessions() {
       setProfessionsLoading(true);
       try {
-        const snap = await getDoc(doc(db, 'metadata', 'professions'));
+        const professionItems = await getProfessions();
         if (!isMounted) return;
-        const items = (snap.data()?.items || [])
+        const items = professionItems
           .map(function (item, index) {
             return {
               id: String(item.id ?? index),
@@ -385,7 +412,7 @@ export default function CommunityPage() {
     const likedByArr = Array.isArray(post.likedBy) ? post.likedBy : [];
     const hasLiked = likedByArr.includes(user.uid);
     setPosts(function (prev) {
-      return prev.map(function (p) {
+      const nextPosts = prev.map(function (p) {
         if (p.id !== post.id) return p;
         const pLikedByArr = Array.isArray(p.likedBy) ? p.likedBy : [];
         return {
@@ -394,11 +421,13 @@ export default function CommunityPage() {
           likes: (p.likes || 0) + (hasLiked ? -1 : 1),
         };
       });
+      setCachedCommunityPosts(nextPosts);
+      return nextPosts;
     });
     try {
       await toggleBlogPostLike(post.id, user.uid, hasLiked);
     } catch (err) {
-      loadPosts();
+      loadPosts({ force: true });
     }
   }
 
@@ -533,7 +562,7 @@ export default function CommunityPage() {
       });
       setMediaPreviews([]);
       setShowPublish(false);
-      loadPosts();
+      loadPosts({ force: true });
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -559,10 +588,12 @@ export default function CommunityPage() {
             <h1 className="text-2xl font-black tracking-tight text-slate-950 md:text-4xl">Community & Jobs</h1>
             <div className="flex items-center gap-2">
               <button
-                onClick={loadPosts}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-primary hover:bg-white/70"
+                onClick={function () { loadPosts({ force: true }); }}
+                disabled={refreshing}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-primary hover:bg-white/70 disabled:opacity-50"
+                aria-label="Refresh posts"
               >
-                <FiRefreshCw className="h-5 w-5" />
+                <FiRefreshCw className={clsx('h-5 w-5', refreshing && 'animate-spin')} />
               </button>
               <div className="relative">
                 <button
@@ -849,6 +880,19 @@ export default function CommunityPage() {
                 </article>
               );
             })}
+          </div>
+        )}
+
+        {!loading && hasMore && (
+          <div className="mt-8 flex justify-center">
+            <button
+              type="button"
+              onClick={loadMorePosts}
+              disabled={loadingMore}
+              className="inline-flex min-w-40 items-center justify-center rounded-2xl border border-[#c9ddef] bg-white px-6 py-3 text-sm font-black text-primary shadow-sm transition hover:border-primary/40 hover:shadow-md disabled:cursor-wait disabled:opacity-60"
+            >
+              {loadingMore ? 'Loading more...' : 'Load more posts'}
+            </button>
           </div>
         )}
 

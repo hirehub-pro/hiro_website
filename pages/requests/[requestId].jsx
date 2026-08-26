@@ -30,6 +30,7 @@ import {
 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { db } from '../../lib/firebase';
+import { getProfessions } from '../../lib/professions';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import {
@@ -123,8 +124,8 @@ export default function RequestDetailsPage() {
 
     async function loadProfessionItems() {
       try {
-        const snapshot = await getDoc(doc(db, 'metadata', 'professions'));
-        if (!cancelled) setProfessionItems(snapshot.data()?.items || []);
+        const items = await getProfessions();
+        if (!cancelled) setProfessionItems(items);
       } catch (loadError) {
         console.error('Failed to load profession translations:', loadError);
       }

@@ -1,13 +1,11 @@
 import Link from 'next/link';
-import Image from 'next/image';
 import { HiStar, HiBadgeCheck } from 'react-icons/hi';
 import { buildProfilePath } from '../../lib/profile-routing';
+import ProfileImage from '../common/ProfileImage';
 
 export default function WorkerCard({ worker, compact = false }) {
   const profileHref = buildProfilePath(worker);
-  const avatarUrl =
-    worker.profileImageUrl ||
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(worker.name || 'U')}&background=1976D2&color=fff`;
+  const avatarUrl = worker.profileImageUrl;
 
   if (compact) {
     return (
@@ -17,7 +15,7 @@ export default function WorkerCard({ worker, compact = false }) {
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="relative h-16 w-16">
-            <Image
+            <ProfileImage
               src={avatarUrl}
               alt={worker.name || 'Worker'}
               fill
@@ -68,7 +66,7 @@ export default function WorkerCard({ worker, compact = false }) {
       className="card-lift flex items-center gap-4 overflow-hidden rounded-[28px] border border-white/70 bg-white/90 p-5 shadow-card"
     >
       <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-2xl">
-        <Image
+        <ProfileImage
           src={avatarUrl}
           alt={worker.name || 'Worker'}
           fill

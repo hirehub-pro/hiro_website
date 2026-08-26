@@ -1,5 +1,4 @@
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { getProfessions } from '../lib/professions';
 import { slugifyProfession } from '../lib/search-routing';
 import { SEO_LOCALES, localizePath } from '../lib/seo-locale';
 import { buildUrlSet, createSitemapEntries, sendXml } from '../lib/sitemap';
@@ -9,8 +8,7 @@ export async function getServerSideProps({ res }) {
   const sitemap = createSitemapEntries();
 
   try {
-    const professionsSnap = await getDoc(doc(db, 'metadata', 'professions'));
-    const professionItems = professionsSnap.data()?.items || [];
+    const professionItems = await getProfessions();
 
     professionItems.forEach((item) => {
       const source = item.en || item.logo || item.he || item.ar;

@@ -1,6 +1,11 @@
 import Head from 'next/head';
 import SearchPageContent from '../../components/search/SearchPageContent';
-import { absoluteUrl, buildAlternateLanguageUrls, normalizeSeoLocale } from '../../lib/seo-locale';
+import {
+  absoluteUrl,
+  buildAlternateLanguageUrls,
+  SEO_DEFAULT_LOCALE,
+  SEO_LOCALES,
+} from '../../lib/seo-locale';
 
 export default function LocalizedSearchPage({ locale }) {
   const alternateUrls = buildAlternateLanguageUrls('/search');
@@ -26,21 +31,17 @@ export default function LocalizedSearchPage({ locale }) {
   );
 }
 
-export async function getServerSideProps({ params }) {
-  const locale = normalizeSeoLocale(params?.lang);
+export function getStaticPaths() {
+  return {
+    paths: SEO_LOCALES
+      .filter((lang) => lang !== SEO_DEFAULT_LOCALE)
+      .map((lang) => ({ params: { lang } })),
+    fallback: false,
+  };
+}
 
-  if (locale === 'he') {
-    return {
-      redirect: {
-        destination: '/search',
-        permanent: true,
-      },
-    };
-  }
-
-  if (locale !== params?.lang) {
-    return { notFound: true };
-  }
+export function getStaticProps({ params }) {
+  const locale = params?.lang;
 
   return {
     props: {

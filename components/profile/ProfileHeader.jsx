@@ -1,7 +1,7 @@
-import Image from 'next/image';
 import { HiBadgeCheck, HiStar, HiLocationMarker } from 'react-icons/hi';
 import { FiExternalLink, FiPhone, FiMessageSquare, FiShare2, FiFlag } from 'react-icons/fi';
 import { useLanguage } from '../../contexts/LanguageContext';
+import ProfileImage from '../common/ProfileImage';
 
 const badgeConfig = {
   id:       { labelKey: 'idVerified',       icon: '🪪', gradient: 'from-blue-500 to-indigo-600' },
@@ -30,9 +30,7 @@ export default function ProfileHeader({
 }) {
   const { t } = useLanguage();
 
-  const avatarUrl =
-    profile.profileImageUrl ||
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name || 'U')}&background=1976D2&color=fff&size=200`;
+  const avatarUrl = profile.profileImageUrl;
 
   const handleShare = () => {
     if (navigator.share) {
@@ -88,7 +86,7 @@ export default function ProfileHeader({
             <div className="rounded-full bg-gradient-to-br from-indigo-500 via-primary to-cyan-400 p-1">
               <div className="rounded-full bg-white p-0.5">
                 <div className="relative h-24 w-24 md:h-28 md:w-28">
-                <Image
+                <ProfileImage
                   src={avatarUrl}
                   alt={profile.name}
                   fill

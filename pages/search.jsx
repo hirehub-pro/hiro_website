@@ -3,8 +3,9 @@ import SearchPageContent from '../components/search/SearchPageContent';
 import { absoluteUrl, buildAlternateLanguageUrls } from '../lib/seo-locale';
 import { getSearchPageSeo } from '../lib/page-seo';
 
-export default function SearchPage({ alternateUrls }) {
+export default function SearchPage() {
   const seo = getSearchPageSeo();
+  const alternateUrls = buildAlternateLanguageUrls('/search');
             
   return (
     <>
@@ -29,12 +30,4 @@ export default function SearchPage({ alternateUrls }) {
       <SearchPageContent />
     </>
   );
-}
-
-export async function getServerSideProps() {
-  return {
-    props: {
-      alternateUrls: buildAlternateLanguageUrls('/search'),
-    },
-  };
 }

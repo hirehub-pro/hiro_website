@@ -1,6 +1,15 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  async redirects() {
+    return [
+      {
+        source: '/he/search',
+        destination: '/search',
+        permanent: true,
+      },
+    ];
+  },
   async rewrites() {
     return [
       {

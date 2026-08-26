@@ -1,7 +1,6 @@
 import Head from 'next/head';
-import { doc, getDoc } from 'firebase/firestore';
 import SearchPageContent from '../../components/search/SearchPageContent';
-import { db } from '../../lib/firebase';
+import { getProfessions } from '../../lib/professions';
 import { absoluteUrl, buildAlternateLanguageUrls } from '../../lib/seo-locale';
 import { getCategoryPageSeo } from '../../lib/page-seo';
 import { findProfessionMetadataBySlug } from '../../lib/profession-seo';
@@ -52,8 +51,8 @@ export async function getServerSideProps({ params }) {
   let professionLabel = '';
 
   try {
-    const professionsSnap = await getDoc(doc(db, 'metadata', 'professions'));
-    const matchedProfession = findProfessionMetadataBySlug(professionsSnap.data()?.items, categorySlug);
+    const professionItems = await getProfessions();
+    const matchedProfession = findProfessionMetadataBySlug(professionItems, categorySlug);
     professionLabel = String(matchedProfession?.he || matchedProfession?.en || '').trim();
   } catch (error) {
     professionLabel = '';

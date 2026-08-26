@@ -6,10 +6,9 @@ import dynamic from 'next/dynamic';
 import toast from 'react-hot-toast';
 import { HiOutlineUser, HiBriefcase, HiOfficeBuilding, HiSparkles, HiDeviceMobile, HiKey, HiChevronDown, HiChevronUp, HiCheck, HiX, HiCreditCard, HiLocationMarker, HiLockClosed } from 'react-icons/hi';
 import clsx from 'clsx';
-import { doc, getDoc } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
-import { db } from '../../lib/firebase';
+import { getProfessions } from '../../lib/professions';
 
 const SEO_TITLE = 'הרשמה להירו | הצטרפו ומצאו בעלי מקצוע מומלצים';
 const SEO_DESCRIPTION = 'פתחו חשבון הירו בחינם, מצאו בעלי מקצוע אמינים באזור שלכם, שלחו בקשות, שמרו פרופילים מומלצים ונהלו הכול במקום אחד.';
@@ -83,11 +82,11 @@ export default function SignUpPage() {
     async function loadProfessions() {
       setProfessionsLoading(true);
       try {
-        const professionsSnap = await getDoc(doc(db, 'metadata', 'professions'));
+        const professionItems = await getProfessions();
 
         if (!isMounted) return;
 
-        const items = (professionsSnap.data()?.items || [])
+        const items = professionItems
           .map((item, index) => {
             const label = item[locale] || item.en || item.he || item.ar || item.logo || `Profession ${index + 1}`;
             const value = item.en || item.logo || label;

@@ -18,11 +18,20 @@ import {
   FaTruck,
   FaWrench,
 } from 'react-icons/fa';
-import * as MdIcons from 'react-icons/md';
+import {
+  MdChair,
+  MdConstruction,
+  MdDoorFront,
+  MdEngineering,
+  MdFormatPaint,
+  MdLockOpen,
+  MdMan,
+  MdPlumbing,
+  MdWoman,
+} from 'react-icons/md';
 import clsx from 'clsx';
-import { doc, getDoc } from 'firebase/firestore';
 import { searchWorkers } from '../../lib/firestore';
-import { db } from '../../lib/firebase';
+import { getProfessions } from '../../lib/professions';
 import { buildLocalizedSearchPath, findProfessionBySlug, slugifyProfession } from '../../lib/search-routing';
 import { getProfessionSeoData } from '../../lib/profession-seo';
 import { getSearchPageSeo } from '../../lib/page-seo';
@@ -30,6 +39,8 @@ import WorkerCard from '../workers/WorkerCard';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
+
+const SEARCH_PAGE_SIZE = 20;
 
 function getProfessionLabel(profession, locale) {
   return profession[locale] || profession.en || profession.he || profession.ar || profession.logo || 'Profession';
@@ -64,34 +75,20 @@ const professionLogoIcons = {
 };
 
 const materialIconAliases = {
-  door_front_door: 'MdDoorFront',
-  locksmith: 'MdLockOpen',
-  paint_rounded: 'MdFormatPaint',
-  construction_rounded: 'MdConstruction',
-  plumbing_rounded: 'MdPlumbing',
-  engineering_outlined: 'MdEngineering',
-  woman: 'MdWoman',
-  man: 'MdMan',
-  chair: 'MdChair',
+  door_front_door: MdDoorFront,
+  locksmith: MdLockOpen,
+  paint_rounded: MdFormatPaint,
+  construction_rounded: MdConstruction,
+  plumbing_rounded: MdPlumbing,
+  engineering_outlined: MdEngineering,
+  woman: MdWoman,
+  man: MdMan,
+  chair: MdChair,
 };
 
 function getMaterialIconByName(name) {
   if (!name) return null;
-
-  const aliasedName = materialIconAliases[name];
-  if (aliasedName && typeof MdIcons[aliasedName] === 'function') {
-    return MdIcons[aliasedName];
-  }
-
-  const generatedName = `Md${name
-    .split('_')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join('')}`;
-
-  return typeof MdIcons[generatedName] === 'function'
-    ? MdIcons[generatedName]
-    : null;
+  return materialIconAliases[name] || null;
 }
 
 function getProfessionIcon(profession) {
@@ -120,6 +117,19 @@ function haversineKm(lat1, lng1, lat2, lng2) {
 
 function toRad(deg) {
   return (deg * Math.PI) / 180;
+}
+
+function addWorkerDistances(workers, lat, lng) {
+  return workers.map((worker) => ({
+    ...worker,
+    distanceKm:
+      typeof lat === 'number' &&
+      typeof lng === 'number' &&
+      typeof worker.lat === 'number' &&
+      typeof worker.lng === 'number'
+        ? haversineKm(lat, lng, worker.lat, worker.lng)
+        : null,
+  }));
 }
 
 function sortWorkers(workers, sortBy) {
@@ -165,12 +175,20 @@ export default function SearchPageContent({ categorySlug = '' }) {
   const inputRef = useRef(null);
   const lastScrollYRef = useRef(0);
   const radiusFilterHiddenRef = useRef(false);
+  const searchCursorRef = useRef(null);
+  const lastSearchKeyRef = useRef('');
+  const lastSearchProfessionRef = useRef('');
+  const pendingSearchRef = useRef('');
+  const searchGenerationRef = useRef(0);
+  const userLocationRef = useRef({ lat: null, lng: null });
 
   const [query, setQuery] = useState('');
   const [workers, setWorkers] = useState([]);
   const [professions, setProfessions] = useState([]);
   const [professionsLoading, setProfessionsLoading] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMoreWorkers, setHasMoreWorkers] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [userLat, setUserLat] = useState(null);
   const [userLng, setUserLng] = useState(null);
@@ -185,6 +203,7 @@ export default function SearchPageContent({ categorySlug = '' }) {
       typeof profile?.activeSearchLng === 'number' ? profile.activeSearchLng : profile?.lng;
 
     if (typeof preferredLat === 'number' && typeof preferredLng === 'number') {
+      userLocationRef.current = { lat: preferredLat, lng: preferredLng };
       setUserLat(preferredLat);
       setUserLng(preferredLng);
     }
@@ -196,10 +215,10 @@ export default function SearchPageContent({ categorySlug = '' }) {
     async function loadProfessions() {
       setProfessionsLoading(true);
       try {
-        const snap = await getDoc(doc(db, 'metadata', 'professions'));
+        const professionItems = await getProfessions();
         if (!isMounted) return;
 
-        const items = (snap.data()?.items || [])
+        const items = professionItems
           .map((item, index) => ({
             id: String(item.id ?? index),
             value: item.en || item.logo || getProfessionLabel(item, locale),
@@ -254,15 +273,20 @@ export default function SearchPageContent({ categorySlug = '' }) {
     setQuery('');
     setWorkers([]);
     setHasSearched(false);
+    setHasMoreWorkers(false);
+    searchGenerationRef.current += 1;
+    searchCursorRef.current = null;
+    lastSearchKeyRef.current = '';
+    lastSearchProfessionRef.current = '';
+    pendingSearchRef.current = '';
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categorySlug, locale, professions, router.isReady, router.query.q]);
 
   useEffect(() => {
-    if (!hasSearched || !String(query || '').trim()) return;
+    userLocationRef.current = { lat: userLat, lng: userLng };
     if (typeof userLat !== 'number' || typeof userLng !== 'number') return;
 
-    doSearch(query, userLat, userLng);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    setWorkers((currentWorkers) => addWorkerDistances(currentWorkers, userLat, userLng));
   }, [userLat, userLng]);
 
   useEffect(() => {
@@ -288,31 +312,88 @@ export default function SearchPageContent({ categorySlug = '' }) {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  async function doSearch(profession, lat, lng) {
-    if (!String(profession || '').trim()) return;
-    setLoading(true);
+  async function doSearch(profession, _lat, _lng, { append = false, force = false, sort = sortBy } = {}) {
+    const normalizedProfession = String(profession || '').trim();
+    if (!normalizedProfession) return;
+
+    const searchKey = JSON.stringify({
+      profession: normalizedProfession.toLowerCase(),
+      professionTerms: matchedProfessionTerms.map((term) => term.toLowerCase()).sort(),
+      sort,
+    });
+    const cursor = append ? searchCursorRef.current : null;
+    const requestKey = `${searchKey}:${append ? cursor?.id || 'end' : 'first'}`;
+
+    if (pendingSearchRef.current === requestKey) return;
+    if (!append && !force && lastSearchKeyRef.current === searchKey) return;
+    if (append && (!hasMoreWorkers || !cursor)) return;
+
+    const generation = append ? searchGenerationRef.current : searchGenerationRef.current + 1;
+    if (!append) {
+      searchGenerationRef.current = generation;
+      searchCursorRef.current = null;
+      setHasMoreWorkers(false);
+      setLoading(true);
+    } else {
+      setLoadingMore(true);
+    }
+
+    pendingSearchRef.current = requestKey;
+    lastSearchProfessionRef.current = normalizedProfession;
     setHasSearched(true);
+
     try {
-      const results = await searchWorkers({
-        profession,
+      const result = await searchWorkers({
+        profession: normalizedProfession,
         professionTerms: matchedProfessionTerms,
+        sortBy: sort,
+        cursor,
+        pageSize: SEARCH_PAGE_SIZE,
       });
-      const resultsWithDistance = results.map((worker) => ({
-        ...worker,
-        distanceKm:
-          typeof lat === 'number' &&
-          typeof lng === 'number' &&
-          typeof worker.lat === 'number' &&
-          typeof worker.lng === 'number'
-            ? haversineKm(lat, lng, worker.lat, worker.lng)
-            : null,
-      }));
-      setWorkers(resultsWithDistance);
+
+      if (generation !== searchGenerationRef.current) return;
+
+      const { lat, lng } = userLocationRef.current;
+      const nextWorkers = addWorkerDistances(result.workers, lat, lng);
+      setWorkers((currentWorkers) => {
+        if (!append) return nextWorkers;
+
+        const currentWorkerIds = new Set(currentWorkers.map((worker) => worker.uid));
+        return [...currentWorkers, ...nextWorkers.filter((worker) => !currentWorkerIds.has(worker.uid))];
+      });
+      searchCursorRef.current = result.cursor;
+      setHasMoreWorkers(result.hasMore);
+      lastSearchKeyRef.current = searchKey;
     } catch (err) {
+      if (!append && generation === searchGenerationRef.current) {
+        lastSearchKeyRef.current = '';
+      }
       toast.error(t.common.error);
       console.error(err);
     } finally {
-      setLoading(false);
+      if (pendingSearchRef.current === requestKey) {
+        pendingSearchRef.current = '';
+      }
+      if (generation === searchGenerationRef.current) {
+        if (append) setLoadingMore(false);
+        else setLoading(false);
+      }
+    }
+  }
+
+  function loadMoreWorkers() {
+    const profession = lastSearchProfessionRef.current;
+    if (!profession) return;
+    doSearch(profession, userLat, userLng, { append: true, sort: sortBy });
+  }
+
+  function changeSort(nextSort) {
+    if (nextSort === sortBy) return;
+    setSortBy(nextSort);
+
+    const profession = lastSearchProfessionRef.current;
+    if (profession) {
+      doSearch(profession, userLat, userLng, { force: true, sort: nextSort });
     }
   }
 
@@ -380,9 +461,17 @@ export default function SearchPageContent({ categorySlug = '' }) {
   }, [matchedProfession]);
 
   function clearQuery() {
+    searchGenerationRef.current += 1;
+    searchCursorRef.current = null;
+    lastSearchKeyRef.current = '';
+    lastSearchProfessionRef.current = '';
+    pendingSearchRef.current = '';
     setQuery('');
     setWorkers([]);
     setHasSearched(false);
+    setHasMoreWorkers(false);
+    setLoading(false);
+    setLoadingMore(false);
     router.push(buildLocalizedSearchPath({ locale: routeLocale }));
     inputRef.current?.focus();
   }
@@ -394,10 +483,10 @@ export default function SearchPageContent({ categorySlug = '' }) {
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        userLocationRef.current = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setUserLat(pos.coords.latitude);
         setUserLng(pos.coords.longitude);
         toast.success('Location acquired!');
-        doSearch(query, pos.coords.latitude, pos.coords.longitude);
       },
       () => toast.error('Could not get location')
     );
@@ -591,7 +680,7 @@ export default function SearchPageContent({ categorySlug = '' }) {
                     <button
                       key={option.value}
                       type="button"
-                      onClick={() => setSortBy(option.value)}
+                      onClick={() => changeSort(option.value)}
                       className={clsx(
                         'rounded-2xl px-3 py-2 text-xs font-semibold transition-all duration-200',
                         sortBy === option.value
@@ -713,7 +802,20 @@ export default function SearchPageContent({ categorySlug = '' }) {
           </div>
         )}
 
-        {!loading && hasSearched && displayedWorkers.length === 0 && (
+        {!loading && hasSearched && hasMoreWorkers && (
+          <div className="mt-8 flex justify-center">
+            <button
+              type="button"
+              onClick={loadMoreWorkers}
+              disabled={loadingMore}
+              className="inline-flex min-w-40 items-center justify-center rounded-2xl border border-primary/20 bg-white px-6 py-3 text-sm font-bold text-primary shadow-sm transition hover:border-primary/40 hover:shadow-md disabled:cursor-wait disabled:opacity-60"
+            >
+              {loadingMore ? 'Loading more...' : 'Load more professionals'}
+            </button>
+          </div>
+        )}
+
+        {!loading && hasSearched && displayedWorkers.length === 0 && !hasMoreWorkers && (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-[28px] bg-gray-100">
               <HiSearch className="h-10 w-10 text-gray-300" />

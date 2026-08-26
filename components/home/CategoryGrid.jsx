@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { collection, doc, getDoc, getDocs, limit, orderBy, query } from 'firebase/firestore';
+import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
+import { getProfessions } from '../../lib/professions';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { slugifyProfession } from '../../lib/search-routing';
 
@@ -60,18 +61,17 @@ export default function CategoryGrid({ showAll = false }) {
 
     async function loadPopularCategories() {
       try {
-        const [analyticsSnapshot, professionsSnapshot] = await Promise.all([
+        const [analyticsSnapshot, professionItems] = await Promise.all([
           getDocs(query(
             collection(db, 'metadata', 'analytics', 'professions'),
             orderBy('searchCount', 'desc'),
             limit(showAll ? 50 : 8)
           )),
-          getDoc(doc(db, 'metadata', 'professions')),
+          getProfessions(),
         ]);
 
         if (!isMounted) return;
 
-        const professionItems = professionsSnapshot.data()?.items || [];
         const professionByEnglishName = professionItems.reduce((acc, item) => {
           const key = String(item.en || item.logo || '').toLowerCase();
           if (key) acc[key] = item;

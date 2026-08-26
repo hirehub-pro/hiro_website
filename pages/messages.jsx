@@ -34,6 +34,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  startAfter,
   updateDoc,
   where,
 } from 'firebase/firestore';
@@ -45,6 +46,9 @@ import { getInvoiceClientPrefillStorageKey } from '../lib/invoices';
 import { registerForPushNotifications, syncGrantedPushNotifications } from '../lib/notifications';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+
+const ROOMS_PAGE_SIZE = 30;
+const MESSAGES_PAGE_SIZE = 50;
 
 function toMillis(value) {
   if (!value) return 0;
@@ -312,13 +316,19 @@ export default function MessagesPage() {
   const supportChatHref = '/messages?support=admin';
   const signInHref = `/auth/signin?next=${encodeURIComponent(supportChatHref)}`;
   const [rooms, setRooms] = useState([]);
-  const [messages, setMessages] = useState([]);
+  const [olderRooms, setOlderRooms] = useState([]);
+  const [liveMessages, setLiveMessages] = useState([]);
+  const [olderMessages, setOlderMessages] = useState([]);
   const [selectedRoomId, setSelectedRoomId] = useState('');
   const [activeRoomId, setActiveRoomId] = useState('');
   const [search, setSearch] = useState('');
   const [draft, setDraft] = useState('');
   const [roomsLoading, setRoomsLoading] = useState(true);
   const [messagesLoading, setMessagesLoading] = useState(false);
+  const [loadingOlderRooms, setLoadingOlderRooms] = useState(false);
+  const [loadingOlderMessages, setLoadingOlderMessages] = useState(false);
+  const [hasOlderRooms, setHasOlderRooms] = useState(false);
+  const [hasOlderMessages, setHasOlderMessages] = useState(false);
   const [sending, setSending] = useState(false);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [enablingPush, setEnablingPush] = useState(false);
@@ -333,6 +343,15 @@ export default function MessagesPage() {
   const [recordingVoice, setRecordingVoice] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const messagesEndRef = useRef(null);
+  const messagesScrollRef = useRef(null);
+  const liveRoomsRef = useRef([]);
+  const liveMessagesRef = useRef([]);
+  const roomsCursorRef = useRef(null);
+  const messagesCursorRef = useRef(null);
+  const roomsOwnerUidRef = useRef('');
+  const activeRoomIdRef = useRef('');
+  const hasLoadedOlderRoomsRef = useRef(false);
+  const hasLoadedOlderMessagesRef = useRef(false);
   const imageInputRef = useRef(null);
   const videoInputRef = useRef(null);
   const audioInputRef = useRef(null);
@@ -354,10 +373,29 @@ export default function MessagesPage() {
   ]), []);
 
   const roomItems = useMemo(() => {
-    if (!pendingSupportRoom) return rooms;
-    if (rooms.some((room) => room.id === pendingSupportRoom.id)) return rooms;
-    return [pendingSupportRoom, ...rooms];
-  }, [pendingSupportRoom, rooms]);
+    const seenRoomIds = new Set();
+    const mergedRooms = [...rooms, ...olderRooms]
+      .filter((room) => {
+        if (!room?.id || seenRoomIds.has(room.id)) return false;
+        seenRoomIds.add(room.id);
+        return true;
+      })
+      .sort((a, b) => toMillis(b.lastTimestamp) - toMillis(a.lastTimestamp));
+
+    if (!pendingSupportRoom || seenRoomIds.has(pendingSupportRoom.id)) return mergedRooms;
+    return [pendingSupportRoom, ...mergedRooms];
+  }, [olderRooms, pendingSupportRoom, rooms]);
+
+  const messages = useMemo(() => {
+    const seenMessageIds = new Set();
+    return [...olderMessages, ...liveMessages]
+      .filter((message) => {
+        if (!message?.id || seenMessageIds.has(message.id)) return false;
+        seenMessageIds.add(message.id);
+        return true;
+      })
+      .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
+  }, [liveMessages, olderMessages]);
 
   const selectedRoom = useMemo(
     () => roomItems.find((room) => room.id === selectedRoomId) || null,
@@ -387,33 +425,73 @@ export default function MessagesPage() {
   }, [roomItems, search, user?.uid]);
 
   useEffect(() => {
+    activeRoomIdRef.current = activeRoomId;
+  }, [activeRoomId]);
+
+  useEffect(() => {
     if (!user) {
       setRooms([]);
-      setMessages([]);
+      setOlderRooms([]);
+      setLiveMessages([]);
+      setOlderMessages([]);
       setSelectedRoomId('');
       setActiveRoomId('');
       setPendingSupportRoom(null);
       setMobileThreadOpen(false);
       setRoomsLoading(false);
+      setHasOlderRooms(false);
+      setHasOlderMessages(false);
+      liveRoomsRef.current = [];
+      liveMessagesRef.current = [];
+      roomsCursorRef.current = null;
+      messagesCursorRef.current = null;
+      roomsOwnerUidRef.current = '';
+      hasLoadedOlderRoomsRef.current = false;
+      hasLoadedOlderMessagesRef.current = false;
       return undefined;
+    }
+
+    if (roomsOwnerUidRef.current !== user.uid) {
+      roomsOwnerUidRef.current = user.uid;
+      setRooms([]);
+      setOlderRooms([]);
+      liveRoomsRef.current = [];
+      roomsCursorRef.current = null;
+      hasLoadedOlderRoomsRef.current = false;
     }
 
     setRoomsLoading(true);
     const roomsQuery = query(
       collection(db, 'chat_rooms'),
-      where('users', 'array-contains', user.uid)
+      where('users', 'array-contains', user.uid),
+      orderBy('lastTimestamp', 'desc'),
+      limit(ROOMS_PAGE_SIZE + 1)
     );
 
     return onSnapshot(
       roomsQuery,
       (snapshot) => {
-        const nextRooms = snapshot.docs
-          .map((roomDoc) => ({ id: roomDoc.id, ...roomDoc.data() }))
-          .sort((a, b) => toMillis(b.lastTimestamp) - toMillis(a.lastTimestamp));
+        const visibleRoomDocs = snapshot.docs.slice(0, ROOMS_PAGE_SIZE);
+        const nextRooms = visibleRoomDocs.map((roomDoc) => ({ id: roomDoc.id, ...roomDoc.data() }));
+        if (!hasLoadedOlderRoomsRef.current) {
+          roomsCursorRef.current = visibleRoomDocs[visibleRoomDocs.length - 1] || null;
+          setHasOlderRooms(snapshot.docs.length > ROOMS_PAGE_SIZE);
+        }
         const mergedRooms = pendingSupportRoom && !nextRooms.some((room) => room.id === pendingSupportRoom.id)
           ? [pendingSupportRoom, ...nextRooms]
           : nextRooms;
 
+        if (hasLoadedOlderRoomsRef.current) {
+          const nextRoomIds = new Set(nextRooms.map((room) => room.id));
+          const displacedRooms = liveRoomsRef.current.filter((room) => !nextRoomIds.has(room.id));
+          if (displacedRooms.length > 0) {
+            setOlderRooms((currentOlderRooms) => {
+              const olderRoomIds = new Set(currentOlderRooms.map((room) => room.id));
+              return [...displacedRooms.filter((room) => !olderRoomIds.has(room.id)), ...currentOlderRooms];
+            });
+          }
+        }
+        liveRoomsRef.current = nextRooms;
         setRooms(nextRooms);
         setRoomsLoading(false);
 
@@ -458,20 +536,53 @@ export default function MessagesPage() {
 
   useEffect(() => {
     if (!user || !activeRoomId) {
-      setMessages([]);
+      setLiveMessages([]);
+      setOlderMessages([]);
+      setHasOlderMessages(false);
+      liveMessagesRef.current = [];
+      messagesCursorRef.current = null;
+      hasLoadedOlderMessagesRef.current = false;
       return undefined;
     }
 
     setMessagesLoading(true);
+    setLoadingOlderMessages(false);
+    setLiveMessages([]);
+    setOlderMessages([]);
+    setHasOlderMessages(false);
+    liveMessagesRef.current = [];
+    messagesCursorRef.current = null;
+    hasLoadedOlderMessagesRef.current = false;
     const messagesQuery = query(
       collection(db, 'chat_rooms', activeRoomId, 'messages'),
-      orderBy('timestamp', 'asc')
+      orderBy('timestamp', 'desc'),
+      limit(MESSAGES_PAGE_SIZE + 1)
     );
 
     return onSnapshot(
       messagesQuery,
       (snapshot) => {
-        setMessages(snapshot.docs.map((messageDoc) => ({ id: messageDoc.id, ...messageDoc.data() })));
+        const visibleMessageDocs = snapshot.docs.slice(0, MESSAGES_PAGE_SIZE);
+        if (!hasLoadedOlderMessagesRef.current) {
+          messagesCursorRef.current = visibleMessageDocs[visibleMessageDocs.length - 1] || null;
+          setHasOlderMessages(snapshot.docs.length > MESSAGES_PAGE_SIZE);
+        }
+        const nextLiveMessages = visibleMessageDocs
+          .map((messageDoc) => ({ id: messageDoc.id, ...messageDoc.data() }))
+          .reverse();
+        if (hasLoadedOlderMessagesRef.current) {
+          const nextMessageIds = new Set(nextLiveMessages.map((message) => message.id));
+          const displacedMessages = liveMessagesRef.current.filter((message) => !nextMessageIds.has(message.id));
+          if (displacedMessages.length > 0) {
+            setOlderMessages((currentOlderMessages) => {
+              const olderMessageIds = new Set(currentOlderMessages.map((message) => message.id));
+              return [...currentOlderMessages, ...displacedMessages.filter((message) => !olderMessageIds.has(message.id))]
+                .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
+            });
+          }
+        }
+        liveMessagesRef.current = nextLiveMessages;
+        setLiveMessages(nextLiveMessages);
         setMessagesLoading(false);
       },
       (error) => {
@@ -480,6 +591,81 @@ export default function MessagesPage() {
       }
     );
   }, [activeRoomId, t.common.error, user]);
+
+  async function loadOlderRooms() {
+    if (!user?.uid || !hasOlderRooms || !roomsCursorRef.current || loadingOlderRooms) return;
+
+    const requestedUserUid = user.uid;
+    setLoadingOlderRooms(true);
+    try {
+      const olderRoomsQuery = query(
+        collection(db, 'chat_rooms'),
+        where('users', 'array-contains', user.uid),
+        orderBy('lastTimestamp', 'desc'),
+        startAfter(roomsCursorRef.current),
+        limit(ROOMS_PAGE_SIZE + 1)
+      );
+      const snapshot = await getDocs(olderRoomsQuery);
+      if (roomsOwnerUidRef.current !== requestedUserUid) return;
+      const visibleRoomDocs = snapshot.docs.slice(0, ROOMS_PAGE_SIZE);
+      const nextRooms = visibleRoomDocs.map((roomDoc) => ({ id: roomDoc.id, ...roomDoc.data() }));
+
+      setOlderRooms((currentRooms) => {
+        const currentIds = new Set(currentRooms.map((room) => room.id));
+        return [...currentRooms, ...nextRooms.filter((room) => !currentIds.has(room.id))];
+      });
+      hasLoadedOlderRoomsRef.current = true;
+      roomsCursorRef.current = visibleRoomDocs[visibleRoomDocs.length - 1] || roomsCursorRef.current;
+      setHasOlderRooms(snapshot.docs.length > ROOMS_PAGE_SIZE);
+    } catch (error) {
+      toast.error(error.message || t.common.error);
+    } finally {
+      setLoadingOlderRooms(false);
+    }
+  }
+
+  async function loadOlderMessages() {
+    if (!activeRoomId || !hasOlderMessages || !messagesCursorRef.current || loadingOlderMessages) return;
+
+    const requestedRoomId = activeRoomId;
+    const scrollContainer = messagesScrollRef.current;
+    const previousScrollHeight = scrollContainer?.scrollHeight || 0;
+    const previousScrollTop = scrollContainer?.scrollTop || 0;
+
+    setLoadingOlderMessages(true);
+    try {
+      const olderMessagesQuery = query(
+        collection(db, 'chat_rooms', activeRoomId, 'messages'),
+        orderBy('timestamp', 'desc'),
+        startAfter(messagesCursorRef.current),
+        limit(MESSAGES_PAGE_SIZE + 1)
+      );
+      const snapshot = await getDocs(olderMessagesQuery);
+      if (activeRoomIdRef.current !== requestedRoomId) return;
+      const visibleMessageDocs = snapshot.docs.slice(0, MESSAGES_PAGE_SIZE);
+      const nextMessages = visibleMessageDocs
+        .map((messageDoc) => ({ id: messageDoc.id, ...messageDoc.data() }))
+        .reverse();
+
+      setOlderMessages((currentMessages) => {
+        const currentIds = new Set(currentMessages.map((message) => message.id));
+        return [...nextMessages.filter((message) => !currentIds.has(message.id)), ...currentMessages];
+      });
+      hasLoadedOlderMessagesRef.current = true;
+      messagesCursorRef.current = visibleMessageDocs[visibleMessageDocs.length - 1] || messagesCursorRef.current;
+      setHasOlderMessages(snapshot.docs.length > MESSAGES_PAGE_SIZE);
+
+      window.requestAnimationFrame(() => {
+        const currentContainer = messagesScrollRef.current;
+        if (!currentContainer) return;
+        currentContainer.scrollTop = previousScrollTop + currentContainer.scrollHeight - previousScrollHeight;
+      });
+    } catch (error) {
+      toast.error(error.message || t.common.error);
+    } finally {
+      setLoadingOlderMessages(false);
+    }
+  }
 
   useEffect(() => {
     if (!user || !activeRoomId) return;
@@ -499,7 +685,7 @@ export default function MessagesPage() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages]);
+  }, [liveMessages]);
 
   useEffect(() => {
     if (!recordingVoice) return undefined;
@@ -1186,6 +1372,18 @@ export default function MessagesPage() {
                     );
                   })
                 )}
+                {!roomsLoading && hasOlderRooms ? (
+                  <div className="px-4 pb-4 pt-2">
+                    <button
+                      type="button"
+                      onClick={loadOlderRooms}
+                      disabled={loadingOlderRooms}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-primary transition hover:border-primary/30 hover:bg-primary-50 disabled:cursor-wait disabled:opacity-60"
+                    >
+                      {loadingOlderRooms ? 'Loading conversations...' : 'Load older conversations'}
+                    </button>
+                  </div>
+                ) : null}
               </div>
             </aside>
 
@@ -1236,7 +1434,7 @@ export default function MessagesPage() {
                     ) : null}
                   </div>
 
-                  <div className="flex-1 overflow-y-auto bg-slate-50 px-3 py-4 md:px-4 md:py-5">
+                  <div ref={messagesScrollRef} className="flex-1 overflow-y-auto bg-slate-50 px-3 py-4 md:px-4 md:py-5">
                     {messagesLoading ? (
                       <div className="space-y-3">
                         {[0, 1, 2].map((item) => (
@@ -1250,6 +1448,18 @@ export default function MessagesPage() {
                       </div>
                     ) : (
                       <div className="space-y-3">
+                        {hasOlderMessages ? (
+                          <div className="flex justify-center pb-2">
+                            <button
+                              type="button"
+                              onClick={loadOlderMessages}
+                              disabled={loadingOlderMessages}
+                              className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-primary shadow-sm transition hover:border-primary/30 hover:bg-primary-50 disabled:cursor-wait disabled:opacity-60"
+                            >
+                              {loadingOlderMessages ? 'Loading older messages...' : 'Load older messages'}
+                            </button>
+                          </div>
+                        ) : null}
                         {messages.map((message) => {
                           const mine = message.senderId === user.uid;
                           const isRequestLink = message.type === 'request_link';

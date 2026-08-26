@@ -8,12 +8,12 @@ import { HiPhotograph, HiPlus, HiStar } from 'react-icons/hi';
 import { FaFacebookF, FaInstagram, FaTiktok } from 'react-icons/fa';
 import { FiGlobe, FiLink as FiLinkIcon, FiMapPin } from 'react-icons/fi';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, storage } from '../../lib/firebase';
 import {
   resolveUserProfile,
-  getWorkerProjects,
-  getWorkerReviews,
+  getWorkerProjectsPage,
+  getWorkerReviewsPage,
   addProject,
   addReview,
   updateUserProfile,
@@ -21,7 +21,6 @@ import {
 import ProfileHeader from '../../components/profile/ProfileHeader';
 import ProjectsGallery from '../../components/profile/ProjectsGallery';
 import ReviewsList from '../../components/profile/ReviewsList';
-import ProfileScheduleView from '../../components/profile/ProfileScheduleView';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { getProfilePageSeo } from '../../lib/page-seo';
@@ -29,10 +28,20 @@ import { absoluteUrl } from '../../lib/seo-locale';
 import { buildProfilePath, buildProfileSlug } from '../../lib/profile-routing';
 import { slugifyProfession } from '../../lib/search-routing';
 import { createTaxAuthorityAuthorizationUrl, getTaxAuthorityConnectionStatus } from '../../lib/taxAuthority';
+import { getProfessions } from '../../lib/professions';
+import {
+  cacheProfile,
+  cacheProfilePages,
+  getCachedProfile,
+  getCachedProfilePages,
+} from '../../lib/profile-cache';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
 const CityMapPickerModal = dynamic(() => import('../../components/auth/CityMapPickerModal'), {
+  ssr: false,
+});
+const ProfileScheduleView = dynamic(() => import('../../components/profile/ProfileScheduleView'), {
   ssr: false,
 });
 
@@ -251,6 +260,10 @@ export default function ProfilePage({
   initialProfile = null,
   initialProjects = [],
   initialReviews = [],
+  initialProjectsCursor = null,
+  initialProjectsHasMore = false,
+  initialReviewsCursor = null,
+  initialReviewsHasMore = false,
   initialProfileRoute = '',
 }) {
   const router            = useRouter();
@@ -261,13 +274,19 @@ export default function ProfilePage({
   const [profile, setProfile]     = useState(initialProfile);
   const [projects, setProjects]   = useState(initialProjects);
   const [reviews, setReviews]     = useState(initialReviews);
+  const [projectsCursor, setProjectsCursor] = useState(initialProjectsCursor);
+  const [projectsHasMore, setProjectsHasMore] = useState(initialProjectsHasMore);
+  const [reviewsCursor, setReviewsCursor] = useState(initialReviewsCursor);
+  const [reviewsHasMore, setReviewsHasMore] = useState(initialReviewsHasMore);
+  const [loadingMoreProjects, setLoadingMoreProjects] = useState(false);
+  const [loadingMoreReviews, setLoadingMoreReviews] = useState(false);
   const [tab, setTab]             = useState('projects');
+  const [scheduleOpened, setScheduleOpened] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(!initialProfile);
   const [loadingData, setLoadingData]       = useState(false);
   const [loadedProfileRoute, setLoadedProfileRoute] = useState(initialProfileRoute);
   const [loadedDataUid, setLoadedDataUid] = useState(initialProfile?.uid || '');
   const [workerSchedule, setWorkerSchedule] = useState(null);
-  const [loadingSchedule, setLoadingSchedule] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(formatDateKey(new Date()));
@@ -311,21 +330,83 @@ export default function ProfilePage({
   const canonicalUrl = profile ? absoluteUrl(buildProfilePath(profile)) : absoluteUrl('/search');
 
   useEffect(() => {
+    setTab('projects');
+    setScheduleOpened(false);
+  }, [profileRoute]);
+
+  useEffect(() => {
+    if (!initialProfile?.uid) return;
+    cacheProfile(initialProfile, initialProfileRoute);
+    cacheProfilePages(initialProfile.uid, {
+      projects: initialProjects,
+      projectsCursor: initialProjectsCursor,
+      projectsHasMore: initialProjectsHasMore,
+      reviews: initialReviews,
+      reviewsCursor: initialReviewsCursor,
+      reviewsHasMore: initialReviewsHasMore,
+    });
+  }, [
+    initialProfile,
+    initialProfileRoute,
+    initialProjects,
+    initialProjectsCursor,
+    initialProjectsHasMore,
+    initialReviews,
+    initialReviewsCursor,
+    initialReviewsHasMore,
+  ]);
+
+  useEffect(() => {
     if (!profileRoute) return;
+    const authenticatedProfile = myProfile && user?.uid && (
+      profileRoute === user.uid
+      || profileRoute === buildProfileSlug({ ...myProfile, uid: user.uid })
+    ) ? { ...myProfile, uid: user.uid } : null;
+
     if (loadedProfileRoute === profileRoute) {
+      if (authenticatedProfile) {
+        setProfile((current) => {
+          const mergedProfile = { ...current, ...authenticatedProfile };
+          cacheProfile(mergedProfile, profileRoute);
+          return mergedProfile;
+        });
+      }
       setLoadingProfile(false);
       return;
     }
+    const cachedProfile = authenticatedProfile || getCachedProfile(profileRoute);
+
+    if (cachedProfile) {
+      cacheProfile(cachedProfile, profileRoute);
+      setProfile(cachedProfile);
+      setLoadedProfileRoute(profileRoute);
+      const cachedPages = getCachedProfilePages(cachedProfile.uid);
+      if (cachedPages?.projects && cachedPages?.reviews) {
+        setProjects(cachedPages.projects);
+        setProjectsCursor(cachedPages.projectsCursor ?? null);
+        setProjectsHasMore(Boolean(cachedPages.projectsHasMore));
+        setReviews(cachedPages.reviews);
+        setReviewsCursor(cachedPages.reviewsCursor ?? null);
+        setReviewsHasMore(Boolean(cachedPages.reviewsHasMore));
+        setLoadedDataUid(cachedProfile.uid);
+      } else {
+        setLoadedDataUid('');
+      }
+      setLoadingProfile(false);
+      return;
+    }
+
     setLoadingProfile(true);
     resolveUserProfile(profileRoute)
       .then((nextProfile) => {
+        cacheProfile(nextProfile, profileRoute);
         setProfile(nextProfile);
         setLoadedProfileRoute(profileRoute);
         setLoadedDataUid('');
       })
       .catch(console.error)
       .finally(() => setLoadingProfile(false));
-  }, [profileRoute, loadedProfileRoute, user?.uid]);
+  }, [profileRoute, loadedProfileRoute, user?.uid, myProfile]);
 
   useEffect(() => {
     if (!isOwnProfile || profile?.role !== 'worker') {
@@ -361,10 +442,10 @@ export default function ProfilePage({
     async function loadProfessions() {
       setProfessionsLoading(true);
       try {
-        const professionsSnap = await getDoc(doc(db, 'metadata', 'professions'));
+        const professionItems = await getProfessions();
         if (!isMounted) return;
 
-        const items = (professionsSnap.data()?.items || [])
+        const items = professionItems
           .map((item, index) => {
             const label = item[locale] || item.en || item.he || item.ar || item.logo || `Profession ${index + 1}`;
             const value = item.en || item.logo || label;
@@ -405,43 +486,79 @@ export default function ProfilePage({
     if (!uid) return;
     if (loadedDataUid === uid) return;
     setLoadingData(true);
-    Promise.all([getWorkerProjects(uid), getWorkerReviews(uid)])
-      .then(([p, r]) => {
-        setProjects(p);
-        setReviews(r);
+    Promise.all([
+      getWorkerProjectsPage({ uid }),
+      getWorkerReviewsPage({ uid }),
+    ])
+      .then(([projectPage, reviewPage]) => {
+        setProjects(projectPage.items);
+        setProjectsCursor(projectPage.cursor);
+        setProjectsHasMore(projectPage.hasMore);
+        setReviews(reviewPage.items);
+        setReviewsCursor(reviewPage.cursor);
+        setReviewsHasMore(reviewPage.hasMore);
         setLoadedDataUid(uid);
+        cacheProfilePages(uid, {
+          projects: projectPage.items,
+          projectsCursor: projectPage.cursor,
+          projectsHasMore: projectPage.hasMore,
+          reviews: reviewPage.items,
+          reviewsCursor: reviewPage.cursor,
+          reviewsHasMore: reviewPage.hasMore,
+        });
         setProfile((current) => current ? ({
           ...current,
-          projectCount: p.length,
-          reviewCount: current.reviewCount ?? r.length,
+          projectCount: current.projectCount ?? (projectPage.hasMore ? undefined : projectPage.items.length),
+          reviewCount: current.reviewCount ?? (reviewPage.hasMore ? undefined : reviewPage.items.length),
         }) : current);
       })
       .catch(console.error)
       .finally(() => setLoadingData(false));
   }, [uid, loadedDataUid]);
 
-  useEffect(() => {
-    const loadSchedule = async () => {
-      if (!uid || profile?.role !== 'worker') {
-        setWorkerSchedule(null);
-        return;
-      }
+  async function handleLoadMoreProjects() {
+    if (!uid || !projectsHasMore || loadingMoreProjects) return;
+    setLoadingMoreProjects(true);
+    try {
+      const page = await getWorkerProjectsPage({ uid, cursor: projectsCursor });
+      const nextProjects = [...projects, ...page.items];
+      setProjects(nextProjects);
+      setProjectsCursor(page.cursor);
+      setProjectsHasMore(page.hasMore);
+      cacheProfilePages(uid, {
+        projects: nextProjects,
+        projectsCursor: page.cursor,
+        projectsHasMore: page.hasMore,
+      });
+    } catch (error) {
+      console.error('Failed to load more projects:', error);
+      toast.error('Failed to load more projects');
+    } finally {
+      setLoadingMoreProjects(false);
+    }
+  }
 
-      try {
-        setLoadingSchedule(true);
-        const scheduleRef = doc(db, 'publicWorkerProfiles', uid, 'Schedule', 'info');
-        const scheduleSnap = await getDoc(scheduleRef);
-        setWorkerSchedule(scheduleSnap.exists() ? scheduleSnap.data() : null);
-      } catch (error) {
-        console.error('Failed to load schedule:', error);
-        setWorkerSchedule(null);
-      } finally {
-        setLoadingSchedule(false);
-      }
-    };
-
-    loadSchedule();
-  }, [uid, profile?.role]);
+  async function handleLoadMoreReviews() {
+    if (!uid || !reviewsHasMore || loadingMoreReviews) return;
+    setLoadingMoreReviews(true);
+    try {
+      const page = await getWorkerReviewsPage({ uid, cursor: reviewsCursor });
+      const nextReviews = [...reviews, ...page.items];
+      setReviews(nextReviews);
+      setReviewsCursor(page.cursor);
+      setReviewsHasMore(page.hasMore);
+      cacheProfilePages(uid, {
+        reviews: nextReviews,
+        reviewsCursor: page.cursor,
+        reviewsHasMore: page.hasMore,
+      });
+    } catch (error) {
+      console.error('Failed to load more reviews:', error);
+      toast.error('Failed to load more reviews');
+    } finally {
+      setLoadingMoreReviews(false);
+    }
+  }
 
   useEffect(() => {
     setNoteText('');
@@ -512,8 +629,15 @@ export default function ProfilePage({
       toast.success('Review submitted!');
       setComment('');
       setRating(5);
-      const updated = await getWorkerReviews(uid);
-      setReviews(updated);
+      const page = await getWorkerReviewsPage({ uid });
+      setReviews(page.items);
+      setReviewsCursor(page.cursor);
+      setReviewsHasMore(page.hasMore);
+      cacheProfilePages(uid, {
+        reviews: page.items,
+        reviewsCursor: page.cursor,
+        reviewsHasMore: page.hasMore,
+      });
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -818,12 +942,19 @@ export default function ProfilePage({
       const imageUrl = getPrimaryProjectImageUrl(media);
 
       await addProject(profile.uid, { description, imageUrl, media });
-      const nextProjects = await getWorkerProjects(profile.uid);
-      setProjects(nextProjects);
+      const page = await getWorkerProjectsPage({ uid: profile.uid });
+      setProjects(page.items);
+      setProjectsCursor(page.cursor);
+      setProjectsHasMore(page.hasMore);
+      cacheProfilePages(profile.uid, {
+        projects: page.items,
+        projectsCursor: page.cursor,
+        projectsHasMore: page.hasMore,
+      });
       setLoadedDataUid(profile.uid);
       setProfile((current) => current ? ({
         ...current,
-        projectCount: nextProjects.length,
+        projectCount: Number(current.projectCount || 0) + 1,
       }) : current);
       setProjectEditorOpen(false);
       resetProjectForm();
@@ -1218,7 +1349,10 @@ export default function ProfilePage({
               {tabs.map((tb) => (
                 <button
                   key={tb.key}
-                  onClick={() => setTab(tb.key)}
+                  onClick={() => {
+                    setTab(tb.key);
+                    if (tb.key === 'schedule') setScheduleOpened(true);
+                  }}
                   className={clsx(
                     'relative shrink-0 rounded-full px-4 py-2.5 text-sm font-semibold transition-all duration-200',
                     tab === tb.key
@@ -1282,12 +1416,32 @@ export default function ProfilePage({
               </div>
             )}
             <ProjectsGallery projects={projects} loading={loadingData} profileUid={uid} />
+            {projectsHasMore && (
+              <button
+                type="button"
+                onClick={handleLoadMoreProjects}
+                disabled={loadingMoreProjects}
+                className="mx-auto block rounded-2xl border border-primary/20 bg-primary/5 px-5 py-2.5 text-sm font-semibold text-primary transition hover:bg-primary/10 disabled:cursor-wait disabled:opacity-60"
+              >
+                {loadingMoreProjects ? 'Loading...' : 'Load more projects'}
+              </button>
+            )}
           </div>
         )}
 
         {tab === 'reviews' && (
           <div className="space-y-5">
             <ReviewsList reviews={reviews} loading={loadingData} />
+            {reviewsHasMore && (
+              <button
+                type="button"
+                onClick={handleLoadMoreReviews}
+                disabled={loadingMoreReviews}
+                className="mx-auto block rounded-2xl border border-primary/20 bg-primary/5 px-5 py-2.5 text-sm font-semibold text-primary transition hover:bg-primary/10 disabled:cursor-wait disabled:opacity-60"
+              >
+                {loadingMoreReviews ? 'Loading...' : 'Load more reviews'}
+              </button>
+            )}
 
             {user && uid !== user.uid && (
               <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
@@ -1461,8 +1615,10 @@ export default function ProfilePage({
           </div>
         )}
 
-        {tab === 'schedule' && profile.role === 'worker' && (
-          <ProfileScheduleView uid={uid} profile={profile} />
+        {scheduleOpened && profile.role === 'worker' && (
+          <div className={tab === 'schedule' ? 'block' : 'hidden'}>
+            <ProfileScheduleView uid={uid} profile={profile} />
+          </div>
         )}
 
       </div>
@@ -2087,28 +2243,32 @@ export async function getServerSideProps({ params }) {
     }
 
     const uid = initialProfile.uid;
-    const [initialProjects, initialReviews, professionsSnap] = await Promise.all([
-      getWorkerProjects(uid),
-      getWorkerReviews(uid),
-      getDoc(doc(db, 'metadata', 'professions')).catch(() => null),
+    const [projectPage, reviewPage, professionItems] = await Promise.all([
+      getWorkerProjectsPage({ uid }),
+      getWorkerReviewsPage({ uid }),
+      getProfessions().catch(() => []),
     ]);
     const professionLabelsHe = getHebrewProfessionLabels(
       initialProfile.professions,
-      professionsSnap?.data()?.items
+      professionItems
     );
 
     const profileWithCounts = {
       ...initialProfile,
       professionLabelsHe,
-      projectCount: initialProjects.length,
-      reviewCount: initialProfile.reviewCount ?? initialReviews.length,
+      projectCount: initialProfile.projectCount ?? (projectPage.hasMore ? undefined : projectPage.items.length),
+      reviewCount: initialProfile.reviewCount ?? (reviewPage.hasMore ? undefined : reviewPage.items.length),
     };
 
     return {
       props: serializeFirestoreValue({
         initialProfile: profileWithCounts,
-        initialProjects,
-        initialReviews,
+        initialProjects: projectPage.items,
+        initialProjectsCursor: projectPage.cursor,
+        initialProjectsHasMore: projectPage.hasMore,
+        initialReviews: reviewPage.items,
+        initialReviewsCursor: reviewPage.cursor,
+        initialReviewsHasMore: reviewPage.hasMore,
         initialProfileRoute: profileRoute,
       }),
     };
@@ -2125,7 +2285,11 @@ export async function getServerSideProps({ params }) {
         props: {
           initialProfile: null,
           initialProjects: [],
+          initialProjectsCursor: null,
+          initialProjectsHasMore: false,
           initialReviews: [],
+          initialReviewsCursor: null,
+          initialReviewsHasMore: false,
           initialProfileRoute: '',
         },
       };

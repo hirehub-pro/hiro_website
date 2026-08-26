@@ -425,6 +425,8 @@ export function AuthProvider({ children }) {
       town: city,
       profileImageUrl: '',
       description: '',
+      avgRating: 0,
+      reviewCount: 0,
       phone: normalizedPhone,
       optionalPhone: '',
       lat: Number.isFinite(lat) ? lat : null,
@@ -479,6 +481,8 @@ export function AuthProvider({ children }) {
 
     const userRef = doc(db, 'users', firebaseUser.uid);
     const existingUserSnap = await getDoc(userRef);
+    const publicProfileRef = doc(db, 'publicWorkerProfiles', firebaseUser.uid);
+    const existingPublicProfileSnap = role === 'worker' ? await getDoc(publicProfileRef) : null;
     const normalizedEmail = String(email || '').trim();
 
     if (normalizedEmail && password) {
@@ -510,6 +514,7 @@ export function AuthProvider({ children }) {
       lng: Number.isFinite(lng) ? lng : null,
       profileImageUrl: '',
       description: description || '',
+      ...(existingPublicProfileSnap?.exists() ? {} : { avgRating: 0, reviewCount: 0 }),
       createdAt: existingUserSnap.exists() ? (existingUserSnap.data().createdAt || serverTimestamp()) : serverTimestamp(),
       updatedAt: serverTimestamp(),
       professions: Array.isArray(professions) ? professions : [],
@@ -532,7 +537,7 @@ export function AuthProvider({ children }) {
 
     await setDoc(userRef, accountData, { merge: existingUserSnap.exists() });
     if (role === 'worker') {
-      await setDoc(doc(db, 'publicWorkerProfiles', firebaseUser.uid), publicProfileData, { merge: true });
+      await setDoc(publicProfileRef, publicProfileData, { merge: true });
     }
     const latestProfile = await getUserProfile(firebaseUser.uid);
     setProfile(latestProfile || { ...accountData, ...(role === 'worker' ? publicProfileData : {}) });
