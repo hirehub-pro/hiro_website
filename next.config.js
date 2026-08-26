@@ -8,6 +8,11 @@ const nextConfig = {
         destination: '/search',
         permanent: true,
       },
+      {
+        source: '/he/search/:category',
+        destination: '/search/:category',
+        permanent: true,
+      },
     ];
   },
   async rewrites() {

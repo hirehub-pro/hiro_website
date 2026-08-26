@@ -1,30 +1,48 @@
 import Head from 'next/head';
 import SearchPageContent from '../../components/search/SearchPageContent';
-import { getProfessions } from '../../lib/professions';
 import { absoluteUrl, buildAlternateLanguageUrls } from '../../lib/seo-locale';
-import { getCategoryPageSeo } from '../../lib/page-seo';
-import { findProfessionMetadataBySlug } from '../../lib/profession-seo';
+import { getProfessionBySlug, PROFESSION_CATALOG } from '../../lib/profession-catalog';
+import { getProfessionPageContent } from '../../lib/profession-page-content';
 
 export default function SearchCategoryPage({
   categorySlug,
-  categoryTitle,
-  pageDescription,
-  pageKeywords,
+  profession,
   path,
   alternateUrls,
 }) {
+  const seo = getProfessionPageContent(profession, 'he');
+  const canonicalUrl = absoluteUrl(path);
+  const structuredData = [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: seo.breadcrumbHome, item: absoluteUrl('/') },
+        { '@type': 'ListItem', position: 2, name: seo.breadcrumbSearch, item: absoluteUrl('/search') },
+        { '@type': 'ListItem', position: 3, name: seo.name, item: canonicalUrl },
+      ],
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'Service',
+      name: seo.name,
+      description: seo.description,
+      url: canonicalUrl,
+      areaServed: { '@type': 'Country', name: 'Israel' },
+      provider: { '@type': 'Organization', '@id': 'https://hiro-services.com/#organization', name: 'Hiro' },
+    },
+  ];
 
   return (
     <>
       <Head>
-        <title>{categoryTitle}</title>
-        <meta name="description" content={pageDescription} />
-        {pageKeywords ? <meta name="keywords" content={pageKeywords} /> : null}
-        <meta property="og:title" content={categoryTitle} />
-        <meta property="og:description" content={pageDescription} />
+        <title>{seo.title}</title>
+        <meta name="description" content={seo.description} />
+        <meta property="og:title" content={seo.title} />
+        <meta property="og:description" content={seo.description} />
         <meta property="og:type" content="website" />
-        <meta property="og:url" content={absoluteUrl(path)} />
-        {categorySlug ? <link rel="canonical" href={absoluteUrl(path)} /> : null}
+        <meta property="og:url" content={canonicalUrl} />
+        <link rel="canonical" href={canonicalUrl} />
         {alternateUrls.map((alternate) => (
           <link
             key={alternate.locale}
@@ -33,39 +51,34 @@ export default function SearchCategoryPage({
             href={alternate.href}
           />
         ))}
-        {categorySlug ? <link rel="alternate" hrefLang="x-default" href={absoluteUrl(path)} /> : null}
+        <link rel="alternate" hrefLang="x-default" href={canonicalUrl} />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+        />
       </Head>
-      <SearchPageContent categorySlug={categorySlug} />
+      <SearchPageContent categorySlug={categorySlug} profession={profession} />
     </>
   );
 }
 
-export async function getServerSideProps({ params }) {
+export function getStaticPaths() {
+  return {
+    paths: PROFESSION_CATALOG.map(({ slug }) => ({ params: { category: slug } })),
+    fallback: false,
+  };
+}
+
+export function getStaticProps({ params }) {
   const categorySlug = String(params?.category || '').trim().toLowerCase();
-
-  if (!categorySlug) {
-    return { notFound: true };
-  }
-
+  const profession = getProfessionBySlug(categorySlug);
+  if (!profession) return { notFound: true };
   const path = `/search/${categorySlug}`;
-  let professionLabel = '';
-
-  try {
-    const professionItems = await getProfessions();
-    const matchedProfession = findProfessionMetadataBySlug(professionItems, categorySlug);
-    professionLabel = String(matchedProfession?.he || matchedProfession?.en || '').trim();
-  } catch (error) {
-    professionLabel = '';
-  }
-
-  const categorySeo = getCategoryPageSeo(categorySlug, professionLabel);
 
   return {
     props: {
       categorySlug,
-      categoryTitle: categorySeo.title,
-      pageDescription: categorySeo.description,
-      pageKeywords: categorySeo.keywords,
+      profession,
       path,
       alternateUrls: buildAlternateLanguageUrls(path),
     },

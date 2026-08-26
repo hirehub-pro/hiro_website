@@ -18,8 +18,8 @@ const CityMapPickerModal = dynamic(() => import('../auth/CityMapPickerModal'), {
   ssr: false,
 });
 
-const localeLabels = { en: 'EN', he: 'עב', ar: 'ع' };
-const dateLocales = { en: 'en-US', he: 'he-IL', ar: 'ar' };
+const localeLabels = { en: 'EN', he: 'עב', ar: 'ع', am: 'አማ', ru: 'РУ' };
+const dateLocales = { en: 'en-US', he: 'he-IL', ar: 'ar', am: 'am-ET', ru: 'ru-RU' };
 
 export default function Header() {
   const { user, profile, logOut, isAdmin, isWorker, setProfile } = useAuth();
@@ -141,7 +141,7 @@ export default function Header() {
   function handleLocaleChange(nextLocale) {
     changeLocale(nextLocale);
 
-    const isSearchRoute = /^\/(?:(?:en|ar)\/)?search(?:\/|$|\?)/.test(router.asPath);
+    const isSearchRoute = /^\/(?:(?:en|ar|am|ru)\/)?search(?:\/|$|\?)/.test(router.asPath);
     if (!isSearchRoute) return;
 
     const nextPath = replacePathLocale(router.asPath, nextLocale);
@@ -602,7 +602,7 @@ export default function Header() {
                   {Object.keys(localeLabels).map((l) => (
                     <button
                       key={l}
-                      onClick={() => changeLocale(l)}
+                      onClick={() => handleLocaleChange(l)}
                       className={clsx(
                         'rounded-xl px-2.5 py-1 text-xs font-bold transition-all duration-200',
                         locale === l ? 'bg-white text-primary shadow-sm' : 'text-gray-500'

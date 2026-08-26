@@ -3,13 +3,12 @@ import { normalizeSeoLocale } from '../lib/seo-locale';
 
 function MyDocument(props) {
   const locale = props.locale || 'he';
-  const dir = props.dir || (locale === 'en' ? 'ltr' : 'rtl');
+  const dir = props.dir || (locale === 'he' || locale === 'ar' ? 'rtl' : 'ltr');
 
   return (
     <Html lang={locale} dir={dir}>
       <Head>
         <meta charSet="UTF-8" />
-        <meta name="description" content="הירו - מצאו בעלי מקצוע אמינים לידכם" />
         <meta name="application-name" content="הירו" />
         <meta name="apple-mobile-web-app-title" content="הירו" />
         <meta name="theme-color" content="#ffffff" />
@@ -48,7 +47,7 @@ function MyDocument(props) {
 MyDocument.getInitialProps = async (ctx) => {
   const initialProps = await Document.getInitialProps(ctx);
   const locale = normalizeSeoLocale(ctx.query?.lang);
-  const dir = locale === 'en' ? 'ltr' : 'rtl';
+  const dir = locale === 'he' || locale === 'ar' ? 'rtl' : 'ltr';
 
   return {
     ...initialProps,

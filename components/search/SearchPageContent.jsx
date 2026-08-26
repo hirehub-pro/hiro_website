@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import {
-  HiLocationMarker, HiSearch, HiSelector, HiSwitchHorizontal, HiX,
+  HiLocationMarker, HiSearch, HiSwitchHorizontal, HiX,
   HiSparkles,
 } from 'react-icons/hi';
 import {
@@ -31,11 +31,12 @@ import {
 } from 'react-icons/md';
 import clsx from 'clsx';
 import { searchWorkers } from '../../lib/firestore';
-import { getProfessions } from '../../lib/professions';
 import { buildLocalizedSearchPath, findProfessionBySlug, slugifyProfession } from '../../lib/search-routing';
-import { getProfessionSeoData } from '../../lib/profession-seo';
 import { getSearchPageSeo } from '../../lib/page-seo';
+import { PROFESSION_CATALOG } from '../../lib/profession-catalog';
+import { getProfessionPageContent } from '../../lib/profession-page-content';
 import WorkerCard from '../workers/WorkerCard';
+import { ProfessionHero, ProfessionSeoSections } from './ProfessionSeoContent';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
@@ -167,14 +168,18 @@ function sortWorkers(workers, sortBy) {
   });
 }
 
-export default function SearchPageContent({ categorySlug = '' }) {
+const LOCAL_PROFESSIONS = PROFESSION_CATALOG.map((profession) => ({
+  ...profession,
+  value: profession.en,
+  id: String(profession.id),
+}));
+
+export default function SearchPageContent({ categorySlug = '', profession: initialProfession = null }) {
   const { t, dir, locale } = useLanguage();
   const { profile } = useAuth();
   const router = useRouter();
   const routeLocale = typeof router.query.lang === 'string' ? router.query.lang : '';
   const inputRef = useRef(null);
-  const lastScrollYRef = useRef(0);
-  const radiusFilterHiddenRef = useRef(false);
   const searchCursorRef = useRef(null);
   const lastSearchKeyRef = useRef('');
   const lastSearchProfessionRef = useRef('');
@@ -182,19 +187,21 @@ export default function SearchPageContent({ categorySlug = '' }) {
   const searchGenerationRef = useRef(0);
   const userLocationRef = useRef({ lat: null, lng: null });
 
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(() => (
+    categorySlug && initialProfession
+      ? getProfessionLabel(initialProfession, locale)
+      : ''
+  ));
   const [workers, setWorkers] = useState([]);
-  const [professions, setProfessions] = useState([]);
-  const [professionsLoading, setProfessionsLoading] = useState(true);
-  const [loading, setLoading] = useState(false);
+  const professions = LOCAL_PROFESSIONS;
+  const [loading, setLoading] = useState(Boolean(categorySlug));
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMoreWorkers, setHasMoreWorkers] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
+  const [hasSearched, setHasSearched] = useState(Boolean(categorySlug));
   const [userLat, setUserLat] = useState(null);
   const [userLng, setUserLng] = useState(null);
   const [sortBy, setSortBy] = useState('rating');
-  const [filterByWorkRadius, setFilterByWorkRadius] = useState(false);
-  const [showRadiusFilter, setShowRadiusFilter] = useState(true);
+  const [filterByWorkRadius, setFilterByWorkRadius] = useState(true);
 
   useEffect(() => {
     const preferredLat =
@@ -208,43 +215,6 @@ export default function SearchPageContent({ categorySlug = '' }) {
       setUserLng(preferredLng);
     }
   }, [profile?.activeSearchLat, profile?.activeSearchLng, profile?.lat, profile?.lng]);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadProfessions() {
-      setProfessionsLoading(true);
-      try {
-        const professionItems = await getProfessions();
-        if (!isMounted) return;
-
-        const items = professionItems
-          .map((item, index) => ({
-            id: String(item.id ?? index),
-            value: item.en || item.logo || getProfessionLabel(item, locale),
-            ...item,
-          }))
-          .sort((a, b) => Number(a.id) - Number(b.id));
-
-        setProfessions(items);
-      } catch (err) {
-        if (isMounted) {
-          setProfessions([]);
-          toast.error('Failed to load professions');
-        }
-      } finally {
-        if (isMounted) {
-          setProfessionsLoading(false);
-        }
-      }
-    }
-
-    loadProfessions();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [locale]);
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -288,29 +258,6 @@ export default function SearchPageContent({ categorySlug = '' }) {
 
     setWorkers((currentWorkers) => addWorkerDistances(currentWorkers, userLat, userLng));
   }, [userLat, userLng]);
-
-  useEffect(() => {
-    function handleScroll() {
-      const currentScrollY = window.scrollY;
-      const scrollDelta = currentScrollY - lastScrollYRef.current;
-
-      if (currentScrollY < 24) {
-        setShowRadiusFilter(true);
-        radiusFilterHiddenRef.current = false;
-      } else if (!radiusFilterHiddenRef.current && scrollDelta > 18 && currentScrollY > 180) {
-        setShowRadiusFilter(false);
-        radiusFilterHiddenRef.current = true;
-      } else if (radiusFilterHiddenRef.current && scrollDelta < -24) {
-        setShowRadiusFilter(true);
-        radiusFilterHiddenRef.current = false;
-      }
-
-      lastScrollYRef.current = currentScrollY;
-    }
-
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
 
   async function doSearch(profession, _lat, _lng, { append = false, force = false, sort = sortBy } = {}) {
     const normalizedProfession = String(profession || '').trim();
@@ -511,40 +458,47 @@ export default function SearchPageContent({ categorySlug = '' }) {
     ].some((value) => String(value || '').toLowerCase().includes(searchValue));
   });
   const sortedWorkers = sortWorkers(workers, sortBy);
-  const displayedWorkers = filterByWorkRadius
+  const hasUserLocation = typeof userLat === 'number' && typeof userLng === 'number';
+  const displayedWorkers = filterByWorkRadius && hasUserLocation
     ? sortedWorkers.filter((worker) => (
       typeof worker.distanceKm === 'number' &&
       typeof worker.workRadius === 'number' &&
       worker.distanceKm * 1000 <= worker.workRadius
     ))
     : sortedWorkers;
-  const categorySeo = useMemo(() => {
-    if (!categorySlug) return null;
-    const professionSlug = matchedProfession
-      ? slugifyProfession(getProfessionSearchValue(matchedProfession, categorySlug))
-      : categorySlug;
-    return getProfessionSeoData(professionSlug, locale, matchedProfessionLabel);
-  }, [categorySlug, locale, matchedProfession, matchedProfessionLabel]);
+  const categoryProfession = initialProfession || matchedProfession;
+  const categorySeo = categoryProfession
+    ? getProfessionPageContent(categoryProfession, locale)
+    : null;
+  const currentProfessionIndex = categoryProfession
+    ? professions.findIndex((item) => item.slug === categoryProfession.slug)
+    : -1;
+  const relatedProfessions = currentProfessionIndex >= 0
+    ? professions
+      .filter((_, index) => index !== currentProfessionIndex)
+      .slice(Math.max(0, currentProfessionIndex - 3), Math.max(0, currentProfessionIndex - 3) + 6)
+    : [];
   const searchSeo = getSearchPageSeo();
   const searchDisplayLabel = matchedProfessionLabel || query;
   const pageTitle = categorySeo?.title || (searchDisplayLabel ? `"${searchDisplayLabel}" – הירו` : searchSeo.title);
   const pageDescription = categorySeo?.description || searchSeo.description;
-  const pageKeywords = categorySeo?.keywords?.join(', ') || '';
 
   return (
     <>
-      <Head>
-        <title>{pageTitle}</title>
-        <meta name="description" content={pageDescription} />
-        {pageKeywords ? <meta name="keywords" content={pageKeywords} /> : null}
-      </Head>
+      {!categorySlug ? (
+        <Head>
+          <title>{pageTitle}</title>
+          <meta name="description" content={pageDescription} />
+        </Head>
+      ) : null}
 
       <div
         className="sticky top-0 z-40 border-b border-white/30 bg-white/80 backdrop-blur-xl md:top-16"
         dir={dir}
       >
-        <div className="mx-auto max-w-3xl px-4 py-3">
-          <form onSubmit={handleSubmit} className="flex items-center gap-2">
+        <div className="mx-auto flex max-w-6xl items-center gap-1.5 overflow-x-auto px-4 py-2">
+          <div className="flex min-w-max flex-1 items-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white/95 p-1.5 shadow-sm shadow-slate-200/60">
+          <form onSubmit={handleSubmit} className="flex min-w-[300px] flex-1 items-center gap-1.5">
             <div className="relative flex-1">
               <HiSearch className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-primary" />
               <input
@@ -553,7 +507,7 @@ export default function SearchPageContent({ categorySlug = '' }) {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={t.search.placeholder}
-                className="h-12 w-full rounded-2xl border border-gray-200 bg-white pl-11 pr-10 text-sm font-medium text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className="h-11 w-full rounded-xl border-0 bg-slate-50 pl-11 pr-10 text-sm font-medium text-gray-900 outline-none ring-1 ring-inset ring-slate-100 placeholder:text-gray-400 focus:bg-white focus:ring-2 focus:ring-primary/20"
               />
               {query && (
                 <button
@@ -570,10 +524,10 @@ export default function SearchPageContent({ categorySlug = '' }) {
               type="button"
               onClick={useLocation}
               className={clsx(
-                'flex h-12 w-12 items-center justify-center rounded-2xl border transition-colors',
+                'flex h-11 w-11 items-center justify-center rounded-xl transition-colors',
                 userLat
-                  ? 'border-green-200 bg-green-50 text-green-600'
-                  : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:text-primary'
+                  ? 'bg-emerald-50 text-emerald-600 ring-1 ring-inset ring-emerald-200'
+                  : 'bg-slate-50 text-slate-400 ring-1 ring-inset ring-slate-100 hover:bg-primary-50 hover:text-primary'
               )}
               aria-label={t.search.useLocation}
             >
@@ -583,98 +537,60 @@ export default function SearchPageContent({ categorySlug = '' }) {
             <button
               type="submit"
               disabled={!query.trim()}
-              className="btn-primary h-12 shrink-0 rounded-2xl px-5 disabled:opacity-50"
+              className="btn-primary h-11 shrink-0 rounded-xl px-5 shadow-none disabled:opacity-50"
             >
               <HiSearch className="h-5 w-5 sm:hidden" />
               <span className="hidden sm:inline">{t.nav.search}</span>
             </button>
           </form>
 
-          <div
-            className={clsx(
-              'mt-3 overflow-hidden rounded-[24px] border border-amber-200/80 bg-gradient-to-r from-amber-50 via-white to-amber-50/70 shadow-[0_20px_60px_-30px_rgba(245,158,11,0.45)] transition-all duration-300',
-              showRadiusFilter
-                ? 'max-h-40 translate-y-0 opacity-100 p-3 sm:mt-4 sm:max-h-48 sm:p-4'
-                : 'max-h-0 -translate-y-3 border-transparent p-0 opacity-0'
-            )}
-          >
-            <div className="flex items-center gap-4">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[18px] bg-amber-100 text-amber-500 shadow-inner shadow-amber-200/70 sm:h-14 sm:w-14 sm:rounded-[22px]">
-                <HiSwitchHorizontal className="h-5 w-5 sm:h-7 sm:w-7" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-base font-extrabold tracking-tight text-slate-900 sm:text-lg">
-                  {t.search.workRadiusTitle}
-                </p>
-                <p className="mt-1 text-xs text-slate-500 sm:text-sm">
-                  {userLat
-                    ? t.search.workRadiusSubtitle
-                    : t.search.workRadiusNeedsLocation}
-                </p>
-                {userLat && (
-                  <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-500 sm:mt-2 sm:text-xs">
-                    {filterByWorkRadius ? t.search.workRadiusOn : t.search.workRadiusOff}
-                  </p>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  if (!userLat || !userLng) {
-                    toast.error(t.search.workRadiusEnableLocation);
-                    return;
-                  }
-                  setFilterByWorkRadius((current) => !current);
-                }}
+          {hasSearched && !loading && (
+            <div className="flex shrink-0 items-center gap-1.5 border-s border-slate-200 ps-1.5">
+              <span
                 className={clsx(
-                  'relative flex h-10 w-16 shrink-0 items-center rounded-full p-1 transition-all duration-300 sm:h-14 sm:w-24 sm:p-1.5',
-                  filterByWorkRadius
-                    ? 'bg-gradient-to-r from-amber-300 to-amber-200 shadow-[0_10px_30px_-15px_rgba(245,158,11,0.9)]'
-                    : 'bg-slate-200/90'
+                  'flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-xs font-extrabold',
+                  displayedWorkers.length > 0 ? 'bg-primary-50 text-primary' : 'bg-slate-100 text-slate-400'
                 )}
-                aria-pressed={filterByWorkRadius}
-                aria-label={t.search.workRadiusTitle}
+                title={displayedWorkers.length === 1
+                  ? (typeof t.search.resultFor === 'function'
+                    ? t.search.resultFor(searchDisplayLabel)
+                    : `result for "${searchDisplayLabel}"`)
+                  : (typeof t.search.resultsFor === 'function'
+                    ? t.search.resultsFor(searchDisplayLabel)
+                    : `results for "${searchDisplayLabel}"`)}
               >
-                <span
+                {displayedWorkers.length}
+              </span>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!filterByWorkRadius && !hasUserLocation) {
+                      toast.error(t.search.workRadiusEnableLocation);
+                      return;
+                    }
+                    setFilterByWorkRadius((current) => !current);
+                  }}
                   className={clsx(
-                    'absolute h-8 w-8 rounded-full transition-all duration-300 sm:h-11 sm:w-11',
+                    'relative inline-flex h-9 items-center justify-center gap-1.5 rounded-lg px-2.5 transition-colors',
                     filterByWorkRadius
-                      ? 'translate-x-7 bg-amber-400 shadow-lg shadow-amber-300/80 sm:translate-x-10'
-                      : 'translate-x-0 bg-white shadow-lg shadow-slate-300/70'
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'bg-slate-50 text-slate-400 hover:bg-amber-50 hover:text-amber-600'
                   )}
-                />
-              </button>
-            </div>
-          </div>
-        </div>
+                  aria-pressed={filterByWorkRadius}
+                  title={hasUserLocation ? t.search.workRadiusSubtitle : t.search.workRadiusNeedsLocation}
+                >
+                  <HiSwitchHorizontal className="h-4 w-4" />
+                  <span className="hidden whitespace-nowrap text-[11px] font-bold sm:inline">
+                    {t.search.workRadiusShort || t.search.workRadiusTitle}
+                  </span>
+                  <span className={clsx(
+                    'absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full ring-2 ring-white',
+                    filterByWorkRadius ? 'bg-amber-500' : 'bg-slate-300'
+                  )} />
+                </button>
 
-        {hasSearched && !loading && (
-          <div className="border-t border-gray-100 bg-gray-50/80 px-4 py-3">
-            <div className="mx-auto flex max-w-3xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-2">
-                <span className={clsx(
-                  'rounded-full px-2.5 py-0.5 text-xs font-bold',
-                  displayedWorkers.length > 0 ? 'bg-primary text-white' : 'bg-gray-200 text-gray-500'
-                )}>
-                  {displayedWorkers.length}
-                </span>
-                <span className="text-xs font-medium text-gray-500">
-                  {displayedWorkers.length === 1
-                    ? (typeof t.search.resultFor === 'function'
-                      ? t.search.resultFor(searchDisplayLabel)
-                      : `result for "${searchDisplayLabel}"`)
-                    : (typeof t.search.resultsFor === 'function'
-                      ? t.search.resultsFor(searchDisplayLabel)
-                      : `results for "${searchDisplayLabel}"`)}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2 rounded-[22px] border border-white/80 bg-white/80 p-1.5 shadow-sm shadow-slate-200/60 backdrop-blur">
-                <div className="flex items-center gap-1 rounded-2xl bg-slate-100/80 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
-                  <HiSelector className="h-4 w-4 text-primary" />
-                  {t.search.sort}
-                </div>
+                <div className="flex h-9 items-center gap-0.5 rounded-lg bg-slate-100 p-0.5">
                 <div className="flex flex-1 flex-wrap items-center gap-1">
                   {sortOptions.map((option) => (
                     <button
@@ -682,33 +598,26 @@ export default function SearchPageContent({ categorySlug = '' }) {
                       type="button"
                       onClick={() => changeSort(option.value)}
                       className={clsx(
-                        'rounded-2xl px-3 py-2 text-xs font-semibold transition-all duration-200',
+                        'rounded-md px-2.5 py-1.5 text-xs font-semibold transition-all duration-200',
                         sortBy === option.value
-                          ? 'bg-hero-gradient text-white shadow-glow-sm'
-                          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                          ? 'bg-white text-primary shadow-sm'
+                          : 'text-slate-500 hover:text-slate-900'
                       )}
                     >
                       {option.label}
                     </button>
                   ))}
                 </div>
-              </div>
+                </div>
             </div>
+          )}
           </div>
-        )}
+        </div>
       </div>
 
       <div className="mx-auto max-w-3xl px-4 py-5" dir={dir}>
-        {categorySeo ? (
-          <section className="mb-5 rounded-[26px] border border-primary/10 bg-primary-50/60 px-4 py-4">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary/70">Hiro</p>
-            <h1 className="mt-2 text-xl font-extrabold tracking-tight text-slate-900 sm:text-2xl">
-              {searchDisplayLabel}
-            </h1>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              {categorySeo.intro}
-            </p>
-          </section>
+        {categoryProfession ? (
+          <ProfessionHero profession={categoryProfession} locale={locale} />
         ) : null}
 
         {!loading && !hasSearched && (
@@ -723,13 +632,7 @@ export default function SearchPageContent({ categorySlug = '' }) {
               </span>
             </div>
 
-            {professionsLoading ? (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {Array.from({ length: 9 }).map((_, index) => (
-                  <div key={index} className="h-32 rounded-[26px] bg-gray-100 animate-pulse" />
-                ))}
-              </div>
-            ) : filteredProfessions.length === 0 ? (
+            {filteredProfessions.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-4 py-8 text-center text-sm text-gray-500">
                 No professions found.
               </div>
@@ -767,6 +670,13 @@ export default function SearchPageContent({ categorySlug = '' }) {
             )}
           </section>
         )}
+
+        <section id="profession-results" aria-label={categorySeo?.results || searchDisplayLabel}>
+        {categoryProfession ? (
+          <h2 className="mb-4 text-xl font-extrabold tracking-tight text-slate-950">
+            {categorySeo.results}
+          </h2>
+        ) : null}
 
         {loading && (
           <div className="space-y-3">
@@ -845,6 +755,15 @@ export default function SearchPageContent({ categorySlug = '' }) {
             </p>
           </div>
         )}
+        </section>
+
+        {categoryProfession ? (
+          <ProfessionSeoSections
+            profession={categoryProfession}
+            locale={locale}
+            relatedProfessions={relatedProfessions}
+          />
+        ) : null}
       </div>
     </>
   );
