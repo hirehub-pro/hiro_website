@@ -174,8 +174,13 @@ export default function ChangePhoneNumberPage() {
   }
 
   async function isPhoneAvailable(phoneNumber) {
-    const usersRef = collection(db, 'users');
-    const phoneQuery = query(usersRef, where('phone', '==', phoneNumber), limit(1));
+    const usersRef = collection(db, 'publicWorkerProfiles');
+    const phoneQuery = query(
+      usersRef,
+      where('isSearchVisible', '==', true),
+      where('phone', '==', phoneNumber),
+      limit(1)
+    );
     const snap = await getDocs(phoneQuery);
     return snap.empty || snap.docs[0].id === user.uid;
   }
@@ -218,7 +223,7 @@ export default function ChangePhoneNumberPage() {
       setBusy('current-verify');
       const credential = PhoneAuthProvider.credential(currentVerificationId, currentCode.trim());
       await updatePhoneNumber(auth.currentUser, credential);
-      await setDoc(doc(db, 'users', user.uid), {
+      await setDoc(doc(db, profile?.role === 'worker' ? 'publicWorkerProfiles' : 'users', user.uid), {
         phone: savedPhone,
         updatedAt: serverTimestamp(),
       }, { merge: true });
@@ -275,7 +280,7 @@ export default function ChangePhoneNumberPage() {
       setBusy('save');
       const credential = PhoneAuthProvider.credential(newVerificationId, newCode.trim());
       await updatePhoneNumber(auth.currentUser, credential);
-      await setDoc(doc(db, 'users', user.uid), {
+      await setDoc(doc(db, profile?.role === 'worker' ? 'publicWorkerProfiles' : 'users', user.uid), {
         phone: normalizedPhone,
         updatedAt: serverTimestamp(),
       }, { merge: true });

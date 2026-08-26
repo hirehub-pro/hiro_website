@@ -325,7 +325,7 @@ export default function ProfilePage({
       })
       .catch(console.error)
       .finally(() => setLoadingProfile(false));
-  }, [profileRoute, loadedProfileRoute]);
+  }, [profileRoute, loadedProfileRoute, user?.uid]);
 
   useEffect(() => {
     if (!isOwnProfile || profile?.role !== 'worker') {
@@ -429,7 +429,7 @@ export default function ProfilePage({
 
       try {
         setLoadingSchedule(true);
-        const scheduleRef = doc(db, 'users', uid, 'Schedule', 'info');
+        const scheduleRef = doc(db, 'publicWorkerProfiles', uid, 'Schedule', 'info');
         const scheduleSnap = await getDoc(scheduleRef);
         setWorkerSchedule(scheduleSnap.exists() ? scheduleSnap.data() : null);
       } catch (error) {
@@ -507,6 +507,7 @@ export default function ProfilePage({
         rating,
         comment,
         userName: myProfile?.name || user.displayName || 'Anonymous',
+        profession: profile?.professions?.[0] || 'General',
       });
       toast.success('Review submitted!');
       setComment('');
@@ -593,7 +594,7 @@ export default function ProfilePage({
       .map((item) => ({
         type: String(item?.type || 'other').trim().toLowerCase() || 'other',
         name: String(item?.name || '').trim(),
-        url: String(item?.url || '').trim(),
+        url: normalizeExternalUrl(item?.url),
       }))
       .filter((item) => item.url);
 
@@ -974,7 +975,7 @@ export default function ProfilePage({
 
     try {
       setSavingSchedule(true);
-      await setDoc(doc(db, 'users', uid, 'Schedule', 'info'), nextSchedule, { merge: true });
+      await setDoc(doc(db, 'publicWorkerProfiles', uid, 'Schedule', 'info'), nextSchedule, { merge: true });
       setWorkerSchedule(nextSchedule);
       toast.success(status === 'vacation' ? 'Day marked as vacation' : 'Day marked as work day');
     } catch (error) {
@@ -1029,7 +1030,7 @@ export default function ProfilePage({
 
     try {
       setSavingSchedule(true);
-      await setDoc(doc(db, 'users', uid, 'Schedule', 'info'), nextSchedule, { merge: true });
+      await setDoc(doc(db, 'publicWorkerProfiles', uid, 'Schedule', 'info'), nextSchedule, { merge: true });
       setWorkerSchedule(nextSchedule);
       setNoteText('');
       toast.success('Note added');
@@ -2113,6 +2114,23 @@ export async function getServerSideProps({ params }) {
     };
   } catch (error) {
     console.error('Failed to render profile server-side:', error);
+
+    // Server-side rendering has no Firebase Auth session. A private worker
+    // profile is therefore correctly rejected by the public Firestore rule,
+    // but the profile owner can still read it after the browser restores their
+    // session. Return the client-loading shell instead of incorrectly serving
+    // a 404 for that owner.
+    if (error?.code === 'permission-denied') {
+      return {
+        props: {
+          initialProfile: null,
+          initialProjects: [],
+          initialReviews: [],
+          initialProfileRoute: '',
+        },
+      };
+    }
+
     return { notFound: true };
   }
 }

@@ -105,7 +105,7 @@ export default function SettingsPage() {
       if (!user || profile?.role !== 'worker') return;
 
       try {
-        const scheduleRef = doc(db, 'users', user.uid, 'Schedule', 'info');
+        const scheduleRef = doc(db, 'publicWorkerProfiles', user.uid, 'Schedule', 'info');
         const scheduleSnap = await getDoc(scheduleRef);
         const data = scheduleSnap.exists() ? scheduleSnap.data() : {};
 
@@ -237,7 +237,7 @@ export default function SettingsPage() {
 
     try {
       setScheduleBusy(true);
-      await setDoc(doc(db, 'users', user.uid, 'Schedule', 'info'), {
+      await setDoc(doc(db, 'publicWorkerProfiles', user.uid, 'Schedule', 'info'), {
         hideSchedule: nextSettings.enabled,
         defaultWorkingHours: {
           from: nextSettings.from,

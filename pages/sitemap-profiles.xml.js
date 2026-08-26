@@ -8,8 +8,8 @@ export async function getServerSideProps({ res }) {
 
   try {
     const usersSnap = await getDocs(query(
-      collection(db, 'users'),
-      where('role', '==', 'worker')
+      collection(db, 'publicWorkerProfiles'),
+      where('isSearchVisible', '==', true)
     ));
 
     usersSnap.docs.forEach((userDoc) => {

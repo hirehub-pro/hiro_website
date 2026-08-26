@@ -4,17 +4,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import { FiArrowLeft, FiDownload, FiEdit3, FiExternalLink, FiPrinter, FiSend, FiShare2 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
-import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useLanguage } from '../../../contexts/LanguageContext';
-import { storage } from '../../../lib/firebase';
 import { createDocumentSigningLink } from '../../../lib/documentSigning';
 import { getAllocationNumberMinAmountBeforeVat, saveUserInvoice } from '../../../lib/firestore';
 import { formatCurrency, getInvoicePreviewStorageKey } from '../../../lib/invoices';
-import { completeInvoiceSave } from '../../../lib/invoice-save-workflow.mjs';
 import {
+  createTaxInvoiceDraft,
   createTaxAuthorityAuthorizationUrl,
   getTaxAuthorityConnectionStatus,
   requestTaxInvoiceAllocation,
@@ -473,35 +471,17 @@ export default function InvoicePreviewPage() {
       return invoice;
     }
 
-    if (!invoiceContentRef.current) {
-      throw new Error('Missing invoice preview content');
-    }
-
-    const createdAtMs = Date.now();
-    const fileName = `${getPdfFilePrefix(docType)}_${user.uid}_${createdAtMs}.pdf`;
-    const storagePath = `invoices/${user.uid}/${fileName}`;
-    const pdfBlob = await buildInvoicePdfBlob(invoiceContentRef.current);
-    const uploadedSnapshot = await uploadBytes(
-      storageRef(storage, storagePath),
-      pdfBlob,
-      { contentType: 'application/pdf' }
-    );
-    const url = await getDownloadURL(uploadedSnapshot.ref);
-
     const savedRecord = await saveUserInvoice(user.uid, {
       ...invoice,
       docType,
-      savedFileName: fileName,
-      savedInvoiceUrl: url,
-      savedStoragePath: storagePath,
     });
     const nextInvoice = {
       ...invoice,
       invoiceDocId: savedRecord.invoiceDocId,
       savedFirestoreId: savedRecord.id,
-      savedFileName: fileName,
-      savedInvoiceUrl: url,
-      savedStoragePath: storagePath,
+      savedFileName: savedRecord.savedFileName,
+      savedInvoiceUrl: savedRecord.savedInvoiceUrl,
+      savedStoragePath: savedRecord.savedStoragePath,
     };
     setInvoice(nextInvoice);
     setIsSaved(true);
@@ -540,7 +520,11 @@ export default function InvoicePreviewPage() {
   function buildTaxAuthorityInvoicePayload(savedInvoice) {
     const businessId = String(taxStatus?.businessId || '').replace(/\D/g, '');
     const customerVatNumber = String(invoice?.clientId || '').replace(/\D/g, '');
-    const invoiceDocId = savedInvoice?.invoiceDocId || savedInvoice?.savedFirestoreId || `${docType}_${invoice?.invoiceNumber || Date.now()}`;
+    const rawSequence = String(invoice?.invoiceNumber || '').match(/(\d+)(?!.*\d)/)?.[1] || '';
+    const documentNumber = /^\d{4}-\d{4,}$/.test(String(invoice?.invoiceNumber || ''))
+      ? String(invoice.invoiceNumber)
+      : `${String(invoice?.issueDate || new Date().toISOString()).slice(0, 4)}-${rawSequence.padStart(4, '0')}`;
+    const invoiceDocId = savedInvoice?.invoiceDocId || savedInvoice?.savedFirestoreId || `${docType}_${documentNumber}`;
     const paymentAmount = Number(invoice?.subtotal) || Math.max((Number(invoice?.total) || 0) - (Number(invoice?.vatAmount) || 0), 0);
     const amountBeforeDiscount = Number(invoice?.subtotalBeforeDiscount ?? invoice?.subtotal) || paymentAmount;
     const discountAmount = Number(invoice?.discountAmount) || 0;
@@ -554,7 +538,7 @@ export default function InvoicePreviewPage() {
         invoice_type: 305,
         vat_number: Number(businessId),
         user_name: invoice?.createdBy?.name || 'Hiro Pro',
-        invoice_reference_number: String(invoice?.invoiceNumber || invoiceDocId),
+        invoice_reference_number: documentNumber,
         customer_vat_number: customerVatNumber ? Number(customerVatNumber) : 0,
         customer_name: invoice?.clientName || '',
         invoice_date: invoice?.issueDate || new Date().toISOString().slice(0, 10),
@@ -623,40 +607,62 @@ export default function InvoicePreviewPage() {
       }
     }
 
-    if (!invoiceContentRef.current) {
-      throw new Error('Missing invoice preview content');
-    }
-
-    const createdAtMs = Date.now();
-    const fileName = `${getPdfFilePrefix(docType)}_${user.uid}_${createdAtMs}.pdf`;
-    const storagePath = `invoices/${user.uid}/${fileName}`;
-    const nextInvoice = await completeInvoiceSave({
-      invoice: { ...invoice, docType },
-      requiresAllocation: allocationCheck.shouldAttempt,
-      requestAllocation: async (currentInvoice) => {
-        const payload = buildTaxAuthorityInvoicePayload(currentInvoice);
-        // Omitting the top-level invoiceDocId prevents the allocation callable
-        // from creating the final invoice document before its PDF is ready.
-        const { invoiceDocId: omittedInvoiceDocId, ...allocationPayload } = payload;
-        void omittedInvoiceDocId;
-        return requestTaxInvoiceAllocation(allocationPayload);
+    const payload = buildTaxAuthorityInvoicePayload(invoice);
+    const paymentMethod = (value) => {
+      const normalized = String(value || '').toLowerCase();
+      if (/cash|מזומן|نقد/.test(normalized)) return 'cash';
+      if (/card|כרטיס|بطاق/.test(normalized)) return 'credit';
+      if (/check|שיק|המחא|شيك/.test(normalized)) return 'check';
+      if (/transfer|העבר|تحويل/.test(normalized)) return 'transfer';
+      if (/paybox/.test(normalized)) return 'paybox';
+      if (/bit/.test(normalized)) return 'bit';
+      if (/withhold|ניכוי|مقتطع/.test(normalized)) return 'withholding_tax';
+      return 'other';
+    };
+    const draft = await createTaxInvoiceDraft({
+      ...payload,
+      presentation: {
+        clientAddress: invoice.clientCity || '',
+        clientPhone: invoice.clientPhone || '',
+        clientEmail: invoice.clientEmail || '',
+        externalClientNumber: invoice.externalClientNumber || '',
+        savedClientId: invoice.savedClientId || null,
+        priceTaxModeDefault: 'before_tax',
+        roundTotalEnabled: invoice.roundTotalEnabled === true,
+        paymentDueDate: invoice.dueDate || null,
+        paymentMethods: (invoice.payments || []).map((payment) => ({
+          method: paymentMethod(payment.type),
+          amount: Number(payment.amount || 0),
+          cardNumber: payment.cardNumber || '',
+          cardName: payment.cardName || '',
+          cardExpiration: payment.cardExpiration || '',
+          installments: String(payment.numberOfPayments || ''),
+          checkNumber: payment.checkNumber || '',
+          bank: payment.bankName || '',
+          branch: payment.branch || '',
+          account: payment.accountNumber || '',
+        })),
+        documentLogoMode: 'default',
       },
-      renderAllocation: async (allocatedInvoice, allocation) => {
-        setTaxAllocation(allocation);
-        setInvoice(allocatedInvoice);
-        await waitForPaint();
-      },
-      generatePdf: () => buildInvoicePdfBlob(invoiceContentRef.current),
-      uploadPdf: ({ pdfBlob, storagePath: targetPath }) => uploadBytes(
-        storageRef(storage, targetPath),
-        pdfBlob,
-        { contentType: 'application/pdf' }
-      ),
-      getDownloadUrl: (uploadedSnapshot) => getDownloadURL(uploadedSnapshot.ref),
-      persistInvoice: (payload) => saveUserInvoice(user.uid, payload),
-      fileName,
-      storagePath,
     });
+    const allocation = await requestTaxInvoiceAllocation({ draftId: draft.draftId });
+    const savedDocument = allocation.document;
+    if (!savedDocument?.invoiceDocId) {
+      throw new Error('The Tax Authority did not return a finalized invoice.');
+    }
+    const nextInvoice = {
+      ...invoice,
+      docType,
+      taxAuthorityAllocation: allocation,
+      allocationNumber: allocation.confirmationNumber || '',
+      taxAuthorityAllocationNumber: allocation.confirmationNumber || '',
+      invoiceDocId: savedDocument.invoiceDocId,
+      savedFirestoreId: savedDocument.invoiceDocId,
+      savedFileName: savedDocument.fileName,
+      savedInvoiceUrl: savedDocument.url,
+      savedStoragePath: savedDocument.storagePath,
+    };
+    setTaxAllocation(allocation);
 
     setInvoice(nextInvoice);
     setIsSaved(true);

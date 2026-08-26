@@ -1,4 +1,4 @@
-import { collectionGroup, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { buildUrlSet, escapeXml, sendXml, toAbsoluteUrl, toLastMod } from '../lib/sitemap';
 
@@ -78,27 +78,33 @@ export async function getServerSideProps({ res }) {
   const seen = new Set();
 
   try {
-    const projectsSnap = await getDocs(collectionGroup(db, 'projects'));
+    const profilesSnap = await getDocs(query(
+      collection(db, 'publicWorkerProfiles'),
+      where('isSearchVisible', '==', true)
+    ));
+    const projectSnapshots = await Promise.all(profilesSnap.docs.map(async (profileDoc) => ({
+      uid: profileDoc.id,
+      snapshot: await getDocs(collection(db, 'publicWorkerProfiles', profileDoc.id, 'projects')),
+    })));
 
-    projectsSnap.docs.forEach((projectDoc) => {
-      const data = projectDoc.data() || {};
-      const pathParts = projectDoc.ref.path.split('/');
-      const uid = pathParts[1];
-      const projectId = pathParts[3];
-      if (!uid || !projectId) return;
-      const loc = `/profile/${uid}/projects/${projectId}`;
-      const absoluteLoc = toAbsoluteUrl(loc);
-      if (seen.has(absoluteLoc)) return;
+    projectSnapshots.forEach(({ uid, snapshot }) => {
+      snapshot.docs.forEach((projectDoc) => {
+        const data = projectDoc.data() || {};
+        const projectId = projectDoc.id;
+        const loc = `/profile/${uid}/projects/${projectId}`;
+        const absoluteLoc = toAbsoluteUrl(loc);
+        if (seen.has(absoluteLoc)) return;
 
-      seen.add(absoluteLoc);
+        seen.add(absoluteLoc);
 
-      entries.push(buildProjectSitemapEntry(loc, {
-        project: data,
-        media: getProjectMedia(data),
-        lastmod: toLastMod(data.updatedAt || data.timestamp),
-        changefreq: 'monthly',
-        priority: '0.6',
-      }));
+        entries.push(buildProjectSitemapEntry(loc, {
+          project: data,
+          media: getProjectMedia(data),
+          lastmod: toLastMod(data.updatedAt || data.timestamp),
+          changefreq: 'monthly',
+          priority: '0.6',
+        }));
+      });
     });
   } catch (error) {
     // Return a valid empty sitemap if projects are unavailable.

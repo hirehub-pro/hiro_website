@@ -159,7 +159,7 @@ export default function WorkerSchedulePage() {
 
       try {
         setLoadingSchedule(true);
-        const scheduleRef = doc(db, 'users', uid, 'Schedule', 'info');
+        const scheduleRef = doc(db, 'publicWorkerProfiles', uid, 'Schedule', 'info');
         const scheduleSnap = await getDoc(scheduleRef);
         setWorkerSchedule(scheduleSnap.exists() ? scheduleSnap.data() : null);
       } catch (error) {
@@ -261,7 +261,7 @@ export default function WorkerSchedulePage() {
 
     try {
       setSavingSchedule(true);
-      await setDoc(doc(db, 'users', uid, 'Schedule', 'info'), nextSchedule, { merge: true });
+      await setDoc(doc(db, 'publicWorkerProfiles', uid, 'Schedule', 'info'), nextSchedule, { merge: true });
       setWorkerSchedule(nextSchedule);
       toast.success(status === 'vacation' ? 'Day marked as vacation' : 'Day marked as work day');
     } catch (error) {
@@ -316,7 +316,7 @@ export default function WorkerSchedulePage() {
 
     try {
       setSavingSchedule(true);
-      await setDoc(doc(db, 'users', uid, 'Schedule', 'info'), nextSchedule, { merge: true });
+      await setDoc(doc(db, 'publicWorkerProfiles', uid, 'Schedule', 'info'), nextSchedule, { merge: true });
       setWorkerSchedule(nextSchedule);
       setNoteText('');
       toast.success('Note added');

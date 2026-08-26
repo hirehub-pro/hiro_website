@@ -27,6 +27,15 @@ function getProjectMedia(project) {
       }));
   }
 
+  if (Array.isArray(project?.imageUrls) && project.imageUrls.length > 0) {
+    return project.imageUrls
+      .filter(Boolean)
+      .map((url, index) => ({
+        url,
+        type: project.mediaTypes?.[index] === 'video' ? 'video' : 'image',
+      }));
+  }
+
   if (project?.imageUrl) {
     return [{ type: getMediaKind({ url: project.imageUrl }), url: project.imageUrl }];
   }

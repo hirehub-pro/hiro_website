@@ -407,7 +407,10 @@ export default function WorkerInvoicesPage() {
         if (cancelled) return;
 
         const verificationStatus = String(
-          verificationInfo?.status || profile?.businessVerificationStatus || ''
+          verificationInfo?.businessVerificationStatus
+          || verificationInfo?.status
+          || profile?.businessVerificationStatus
+          || ''
         ).trim().toLowerCase();
 
         setBusinessVerificationInfo(verificationInfo);

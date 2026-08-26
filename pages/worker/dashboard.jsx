@@ -191,9 +191,9 @@ export default function WorkerDashboardPage() {
           reviewsSnap,
           proRatingSnap,
         ] = await Promise.all([
-          getDoc(doc(db, 'users', workerId)),
+          getDoc(doc(db, 'publicWorkerProfiles', workerId)),
           getDoc(doc(db, 'users', workerId, 'metadata', 'financial_summary')),
-          getDocs(collection(db, 'users', workerId, 'reviews')),
+          getDocs(collection(db, 'publicWorkerProfiles', workerId, 'reviews')),
           getDocs(collection(db, 'users', workerId, 'ProRating')),
         ]);
 

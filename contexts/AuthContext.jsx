@@ -50,17 +50,6 @@ function clearRecaptchaVerifier() {
   window.recaptchaContainerId = null;
 }
 
-function detectPlatform() {
-  if (typeof navigator === 'undefined') {
-    return 'web';
-  }
-
-  const ua = navigator.userAgent.toLowerCase();
-  if (ua.includes('android')) return 'android';
-  if (ua.includes('iphone') || ua.includes('ipad') || ua.includes('ipod')) return 'ios';
-  return 'web';
-}
-
 function getFirebaseAuthMessage(error) {
   switch (error?.code) {
     case 'auth/argument-error':
@@ -123,9 +112,9 @@ export function AuthProvider({ children }) {
       return userProfile;
     }
 
-    await setDoc(doc(db, 'users', firebaseUser.uid), {
+    const profileCollection = userProfile?.role === 'worker' ? 'publicWorkerProfiles' : 'users';
+    await setDoc(doc(db, profileCollection, firebaseUser.uid), {
       email: authEmail,
-      emailVerified: authEmailVerified,
       updatedAt: serverTimestamp(),
     }, { merge: true });
 
@@ -297,16 +286,26 @@ export function AuthProvider({ children }) {
 
   async function isPhoneInUse(phoneNumber) {
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
-    const usersRef = collection(db, 'users');
-    const q = query(usersRef, where('phone', '==', normalizedPhone), limit(1));
+    const usersRef = collection(db, 'publicWorkerProfiles');
+    const q = query(
+      usersRef,
+      where('isSearchVisible', '==', true),
+      where('phone', '==', normalizedPhone),
+      limit(1)
+    );
     const snap = await getDocs(q);
     return snap.size > 0;
   }
 
   async function getUserDocByPhone(phoneNumber) {
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
-    const usersRef = collection(db, 'users');
-    const q = query(usersRef, where('phone', '==', normalizedPhone), limit(1));
+    const usersRef = collection(db, 'publicWorkerProfiles');
+    const q = query(
+      usersRef,
+      where('isSearchVisible', '==', true),
+      where('phone', '==', normalizedPhone),
+      limit(1)
+    );
     const snap = await getDocs(q);
     if (snap.empty) {
       return null;
@@ -409,31 +408,39 @@ export function AuthProvider({ children }) {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     await updateProfile(cred.user, { displayName: name });
 
-    const profileData = {
+    const publicProfileData = {
       uid: cred.user.uid,
       name,
-      role,
+      role: 'worker',
       email,
-      professions: role === 'worker' ? professions : [],
+      professions,
       town: city,
-      avgRating: 0,
-      reviewCount: 0,
-      profileViews: 0,
-      businessVerificationStatus: 'pending',
       profileImageUrl: '',
       description: '',
       phone: normalizedPhone,
       optionalPhone: '',
       lat: Number.isFinite(lat) ? lat : null,
       lng: Number.isFinite(lng) ? lng : null,
-      platform: detectPlatform(),
-      fcmToken: '',
-      lastTokenUpdate: serverTimestamp(),
       createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
     };
+    const accountData = role === 'worker'
+      ? { uid: cred.user.uid, role: 'worker', createdAt: serverTimestamp() }
+      : {
+          uid: cred.user.uid,
+          name,
+          role: 'customer',
+          email,
+          phone: normalizedPhone,
+          town: city,
+          createdAt: serverTimestamp(),
+        };
 
-    await setDoc(doc(db, 'users', cred.user.uid), profileData);
-    setProfile({ uid: cred.user.uid, ...profileData });
+    await setDoc(doc(db, 'users', cred.user.uid), accountData);
+    if (role === 'worker') {
+      await setDoc(doc(db, 'publicWorkerProfiles', cred.user.uid), publicProfileData);
+    }
+    setProfile(role === 'worker' ? { ...accountData, ...publicProfileData } : accountData);
     return cred;
   }
 
@@ -450,7 +457,6 @@ export function AuthProvider({ children }) {
     workRadius = 0,
     optionalPhone = '',
     description = '',
-    subscription = null,
   }) {
     const firebaseUser = auth.currentUser;
     if (!firebaseUser) {
@@ -484,10 +490,10 @@ export function AuthProvider({ children }) {
 
     await updateProfile(firebaseUser, { displayName: name || firebaseUser.displayName || '' });
 
-    const baseProfileData = {
+    const publicProfileData = {
       uid: firebaseUser.uid,
       name: name || firebaseUser.displayName || '',
-      role,
+      role: 'worker',
       email: normalizedEmail,
       town: city || '',
       phone: normalizedPhone,
@@ -496,41 +502,32 @@ export function AuthProvider({ children }) {
       lng: Number.isFinite(lng) ? lng : null,
       profileImageUrl: '',
       description: description || '',
-      platform: detectPlatform(),
-      fcmToken: '',
-      lastTokenUpdate: serverTimestamp(),
       createdAt: existingUserSnap.exists() ? (existingUserSnap.data().createdAt || serverTimestamp()) : serverTimestamp(),
-      profileViews: 0,
-      businessVerificationStatus: 'pending',
+      updatedAt: serverTimestamp(),
+      professions: Array.isArray(professions) ? professions : [],
+      workRadius: Number(workRadius) || 0,
     };
-
-    const workerData = role === 'worker'
-      ? {
-          professions: Array.isArray(professions) ? professions : [],
-          isSubscribed: Boolean(subscription?.isSubscribed),
-          subscriptionStatus: subscription?.status || (subscription?.isSubscribed ? 'active' : 'inactive'),
-          subscriptionPlan: subscription?.plan || '',
-          subscriptionAmount: Number(subscription?.amount) || 0,
-          subscriptionCurrency: subscription?.currency || 'ILS',
-          subscriptionStartedAt: subscription?.isSubscribed ? serverTimestamp() : null,
-          workRadius: Number(workRadius) || 0,
-          avgRating: 0,
-          reviewCount: 0,
-        }
+    const accountData = role === 'worker'
+      ? { uid: firebaseUser.uid, role: 'worker', createdAt: publicProfileData.createdAt }
       : {
-          professions: [],
-          avgRating: 0,
-          reviewCount: 0,
+          uid: firebaseUser.uid,
+          name: publicProfileData.name,
+          role: 'customer',
+          email: normalizedEmail,
+          phone: normalizedPhone,
+          optionalPhone: publicProfileData.optionalPhone,
+          town: publicProfileData.town,
+          lat: publicProfileData.lat,
+          lng: publicProfileData.lng,
+          createdAt: publicProfileData.createdAt,
         };
 
-    const profileData = {
-      ...baseProfileData,
-      ...workerData,
-    };
-
-    await setDoc(userRef, profileData, { merge: true });
+    await setDoc(userRef, accountData, { merge: existingUserSnap.exists() });
+    if (role === 'worker') {
+      await setDoc(doc(db, 'publicWorkerProfiles', firebaseUser.uid), publicProfileData, { merge: true });
+    }
     const latestProfile = await getUserProfile(firebaseUser.uid);
-    setProfile(latestProfile || { uid: firebaseUser.uid, ...profileData });
+    setProfile(latestProfile || { ...accountData, ...(role === 'worker' ? publicProfileData : {}) });
 
     return firebaseUser;
   }
@@ -546,31 +543,11 @@ export function AuthProvider({ children }) {
 
     const snap = await getDoc(doc(db, 'users', cred.user.uid));
 
-    if (!snap.exists()) {
-      const profileData = {
-        uid: cred.user.uid,
-        name: 'Guest',
-        role: 'guest',
-        email: '',
-        professions: [],
-        town: '',
-        avgRating: 0,
-        reviewCount: 0,
-        profileViews: 0,
-        businessVerificationStatus: 'pending',
-        profileImageUrl: '',
-        description: '',
-        phone: '',
-        optionalPhone: '',
-        lat: null,
-        lng: null,
-        createdAt: serverTimestamp(),
-      };
-      await setDoc(doc(db, 'users', cred.user.uid), profileData);
-      setProfile({ uid: cred.user.uid, ...profileData });
-    } else {
+    if (snap.exists()) {
       const userProfile = await getUserProfile(cred.user.uid);
       setProfile(userProfile);
+    } else {
+      setProfile({ uid: cred.user.uid, name: 'Guest', role: 'guest' });
     }
 
     return cred;
