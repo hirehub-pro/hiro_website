@@ -5,7 +5,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
+import { getApp } from 'firebase/app';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import {
   FiAlertTriangle,
   FiArchive,
@@ -26,14 +28,18 @@ import {
   FiUser,
 } from 'react-icons/fi';
 import { db } from '../lib/firebase';
-import { BkmvExportService } from '../lib/bkmvExportService';
-import { sendUniformFilesEmail, uploadUniformFiles } from '../lib/uniform-files-email';
 import { registerForPushNotifications } from '../lib/notifications';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const notificationStorageKey = 'hiro_notifications_enabled';
 const datePromptPattern = /^\d{4}-\d{2}-\d{2}$/;
+const uniformFilesFunctions = getFunctions(getApp(), 'me-west1');
+const generateUniformExport = httpsCallable(
+  uniformFilesFunctions,
+  'generateUniformExport',
+  { timeout: 540000 },
+);
 
 function getAvatarFallback(name) {
   return String(name || 'H').trim().charAt(0).toUpperCase() || 'H';
@@ -316,14 +322,13 @@ export default function SettingsPage() {
       setUniformFilesForm((current) => ({ ...current, isOpen: false }));
       setIsGeneratingUniformFiles(true);
       setUniformFilesProgress({ isOpen: true, status: 'generating', value: 12, error: '' });
-      const result = await BkmvExportService.exportForUser({ user, fromDate, toDate });
-      setUniformFilesProgress({ isOpen: true, status: 'uploading', value: 62, error: '' });
-      const uploadedFiles = await uploadUniformFiles(user.uid, result.files);
-      setUniformFilesProgress({ isOpen: true, status: 'sending', value: 86, error: '' });
-      await sendUniformFilesEmail({
+      await user.getIdToken(true);
+      const result = await generateUniformExport({
+        fromDate,
+        toDate,
         recipientEmail: recipientEmail.trim(),
-        files: uploadedFiles,
       });
+      if (!result.data?.exportId) throw new Error(copy.uniformFilesError);
 
       setUniformFilesProgress({ isOpen: true, status: 'complete', value: 100, error: '' });
       toast.success(copy.uniformFilesSuccess);
