@@ -117,7 +117,7 @@ export default function HomePage() {
                 </p>
               )}
 
-              <h1 className="max-w-xl text-4xl font-extrabold leading-[1.05] tracking-tight text-white animate-fade-up delay-100 sm:text-5xl lg:text-6xl">
+              <h1 className="max-w-xl text-4xl font-extrabold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-6xl">
                 {t.home.question}
               </h1>
 
