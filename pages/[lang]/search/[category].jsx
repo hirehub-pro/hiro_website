@@ -10,11 +10,10 @@ import {
   SEO_LOCALES,
 } from '../../../lib/seo-locale';
 
-export default function LocalizedSearchCategoryPage({ locale, categorySlug, profession }) {
+export default function LocalizedSearchCategoryPage({ locale, categorySlug, profession, seo }) {
   const path = `/search/${categorySlug}`;
   const alternateUrls = buildAlternateLanguageUrls(path);
   const canonicalUrl = absoluteUrl(`/${locale}${path}`);
-  const seo = getProfessionPageContent(profession, locale);
   const structuredData = [
     {
       '@context': 'https://schema.org',
@@ -69,7 +68,7 @@ export default function LocalizedSearchCategoryPage({ locale, categorySlug, prof
           dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
         />
       </Head>
-      <SearchPageContent categorySlug={categorySlug} profession={profession} />
+      <SearchPageContent categorySlug={categorySlug} profession={profession} professionContent={seo} />
     </>
   );
 }
@@ -99,6 +98,7 @@ export function getStaticProps({ params }) {
       locale,
       categorySlug,
       profession,
+      seo: getProfessionPageContent(profession, locale),
     },
   };
 }

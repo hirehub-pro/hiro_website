@@ -9,8 +9,8 @@ export default function SearchCategoryPage({
   profession,
   path,
   alternateUrls,
+  seo,
 }) {
-  const seo = getProfessionPageContent(profession, 'he');
   const canonicalUrl = absoluteUrl(path);
   const structuredData = [
     {
@@ -66,7 +66,7 @@ export default function SearchCategoryPage({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
         />
       </Head>
-      <SearchPageContent categorySlug={categorySlug} profession={profession} />
+      <SearchPageContent categorySlug={categorySlug} profession={profession} professionContent={seo} />
     </>
   );
 }
@@ -88,6 +88,7 @@ export function getStaticProps({ params }) {
     props: {
       categorySlug,
       profession,
+      seo: getProfessionPageContent(profession, 'he'),
       path,
       alternateUrls: buildAlternateLanguageUrls(path),
     },

@@ -34,7 +34,6 @@ import { searchWorkers } from '../../lib/firestore';
 import { buildLocalizedSearchPath, findProfessionBySlug, slugifyProfession } from '../../lib/search-routing';
 import { getSearchPageSeo } from '../../lib/page-seo';
 import { PROFESSION_CATALOG } from '../../lib/profession-catalog';
-import { getProfessionPageContent } from '../../lib/profession-page-content';
 import WorkerCard from '../workers/WorkerCard';
 import { ProfessionHero, ProfessionSeoSections } from './ProfessionSeoContent';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -174,7 +173,11 @@ const LOCAL_PROFESSIONS = PROFESSION_CATALOG.map((profession) => ({
   id: String(profession.id),
 }));
 
-export default function SearchPageContent({ categorySlug = '', profession: initialProfession = null }) {
+export default function SearchPageContent({
+  categorySlug = '',
+  profession: initialProfession = null,
+  professionContent: initialProfessionContent = null,
+}) {
   const { t, dir, locale } = useLanguage();
   const { profile } = useAuth();
   const router = useRouter();
@@ -467,9 +470,7 @@ export default function SearchPageContent({ categorySlug = '', profession: initi
     ))
     : sortedWorkers;
   const categoryProfession = initialProfession || matchedProfession;
-  const categorySeo = categoryProfession
-    ? getProfessionPageContent(categoryProfession, locale)
-    : null;
+  const categorySeo = categoryProfession ? initialProfessionContent : null;
   const currentProfessionIndex = categoryProfession
     ? professions.findIndex((item) => item.slug === categoryProfession.slug)
     : -1;
@@ -617,7 +618,7 @@ export default function SearchPageContent({ categorySlug = '', profession: initi
 
       <div className="mx-auto max-w-3xl px-4 py-5" dir={dir}>
         {categoryProfession ? (
-          <ProfessionHero profession={categoryProfession} locale={locale} />
+          <ProfessionHero profession={categoryProfession} locale={locale} content={categorySeo} />
         ) : null}
 
         {!loading && !hasSearched && (
@@ -762,6 +763,7 @@ export default function SearchPageContent({ categorySlug = '', profession: initi
             key={categoryProfession.slug}
             profession={categoryProfession}
             locale={locale}
+            content={categorySeo}
             relatedProfessions={relatedProfessions}
           />
         ) : null}

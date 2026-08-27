@@ -1,11 +1,19 @@
 import Link from 'next/link';
 import { HiStar, HiBadgeCheck } from 'react-icons/hi';
 import { buildProfilePath } from '../../lib/profile-routing';
+import { getLocalizedProfessionValue } from '../../lib/profession-catalog';
+import { useLanguage } from '../../contexts/LanguageContext';
 import ProfileImage from '../common/ProfileImage';
 
 export default function WorkerCard({ worker, compact = false }) {
+  const { locale } = useLanguage();
   const profileHref = buildProfilePath(worker);
   const avatarUrl = worker.profileImageUrl;
+  const localizedProfessions = Array.isArray(worker.professions)
+    ? worker.professions
+      .map((profession) => getLocalizedProfessionValue(profession, locale))
+      .filter(Boolean)
+    : [];
 
   if (compact) {
     return (
@@ -38,7 +46,7 @@ export default function WorkerCard({ worker, compact = false }) {
         </p>
 
         <p className="mt-1 line-clamp-1 text-sm font-medium text-gray-500">
-          {Array.isArray(worker.professions) ? worker.professions[0] : ''}
+          {localizedProfessions[0] || ''}
         </p>
 
         {(worker.town || worker.city) && (
@@ -80,7 +88,7 @@ export default function WorkerCard({ worker, compact = false }) {
       <div className="flex-1 min-w-0">
         <p className="truncate text-base font-extrabold text-gray-900">{worker.name}</p>
         <p className="truncate text-sm font-medium text-gray-500">
-          {Array.isArray(worker.professions) ? worker.professions.join(' • ') : ''}
+          {localizedProfessions.join(' • ')}
         </p>
         {(worker.town || worker.city) && (
           <p className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">{worker.town || worker.city}</p>

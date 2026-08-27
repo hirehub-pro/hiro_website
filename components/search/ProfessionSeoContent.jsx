@@ -8,12 +8,9 @@ import {
   HiOutlineCheck,
   HiOutlineQuestionMarkCircle,
 } from 'react-icons/hi';
-import { getProfessionPageContent } from '../../lib/profession-page-content';
 import { localizePath } from '../../lib/seo-locale';
 
-export function ProfessionHero({ profession, locale = 'he' }) {
-  const content = getProfessionPageContent(profession, locale);
-
+export function ProfessionHero({ profession, locale = 'he', content }) {
   return (
     <section className="mb-7 border-b border-slate-200/80 pb-6">
       <nav aria-label="Breadcrumb" className="mb-4 flex flex-wrap items-center gap-1.5 text-xs font-medium text-slate-400">
@@ -56,8 +53,7 @@ export function ProfessionHero({ profession, locale = 'he' }) {
   );
 }
 
-export function ProfessionSeoSections({ profession, locale = 'he', relatedProfessions = [] }) {
-  const content = getProfessionPageContent(profession, locale);
+export function ProfessionSeoSections({ profession, locale = 'he', relatedProfessions = [], content }) {
   const [showAllServices, setShowAllServices] = useState(false);
   const [showAllQuestions, setShowAllQuestions] = useState(false);
   const hasMoreServices = content.services.length > 4;
