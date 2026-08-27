@@ -565,8 +565,13 @@ export default function WorkerInvoicesPage() {
 
     try {
       const parsed = JSON.parse(savedDraft);
-      setIssueDate(parsed.issueDate || todayKey());
-      setDueDate(parsed.dueDate || dueDateKey());
+      const currentDate = todayKey();
+      const restoredIssueDate = parsed.issueDate && parsed.issueDate <= currentDate
+        ? parsed.issueDate
+        : currentDate;
+      const restoredDueDate = parsed.dueDate || dueDateKey();
+      setIssueDate(restoredIssueDate);
+      setDueDate(restoredDueDate < restoredIssueDate ? restoredIssueDate : restoredDueDate);
       setClientName(parsed.clientName || '');
       setClientId(normalizeNineDigitInput(parsed.clientId || ''));
       setClientEmail(parsed.clientEmail || '');
@@ -583,7 +588,10 @@ export default function WorkerInvoicesPage() {
         ? parsed.lineItems.map((item, index) => normalizeLineItem(item, index))
         : defaultLineItems;
       const nextPayments = Array.isArray(parsed.payments) && parsed.payments.length > 0
-        ? parsed.payments
+        ? parsed.payments.map((payment) => ({
+          ...payment,
+          date: !payment?.date || payment.date < restoredIssueDate ? restoredIssueDate : payment.date,
+        }))
         : defaultPayments;
       setLineItems(nextLineItems);
       setPayments(nextPayments);
@@ -1210,10 +1218,33 @@ export default function WorkerInvoicesPage() {
   }
 
   function updatePayment(id, field, value) {
+    const nextValue = field === 'amount'
+      ? Number(value)
+      : field === 'date' && issueDate && value && value < issueDate
+        ? issueDate
+        : value;
     setPayments((current) => current.map((item) => (
       item.id === id
-        ? { ...item, [field]: field === 'amount' ? Number(value) : value }
+        ? { ...item, [field]: nextValue }
         : item
+    )));
+  }
+
+  function updateDueDate(value) {
+    setDueDate(issueDate && value && value < issueDate ? issueDate : value);
+  }
+
+  function updateIssueDate(value) {
+    const nextIssueDate = value > todayKey() ? todayKey() : value;
+    setIssueDate(nextIssueDate);
+
+    if (!nextIssueDate) return;
+
+    setDueDate((current) => (current && current < nextIssueDate ? nextIssueDate : current));
+    setPayments((current) => current.map((payment) => (
+      payment.date && payment.date < nextIssueDate
+        ? { ...payment, date: nextIssueDate }
+        : payment
     )));
   }
 
@@ -1301,6 +1332,16 @@ export default function WorkerInvoicesPage() {
   }
 
   function validateInvoiceBeforePreview() {
+    if (!issueDate || issueDate > todayKey()) {
+      toast.error(copy.issueDateFutureError);
+      return false;
+    }
+
+    if (showDueDate && dueDate && dueDate < issueDate) {
+      toast.error(copy.dueDateBeforeIssueError);
+      return false;
+    }
+
     if (!clientName.trim()) {
       toast.error(copy.clientNameRequired);
       return false;
@@ -1326,6 +1367,16 @@ export default function WorkerInvoicesPage() {
     }
 
     if (showPaymentDetails) {
+      const invalidPaymentDateIndex = payments.findIndex((payment) => (
+        !payment?.date || payment.date < issueDate
+      ));
+
+      if (invalidPaymentDateIndex !== -1) {
+        setExpandedPaymentId(payments[invalidPaymentDateIndex]?.id || null);
+        toast.error(copy.paymentDateBeforeIssueError);
+        return false;
+      }
+
       const invalidPaymentIndex = payments.findIndex((payment) => {
         const amount = Number(payment?.amount);
         return !Number.isFinite(amount) || amount <= 0;
@@ -1528,7 +1579,8 @@ export default function WorkerInvoicesPage() {
                       <input
                         type="date"
                         value={issueDate}
-                        onChange={(event) => setIssueDate(event.target.value)}
+                        max={todayKey()}
+                        onChange={(event) => updateIssueDate(event.target.value)}
                         aria-label={copy.issueDate}
                         className="input-field pl-12 rtl:pl-4 rtl:pr-12"
                       />
@@ -1542,7 +1594,8 @@ export default function WorkerInvoicesPage() {
                         <input
                           type="date"
                           value={dueDate}
-                          onChange={(event) => setDueDate(event.target.value)}
+                          min={issueDate || undefined}
+                          onChange={(event) => updateDueDate(event.target.value)}
                           aria-label={copy.dueDate}
                           className="input-field pl-12 rtl:pl-4 rtl:pr-12"
                         />
@@ -1823,6 +1876,7 @@ export default function WorkerInvoicesPage() {
                             <input
                               type="date"
                               value={payment.date}
+                              min={issueDate || undefined}
                               onChange={(event) => updatePayment(payment.id, 'date', event.target.value)}
                               aria-label={copy.paymentDate}
                               className="input-field"
