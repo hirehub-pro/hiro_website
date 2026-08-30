@@ -6,12 +6,18 @@ import dynamic from 'next/dynamic';
 import toast from 'react-hot-toast';
 import { HiOutlineUser, HiBriefcase, HiOfficeBuilding, HiSparkles, HiDeviceMobile, HiKey, HiChevronDown, HiChevronUp, HiCheck, HiX, HiCreditCard, HiLocationMarker, HiLockClosed } from 'react-icons/hi';
 import clsx from 'clsx';
+import AuthSeoContent, { getAuthFaqStructuredData, getAuthMarketingCopy } from '../../components/auth/AuthSeoContent';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { getProfessions } from '../../lib/professions';
+import { absoluteUrl } from '../../lib/seo-locale';
 
-const SEO_TITLE = 'הרשמה להירו | הצטרפו ומצאו בעלי מקצוע מומלצים';
-const SEO_DESCRIPTION = 'פתחו חשבון הירו בחינם, מצאו בעלי מקצוע אמינים באזור שלכם, שלחו בקשות, שמרו פרופילים מומלצים ונהלו הכול במקום אחד.';
+const SEO_TITLE = 'הרשמה ל-Hiro | ללקוחות ולבעלי מקצוע';
+const SEO_DESCRIPTION = 'הצטרפו ל-Hiro: חיפוש בעלי מקצוע, בקשות ושיחות ללקוחות; פרופיל עסקי, ניהול לקוחות, דשבורד ומסמכים דיגיטליים לבעלי מקצוע.';
+const SEO_KEYWORDS = 'הרשמה ל-Hiro, הירו בעלי מקצוע, אפליקציה לבעלי מקצוע, מציאת בעלי מקצוע, ניהול לקוחות, הפקת חשבוניות, הצעות מחיר';
+const PAGE_URL = absoluteUrl('/auth/signup');
+const SHARE_IMAGE_URL = absoluteUrl('/web-app-manifest-512x512.png');
+const faqStructuredData = getAuthFaqStructuredData('signup');
 
 const CityMapPickerModal = dynamic(() => import('../../components/auth/CityMapPickerModal'), {
   ssr: false,
@@ -29,6 +35,7 @@ export default function SignUpPage() {
   } = useAuth();
   const { t, dir, locale } = useLanguage();
   const router = useRouter();
+  const marketing = getAuthMarketingCopy(locale, 'signup');
 
   const [step, setStep] = useState('details');
   const [name, setName] = useState('');
@@ -67,8 +74,8 @@ export default function SignUpPage() {
   const googlePlayUrl = 'https://play.google.com/store/apps/details?id=com.hirehub.app';
 
   const roleCards = [
-    { key: 'customer', label: t.auth.customer, subLabel: 'Find and hire local experts', icon: HiOutlineUser },
-    { key: 'worker', label: t.auth.worker, subLabel: 'Offer your services as a pro', icon: HiBriefcase },
+    { key: 'customer', label: t.auth.customer, subLabel: marketing.form.customerRoleHelp, icon: HiOutlineUser },
+    { key: 'worker', label: t.auth.worker, subLabel: marketing.form.professionalRoleHelp, icon: HiBriefcase },
   ];
 
   useEffect(() => {
@@ -308,8 +315,8 @@ export default function SignUpPage() {
         subscription: {
           isSubscribed: true,
           status: 'active',
-          plan: 'pro-monthly-100-ils',
-          amount: 100,
+          plan: 'pro-monthly-120-90-ils',
+          amount: 120.9,
           currency: 'ILS',
         },
       });
@@ -333,8 +340,21 @@ export default function SignUpPage() {
       <Head>
         <title>{SEO_TITLE}</title>
         <meta name="description" content={SEO_DESCRIPTION} />
+        <meta name="keywords" content={SEO_KEYWORDS} />
         <meta property="og:title" content={SEO_TITLE} />
         <meta property="og:description" content={SEO_DESCRIPTION} />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content={PAGE_URL} />
+        <meta property="og:image" content={SHARE_IMAGE_URL} />
+        <meta name="twitter:card" content="summary" />
+        <meta name="twitter:title" content={SEO_TITLE} />
+        <meta name="twitter:description" content={SEO_DESCRIPTION} />
+        <meta name="twitter:image" content={SHARE_IMAGE_URL} />
+        <link rel="canonical" href={PAGE_URL} />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqStructuredData) }}
+        />
       </Head>
 
       <div className="min-h-screen overflow-hidden bg-slate-50" dir={dir}>
@@ -343,30 +363,30 @@ export default function SignUpPage() {
         <div className="absolute bottom-0 left-0 h-72 w-72 rounded-full bg-sky-200/45 blur-3xl animate-float-slow" />
 
         <div className="relative mx-auto flex min-h-screen max-w-6xl flex-col justify-center gap-8 px-4 py-10 lg:grid lg:grid-cols-[1fr_1fr] lg:items-center lg:px-6">
-          <section className="animate-slide-right text-center lg:text-left">
+          <section className="animate-slide-right text-center lg:text-start">
             <div className="inline-flex items-center gap-2 rounded-full border border-primary/10 bg-white/80 px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] text-primary shadow-sm">
               <HiSparkles className="h-4 w-4" />
-              Join Hiro
+              {marketing.hero.badge}
             </div>
 
             <h1 className="mt-5 font-display text-4xl font-extrabold leading-tight text-gray-950 sm:text-5xl">
-              {t.auth.signUp}
+              {marketing.hero.title}
             </h1>
             <p className="mt-4 max-w-xl text-base leading-8 text-gray-500">
-              Enter your basic details, choose your account type, and verify your phone number.
+              {marketing.hero.body}
             </p>
 
             <div className="mt-8 grid gap-4 sm:grid-cols-2">
-              <div className="glass rounded-[28px] p-4 shadow-soft">
-                <HiOfficeBuilding className="h-8 w-8 text-primary" />
-                <p className="mt-3 text-sm font-bold text-gray-900">Professional profile</p>
-                <p className="mt-1 text-xs text-gray-500">Show skills, service radius, and profile details.</p>
-              </div>
-              <div className="glass rounded-[28px] p-4 shadow-soft">
-                <HiOutlineUser className="h-8 w-8 text-primary" />
-                <p className="mt-3 text-sm font-bold text-gray-900">Customer account</p>
-                <p className="mt-1 text-xs text-gray-500">Find trusted professionals and contact them quickly.</p>
-              </div>
+              {marketing.hero.cards.map(([, title, body], index) => {
+                const Icon = index === 0 ? HiOfficeBuilding : HiOutlineUser;
+                return (
+                  <div key={title} className="glass rounded-[28px] p-4 text-start shadow-soft">
+                    <Icon className="h-8 w-8 text-primary" />
+                    <p className="mt-3 text-sm font-bold text-gray-900">{title}</p>
+                    <p className="mt-1 text-xs leading-5 text-gray-500">{body}</p>
+                  </div>
+                );
+              })}
             </div>
           </section>
 
@@ -378,7 +398,7 @@ export default function SignUpPage() {
                 <span className="text-2xl font-extrabold text-white">H</span>
               </div>
               <h2 className="font-display text-3xl font-extrabold text-gray-950">{t.auth.signUp}</h2>
-              <p className="mt-2 text-sm text-gray-500">Follow the steps to create your account.</p>
+              <p className="mt-2 text-sm text-gray-500">{marketing.form.intro}</p>
             </div>
 
             <div className="relative mb-5 flex items-center gap-2">
@@ -446,15 +466,15 @@ export default function SignUpPage() {
                   <button
                     type="button"
                     onClick={() => setCityPickerOpen(true)}
-                    className="input-field flex items-center justify-between text-left"
+                    className="input-field flex items-center justify-between text-start"
                   >
                     <span className={clsx('truncate', city ? 'text-gray-800' : 'text-gray-400')}>
-                      {city || 'Tap to choose your city on the map'}
+                      {city || marketing.form.locationPlaceholder}
                     </span>
                     <HiLocationMarker className="h-5 w-5 text-primary" />
                   </button>
                   <p className="mt-2 text-xs text-gray-500">
-                    We will save the city and map coordinates to your profile.
+                    {marketing.form.locationHelp}
                   </p>
                 </div>
 
@@ -470,7 +490,7 @@ export default function SignUpPage() {
                           type="button"
                           onClick={() => handleRoleSelection(roleCard.key)}
                           className={clsx(
-                            'rounded-2xl border-2 px-3 py-3 text-left transition-all duration-200',
+                            'rounded-2xl border-2 px-3 py-3 text-start transition-all duration-200',
                             isActive ? 'border-primary bg-primary-50 shadow-sm' : 'border-gray-100 bg-white/80 hover:border-gray-200'
                           )}
                         >
@@ -491,7 +511,10 @@ export default function SignUpPage() {
                     className="mt-1 h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
                   />
                   <span>
-                    I agree to the <a href="https://hire-hub-fe6c4.web.app/terms-of-service" target="_blank" rel="noreferrer" className="font-semibold text-primary underline">Terms of Service</a> and <a href="https://hire-hub-fe6c4.web.app/privacy-policy" target="_blank" rel="noreferrer" className="font-semibold text-primary underline">Privacy Policy</a>
+                    {marketing.form.termsPrefix}{' '}
+                    <Link href="/terms-of-service" target="_blank" className="font-semibold text-primary underline">{marketing.form.termsLabel}</Link>{' '}
+                    {marketing.form.termsJoin}{' '}
+                    <Link href="/privacy-policy" target="_blank" className="font-semibold text-primary underline">{marketing.form.privacyLabel}</Link>
                   </span>
                 </label>
 
@@ -687,7 +710,7 @@ export default function SignUpPage() {
                     <HiCreditCard className="h-5 w-5" />
                     Pro Subscription Required
                   </div>
-                  <p className="mt-1 text-sm">To activate your Pro profile, pay a subscription of <span className="font-bold">₪100</span>.</p>
+                  <p className="mt-1 text-sm">To activate your Pro profile, pay <span className="font-bold">₪120.90</span>, including VAT.</p>
                 </div>
 
                 <div>
@@ -743,11 +766,11 @@ export default function SignUpPage() {
                     onChange={(e) => setAgreeSubscription(e.target.checked)}
                     className="mt-1 h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
                   />
-                  <span>I approve the ₪100 subscription charge to activate my Pro account.</span>
+                  <span>I approve the ₪120.90 subscription charge, including VAT, to activate my Pro account.</span>
                 </label>
 
                 <button type="submit" disabled={loading} className="btn-primary w-full">
-                  {loading ? t.common.loading : 'Pay ₪100 and Activate Pro'}
+                  {loading ? t.common.loading : 'Pay ₪120.90 and Activate Pro'}
                 </button>
 
                 <button type="button" onClick={() => setStep('professional')} className="btn-ghost w-full">
@@ -765,6 +788,8 @@ export default function SignUpPage() {
           </p>
         </div>
       </div>
+
+      <AuthSeoContent locale={locale} variant="signup" />
 
       <CityMapPickerModal
         isOpen={cityPickerOpen}

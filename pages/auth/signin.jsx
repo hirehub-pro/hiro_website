@@ -6,11 +6,17 @@ import toast from 'react-hot-toast';
 import { FaApple, FaGooglePlay } from 'react-icons/fa';
 import { HiDesktopComputer, HiDeviceMobile, HiEye, HiEyeOff, HiKey, HiLockClosed, HiMail, HiOutlineUser, HiShieldCheck, HiSparkles } from 'react-icons/hi';
 import clsx from 'clsx';
+import AuthSeoContent, { getAuthFaqStructuredData, getAuthMarketingCopy } from '../../components/auth/AuthSeoContent';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { absoluteUrl } from '../../lib/seo-locale';
 
-const SEO_TITLE = 'התחברות להירו | מצאו ושמרו בעלי מקצוע אמינים';
-const SEO_DESCRIPTION = 'התחברו לחשבון הירו כדי לנהל פניות, לשמור בעלי מקצוע מומלצים, להמשיך שיחות ולמצוא במהירות אנשי מקצוע אמינים באזור שלכם.';
+const SEO_TITLE = 'כניסה ל-Hiro | בקשות, הודעות וכלים לבעלי מקצוע';
+const SEO_DESCRIPTION = 'התחברו ל-Hiro כדי להמשיך לנהל בקשות עבודה, שיחות, פרופיל מקצועי, לקוחות ומסמכים עסקיים — מהנייד או מהמחשב.';
+const SEO_KEYWORDS = 'Hiro כניסה, הירו התחברות, כניסה לחשבון בעלי מקצוע, ניהול בקשות עבודה, ניהול לקוחות, חשבוניות לבעלי מקצוע';
+const PAGE_URL = absoluteUrl('/auth/signin');
+const SHARE_IMAGE_URL = absoluteUrl('/web-app-manifest-512x512.png');
+const faqStructuredData = getAuthFaqStructuredData('signin');
 
 // Auth pages use a custom minimal layout (no Header/BottomNav)
 SignInPage.getLayout = (page) => page;
@@ -25,8 +31,9 @@ export default function SignInPage() {
     confirmPhoneVerification,
     resetPhoneVerification,
   } = useAuth();
-  const { t, dir } = useLanguage();
+  const { t, dir, locale } = useLanguage();
   const router = useRouter();
+  const marketing = getAuthMarketingCopy(locale, 'signin');
 
   const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
@@ -185,26 +192,22 @@ export default function SignInPage() {
     }
   }
 
+  const featureIcons = [HiShieldCheck, HiDesktopComputer, HiOutlineUser];
   const featureCards = (
     <div className={clsx(
       'mt-6 grid gap-3 sm:grid-cols-3 sm:gap-4',
       forceMobileLayout ? 'grid-cols-1' : ''
     )}>
-      <div className="glass rounded-[28px] p-4 shadow-soft">
-        <HiShieldCheck className="h-8 w-8 text-primary" />
-        <p className="mt-3 text-sm font-bold text-gray-900">Secure sign-in</p>
-        <p className="mt-1 text-xs text-gray-500">Phone verification built for trusted access.</p>
-      </div>
-      <div className="glass rounded-[28px] p-4 shadow-soft">
-        <HiDesktopComputer className="h-8 w-8 text-primary" />
-        <p className="mt-3 text-sm font-bold text-gray-900">Fast everywhere</p>
-        <p className="mt-1 text-xs text-gray-500">Optimized for quick entry and clear actions on any device.</p>
-      </div>
-      <div className="glass rounded-[28px] p-4 shadow-soft">
-        <HiOutlineUser className="h-8 w-8 text-primary" />
-        <p className="mt-3 text-sm font-bold text-gray-900">Guest option</p>
-        <p className="mt-1 text-xs text-gray-500">Browse immediately without a full account.</p>
-      </div>
+      {marketing.hero.cards.map(([, title, body], index) => {
+        const Icon = featureIcons[index];
+        return (
+          <div key={title} className="glass rounded-[28px] p-4 text-start shadow-soft">
+            <Icon className="h-8 w-8 text-primary" />
+            <p className="mt-3 text-sm font-bold text-gray-900">{title}</p>
+            <p className="mt-1 text-xs leading-5 text-gray-500">{body}</p>
+          </div>
+        );
+      })}
     </div>
   );
 
@@ -213,8 +216,21 @@ export default function SignInPage() {
       <Head>
         <title>{SEO_TITLE}</title>
         <meta name="description" content={SEO_DESCRIPTION} />
+        <meta name="keywords" content={SEO_KEYWORDS} />
         <meta property="og:title" content={SEO_TITLE} />
         <meta property="og:description" content={SEO_DESCRIPTION} />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content={PAGE_URL} />
+        <meta property="og:image" content={SHARE_IMAGE_URL} />
+        <meta name="twitter:card" content="summary" />
+        <meta name="twitter:title" content={SEO_TITLE} />
+        <meta name="twitter:description" content={SEO_DESCRIPTION} />
+        <meta name="twitter:image" content={SHARE_IMAGE_URL} />
+        <link rel="canonical" href={PAGE_URL} />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqStructuredData) }}
+        />
       </Head>
 
       <div
@@ -233,19 +249,19 @@ export default function SignInPage() {
               : 'max-w-6xl xl:grid xl:grid-cols-[1.05fr_0.95fr] xl:items-center xl:px-6'
           )}
         >
-          <div className={clsx('max-w-xl text-center animate-slide-right', !forceMobileLayout && 'xl:text-left')}>
+          <div className={clsx('max-w-xl text-center animate-slide-right', !forceMobileLayout && 'xl:text-start')}>
             <div className={clsx(
               'inline-flex items-center gap-2 rounded-full border border-primary/10 bg-white/80 px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] text-primary shadow-sm',
               forceMobileLayout && 'mx-auto'
             )}>
               <HiSparkles className="h-4 w-4" />
-              Professional access
+              {marketing.hero.badge}
             </div>
             <h1 className="mt-4 font-display text-3xl font-extrabold leading-tight text-gray-950 sm:text-5xl">
-              {t.auth.welcome}
+              {marketing.hero.title}
             </h1>
             <p className="mt-3 text-sm leading-7 text-gray-500 sm:text-base sm:leading-8">
-              {t.auth.phoneSignInHelp}
+              {marketing.hero.body}
             </p>
             {useWideDesktopLayout ? featureCards : null}
           </div>
@@ -266,18 +282,18 @@ export default function SignInPage() {
                   'flex-1 rounded-full px-3 py-2 transition-all',
                   !verificationSent && 'bg-white text-primary shadow-sm'
                 )}>
-                  1. Phone
+                  {marketing.form.phoneStep}
                 </div>
                 <div className={clsx(
                   'flex-1 rounded-full px-3 py-2 transition-all',
                   verificationSent && 'bg-white text-primary shadow-sm'
                 )}>
-                  2. Code
+                  {marketing.form.codeStep}
                 </div>
               </div>
               <h2 className="font-display text-2xl font-extrabold text-gray-950 sm:text-3xl">{t.auth.signIn}</h2>
               <p className="mt-2 text-sm text-gray-500">
-                {verificationSent ? 'Enter the code we sent to your phone.' : 'Use your phone number and password to continue.'}
+                {verificationSent ? marketing.form.codeHelp : marketing.form.credentialsHelp}
               </p>
             </div>
 
@@ -317,7 +333,7 @@ export default function SignInPage() {
                       disabled={loading}
                       className="text-sm font-semibold text-primary underline-offset-4 transition hover:underline disabled:cursor-not-allowed disabled:text-gray-400"
                     >
-                      Forgot password?
+                      {marketing.form.forgotPassword}
                     </button>
                   </div>
                   <div className="relative">
@@ -427,8 +443,8 @@ export default function SignInPage() {
             'mx-auto w-full rounded-[24px] border border-white/60 bg-white/70 p-4 shadow-soft animate-fade-up',
             forceMobileLayout ? 'max-w-xl' : 'max-w-md xl:mx-0'
           )}>
-            <p className={clsx('mb-3 text-center text-xs font-bold uppercase tracking-[0.2em] text-gray-500', !forceMobileLayout && 'xl:text-left')}>
-              Get the app
+            <p className={clsx('mb-3 text-center text-xs font-bold uppercase tracking-[0.2em] text-gray-500', !forceMobileLayout && 'xl:text-start')}>
+              {marketing.form.getApp}
             </p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <a
@@ -465,6 +481,8 @@ export default function SignInPage() {
         </div>
       </div>
 
+      <AuthSeoContent locale={locale} variant="signin" />
+
       {showPasswordReset && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/50 px-4 py-6 backdrop-blur-sm">
           <div
@@ -481,23 +499,23 @@ export default function SignInPage() {
                 setResetEmailHint('');
               }}
               className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-500 transition hover:bg-slate-200 hover:text-slate-800"
-              aria-label="Close password reset"
+              aria-label={marketing.form.closeReset}
             >
               X
             </button>
 
             <div className="pr-10">
               <p id="password-reset-title" className="font-display text-2xl font-extrabold text-gray-950">
-                Reset password
+                {marketing.form.resetTitle}
               </p>
               <p className="mt-2 text-sm leading-6 text-gray-500">
-                Enter the email linked to this phone number before we send the reset link.
+                {marketing.form.resetBody}
               </p>
             </div>
 
             {resetEmailHint && (
               <div className="mt-4 rounded-2xl border border-primary-100 bg-primary-50 px-4 py-3 text-sm text-primary-dark">
-                Email on this account: <span className="font-bold">{resetEmailHint}</span>
+                {marketing.form.emailOnAccount} <span className="font-bold">{resetEmailHint}</span>
               </div>
             )}
 
@@ -538,7 +556,7 @@ export default function SignInPage() {
                 disabled={loading}
                 className="btn-primary min-h-[48px]"
               >
-                {loading ? t.common.loading : 'Send reset'}
+                {loading ? t.common.loading : marketing.form.sendReset}
               </button>
             </div>
 

@@ -1,7 +1,16 @@
 import Head from 'next/head';
 import Link from 'next/link';
-import { HiCheckCircle, HiLightningBolt, HiShieldCheck, HiSparkles } from 'react-icons/hi';
+import {
+  HiArrowNarrowLeft,
+  HiBriefcase,
+  HiCheckCircle,
+  HiLightningBolt,
+  HiShieldCheck,
+  HiSparkles,
+  HiUser,
+} from 'react-icons/hi';
 import SearchBar from '../components/home/SearchBar';
+import HomeAccountWindow from '../components/home/HomeAccountWindow';
 import HomeShowcaseSections from '../components/home/HomeShowcaseSections';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -73,6 +82,16 @@ export default function HomePage() {
     { icon: HiLightningBolt, label: t.home.trustFast },
     { icon: HiShieldCheck, label: t.home.trustReliable },
   ];
+  const customerReasons = [
+    { title: t.home.customerCompareTitle, body: t.home.customerCompareBody },
+    { title: t.home.customerRequestTitle, body: t.home.customerRequestBody },
+    { title: t.home.customerHistoryTitle, body: t.home.customerHistoryBody },
+  ];
+  const professionalReasons = [
+    { title: t.home.professionalProfileTitle, body: t.home.professionalProfileBody },
+    { title: t.home.professionalLeadTitle, body: t.home.professionalLeadBody },
+    { title: t.home.professionalBusinessTitle, body: t.home.professionalBusinessBody },
+  ];
 
   return (
     <>
@@ -102,10 +121,11 @@ export default function HomePage() {
         <div className="absolute -top-8 right-0 h-48 w-48 rounded-full bg-primary/10 blur-3xl animate-float" />
         <div className="absolute left-0 top-40 h-56 w-56 rounded-full bg-sky-200/40 blur-3xl animate-float-slow" />
 
-        <div className="relative mx-auto grid max-w-7xl gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
-          <section className="overflow-hidden rounded-[36px] bg-hero-gradient px-6 py-8 text-white shadow-hero sm:px-8 sm:py-10 lg:px-10 lg:py-12">
-            <div className="absolute inset-0 opacity-20" />
-            <div className="relative max-w-2xl">
+        <div className="relative mx-auto grid max-w-7xl gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-start">
+          <div className="space-y-6">
+            <section className="overflow-hidden rounded-[36px] bg-hero-gradient px-6 py-8 text-white shadow-hero sm:px-8 sm:py-10 lg:px-10 lg:py-12">
+              <div className="absolute inset-0 opacity-20" />
+              <div className="relative max-w-2xl">
               <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-white/90 animate-fade-in">
                 <HiSparkles className="h-4 w-4" />
                 {t.home.heroBadge}
@@ -139,53 +159,73 @@ export default function HomePage() {
                   </div>
                 ))}
               </div>
-            </div>
-          </section>
+              </div>
+            </section>
 
-          <aside className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-            <div className="glass rounded-[32px] p-6 shadow-soft animate-slide-left">
+            <HomeAccountWindow />
+          </div>
+
+          <aside aria-labelledby="why-hiro-title" className="glass rounded-[36px] p-6 shadow-soft animate-slide-left sm:p-7">
+            <div>
               <p className="text-xs font-bold uppercase tracking-[0.24em] text-primary/65">{t.home.whyBadge}</p>
-              <h2 className="mt-2 font-display text-2xl font-extrabold text-gray-950">{t.home.whyTitle}</h2>
-              <div className="mt-5 grid grid-cols-2 gap-3">
-                <div className="rounded-3xl bg-white/80 p-4">
-                  <p className="text-3xl font-extrabold text-primary">10k+</p>
-                  <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">{t.home.statSearches}</p>
-                </div>
-                <div className="rounded-3xl bg-white/80 p-4">
-                  <p className="text-3xl font-extrabold text-primary">4.9</p>
-                  <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">{t.home.statRating}</p>
-                </div>
-              </div>
-              <Link href="/search" className="btn-primary mt-5 inline-flex items-center justify-center">
-                {t.home.exploreProfessionals}
-              </Link>
+              <h2 id="why-hiro-title" className="mt-2 font-display text-2xl font-extrabold leading-tight text-gray-950 sm:text-3xl">{t.home.whyTitle}</h2>
+              <p className="mt-3 text-sm leading-7 text-gray-600">{t.home.whyIntro}</p>
             </div>
 
-            <div className="rounded-[32px] bg-white p-6 shadow-card animate-slide-left delay-150">
-              <p className="text-xs font-bold uppercase tracking-[0.24em] text-primary/65">{t.home.clarityBadge}</p>
-              <div className="mt-4 space-y-4">
-                <div className="flex items-start gap-3">
-                  <div className="mt-1 h-2.5 w-2.5 rounded-full bg-primary dot-active" />
+            <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+              <article className="rounded-[28px] border border-white/80 bg-white/90 p-5 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary-50 text-primary">
+                    <HiUser className="h-5 w-5" />
+                  </span>
                   <div>
-                    <p className="font-bold text-gray-900">{t.home.clarityBrowseTitle}</p>
-                    <p className="text-sm text-gray-500">{t.home.clarityBrowseBody}</p>
+                    <p className="text-xs font-bold text-primary">{t.home.customerLabel}</p>
+                    <h3 className="text-lg font-extrabold text-gray-950">{t.home.customerTitle}</h3>
                   </div>
                 </div>
-                <div className="flex items-start gap-3">
-                  <div className="mt-1 h-2.5 w-2.5 rounded-full bg-primary/40" />
+                <ul className="mt-4 space-y-3">
+                  {customerReasons.map(({ title, body }) => (
+                    <li key={title} className="flex items-start gap-3">
+                      <HiCheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                      <div>
+                        <p className="text-sm font-bold text-gray-900">{title}</p>
+                        <p className="mt-0.5 text-xs leading-5 text-gray-600">{body}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <Link href="/search" className="btn-primary mt-5 inline-flex w-full items-center justify-center gap-2">
+                  {t.home.customerCta}
+                  <HiArrowNarrowLeft className="h-4 w-4 rtl:rotate-180" />
+                </Link>
+              </article>
+
+              <article className="rounded-[28px] bg-slate-950 p-5 text-white shadow-card">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-sky-300">
+                    <HiBriefcase className="h-5 w-5" />
+                  </span>
                   <div>
-                    <p className="font-bold text-gray-900">{t.home.clarityDecisionsTitle}</p>
-                    <p className="text-sm text-gray-500">{t.home.clarityDecisionsBody}</p>
+                    <p className="text-xs font-bold text-sky-300">{t.home.professionalLabel}</p>
+                    <h3 className="text-lg font-extrabold text-white">{t.home.professionalTitle}</h3>
                   </div>
                 </div>
-                <div className="flex items-start gap-3">
-                  <div className="mt-1 h-2.5 w-2.5 rounded-full bg-primary/40" />
-                  <div>
-                    <p className="font-bold text-gray-900">{t.home.clarityExperienceTitle}</p>
-                    <p className="text-sm text-gray-500">{t.home.clarityExperienceBody}</p>
-                  </div>
-                </div>
-              </div>
+                <ul className="mt-4 space-y-3">
+                  {professionalReasons.map(({ title, body }) => (
+                    <li key={title} className="flex items-start gap-3">
+                      <HiCheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-sky-300" />
+                      <div>
+                        <p className="text-sm font-bold text-white">{title}</p>
+                        <p className="mt-0.5 text-xs leading-5 text-slate-300">{body}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <Link href="/auth/signup" className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-6 py-3 text-sm font-bold text-slate-950 transition hover:bg-sky-50">
+                  {t.home.professionalCta}
+                  <HiArrowNarrowLeft className="h-4 w-4 rtl:rotate-180" />
+                </Link>
+              </article>
             </div>
           </aside>
         </div>
